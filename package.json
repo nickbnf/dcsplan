@@ -1,0 +1,15 @@
+{
+  "name": "dcsplan",
+  "private": true,
+  "version": "1.0.0",
+  "description": "A flight planning tool for flight simulators",
+  "scripts": {
+    "install:backend": "cd packages/backend && python3 -m venv venv && . venv/bin/activate && pip install -r requirements.txt",
+    "dev": "concurrently \"pnpm --filter frontend dev\" \"pnpm dev:backend\"",
+    "dev:frontend": "pnpm --filter frontend dev",
+    "dev:backend": "cd packages/backend && . venv/bin/activate && uvicorn main:app --reload"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

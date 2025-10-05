@@ -1,0 +1,16 @@
+{
+  "name": "@dcsplan/tools",
+  "version": "1.0.0",
+  "description": "Development tools and utilities for DCS Plan",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "echo 'No build step required for tools'",
+    "dev": "echo 'No dev server for tools'"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "@types/node": "^20.0.0"
+  },
+  "dependencies": {}
+}
