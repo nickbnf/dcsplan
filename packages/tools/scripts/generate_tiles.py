@@ -13,6 +13,7 @@ Example:
 """
 
 import argparse
+import json
 import os
 import sys
 from pathlib import Path
@@ -54,32 +55,49 @@ def generate_tiles(image_path, output_dir, zoom_levels=None, tile_size=256):
     # Open the image
     try:
         image = Image.open(image_path)
-        print(f"Loaded image: {image.size[0]}x{image.size[1]} pixels")
+        print(f"Loaded image: {image.size[0]}x{image.size[1]} pixels", file=sys.stderr)
     except Exception as e:
-        print(f"Error opening image: {e}")
+        print(f"Error opening image: {e}", file=sys.stderr)
         return False
     
     # Calculate zoom levels if not provided
     if zoom_levels is None:
         zoom_levels = calculate_zoom_levels(image.size[0], image.size[1])
-        print(f"Auto-calculated zoom levels: {zoom_levels}")
+        print(f"Auto-calculated zoom levels: {zoom_levels}", file=sys.stderr)
     
     # Create output directory
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
     
     total_tiles = 0
-    
+    original_width = image.size[0]
+    original_height = image.size[1]
+    max_dimension = max(original_width, original_height)
+
+    # "Natural" zoom level is the zoom level where pixel are one to one withe original map
+    natural_zoom = math.ceil(math.log2(max_dimension / tile_size))
+
+    zoom_info = []
+
     for zoom in zoom_levels:
-        print(f"\nGenerating tiles for zoom level {zoom}...")
-        
+        print(f"\nGenerating tiles for zoom level {zoom}...", file=sys.stderr)
+
         # Calculate number of tiles at this zoom level
-        tiles_x = 2 ** zoom
-        tiles_y = 2 ** zoom
-        
+        nb_tiles_w = math.ceil(original_width / (tile_size * 2 ** (natural_zoom - zoom)))
+        nb_tiles_h = math.ceil(original_height / (tile_size * 2 ** (natural_zoom - zoom)))
+        width_px = math.floor(original_width / (2 ** (natural_zoom - zoom)))
+        height_px = math.floor(original_height / (2 ** (natural_zoom - zoom)))
+
+        zoom_info.append({
+            "zoom": zoom,
+            "nb_tiles_w": nb_tiles_w,
+            "nb_tiles_h": nb_tiles_h,
+            "width_px": width_px,
+            "height_px": height_px
+        })
+
         # Calculate tile dimensions
-        tile_width = image.size[0] / tiles_x
-        tile_height = image.size[1] / tiles_y
+        tile_size_in_original_image = (2 ** (natural_zoom - zoom)) * tile_size
         
         # Create zoom level directory
         zoom_dir = output_path / str(zoom)
@@ -87,17 +105,17 @@ def generate_tiles(image_path, output_dir, zoom_levels=None, tile_size=256):
         
         zoom_tiles = 0
         
-        for x in range(tiles_x):
+        for x in range(nb_tiles_w):
             # Create X directory
             x_dir = zoom_dir / str(x)
             x_dir.mkdir(exist_ok=True)
             
-            for y in range(tiles_y):
+            for y in range(nb_tiles_h):
                 # Calculate crop coordinates
-                left = int(x * tile_width)
-                top = int(y * tile_height)
-                right = int((x + 1) * tile_width)
-                bottom = int((y + 1) * tile_height)
+                left = int(x * tile_size_in_original_image)
+                top = int(y * tile_size_in_original_image)
+                right = int((x + 1) * tile_size_in_original_image)
+                bottom = int((y + 1) * tile_size_in_original_image)
                 
                 # Crop the tile
                 tile = image.crop((left, top, right, bottom))
@@ -113,9 +131,12 @@ def generate_tiles(image_path, output_dir, zoom_levels=None, tile_size=256):
                 zoom_tiles += 1
                 total_tiles += 1
         
-        print(f"Generated {zoom_tiles} tiles for zoom level {zoom}")
+        print(f"Generated {zoom_tiles} tiles for zoom level {zoom}", file=sys.stderr)
     
-    print(f"\n✅ Successfully generated {total_tiles} tiles in {output_dir}")
+    print(f"\n✅ Successfully generated {total_tiles} tiles in {output_dir}", file=sys.stderr)
+
+    print(json.dumps({"zoom_info": zoom_info}, indent=4))
+
     return True
 
 
