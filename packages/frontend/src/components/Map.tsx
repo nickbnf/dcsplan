@@ -25,7 +25,12 @@ const MapComponent: React.FC<MapComponentProps> = ({ onCoordinateChange }) => {
   const [tileInfo, setTileInfo] = useState<TileInfo | null>(null);
 
   const [flightPlan, setFlightPlan] = useState<FlightPlan>(flightPlanUtils.newFlightPlan());
-  const { drawingState, startDrawing, stopDrawing, clearCurrentLine } = useDrawing();
+  
+  // Debug flight plan state changes
+  useEffect(() => {
+    console.log('🔄 FLIGHT PLAN STATE CHANGED:', flightPlan.points.length, 'points,', flightPlan.lines.length, 'lines');
+  }, [flightPlan]);
+  const { drawingState, startDrawing, stopDrawing, addPoint, updatePreviewLine, clearCurrentPoints } = useDrawing();
 
   // Safe function to fetch and parse tile info JSON
   const fetchTileInfo = async (): Promise<TileInfo | null> => {
@@ -118,6 +123,9 @@ const MapComponent: React.FC<MapComponentProps> = ({ onCoordinateChange }) => {
     const tileLayer = createTileLayer(tileInfo, regionBounds, transverseMercatorProjection);
     const gridLayer = createGridLayer(regionBounds, transverseMercatorProjection);
     const flightPlanLayer = createFlightPlanLayer(flightPlan, transverseMercatorProjection);
+    flightPlanLayer.set('name', 'flightplan');
+    
+    console.log('Created initial flight plan layer with', flightPlan.points.length, 'points and', flightPlan.lines.length, 'lines');
     
     // Create drawing layer
     const drawingLayer = new VectorLayer({
@@ -147,24 +155,6 @@ const MapComponent: React.FC<MapComponentProps> = ({ onCoordinateChange }) => {
 
     console.log("Flight plan:", flightPlan);
 
-    // Add mouse pointer tracking
-    if (onCoordinateChange && mapInstanceRef.current) {
-      mapInstanceRef.current.on('pointermove', (event) => {
-        const coordinate = event.coordinate;
-        if (coordinate) {
-          // Transform transverse Mercator coordinates back to geographic coordinates
-          const geographicCoordinate = transform(coordinate, transverseMercatorProjection.getCode(), 'EPSG:4326');
-          // geographicCoordinate[0] = longitude, geographicCoordinate[1] = latitude
-          onCoordinateChange({
-            raw_x: coordinate[0],
-            raw_y: coordinate[1],
-            lon: geographicCoordinate[0],
-            lat: geographicCoordinate[1]
-          });
-        }
-      });
-    }
-
     return () => {
       if (mapInstanceRef.current) {
         // Remove click handler if it exists
@@ -172,26 +162,16 @@ const MapComponent: React.FC<MapComponentProps> = ({ onCoordinateChange }) => {
         if (clickHandler) {
           mapInstanceRef.current.un('click', clickHandler);
         }
+        // Remove move handler if it exists
+        const moveHandler = (mapInstanceRef.current as any).__moveHandler;
+        if (moveHandler) {
+          mapInstanceRef.current.un('pointermove', moveHandler);
+        }
         mapInstanceRef.current.setTarget(undefined);
         mapInstanceRef.current = null;
       }
     };
   }, [tileInfo, isLoading]); // This effect runs when tileInfo or isLoading changes
-
-  // Handle drawing state changes
-  useEffect(() => {
-    if (!mapInstanceRef.current) return;
-
-    console.log('Drawing state changed:', drawingState.isDrawing);
-    
-    if (drawingState.isDrawing) {
-      console.log('Starting drawing mode');
-      startDrawing(mapInstanceRef.current);
-    } else {
-      console.log('Stopping drawing mode');
-      stopDrawing(mapInstanceRef.current);
-    }
-  }, [drawingState.isDrawing, startDrawing, stopDrawing]);
 
   // Update click handler when drawing state changes
   useEffect(() => {
@@ -205,33 +185,126 @@ const MapComponent: React.FC<MapComponentProps> = ({ onCoordinateChange }) => {
 
     // Add new click handler
     const clickHandler = (event: any) => {
-      // Only add turn points when not in drawing mode
-      if (!drawingState.isDrawing) {
-        const coordinate = event.coordinate;
-        if (coordinate) {
-          setFlightPlan((flightPlan) => flightPlanUtils.addTurnPoint(flightPlan, coordinate[1], coordinate[0]));
-        }
+      const coordinate = event.coordinate;
+      if (!coordinate) return;
+
+      if (drawingState.isDrawing) {
+        // In drawing mode, add points to the current drawing
+        addPoint(coordinate);
+      } else {
+        // Not in drawing mode, add turn points directly to flight plan
+        setFlightPlan((flightPlan) => flightPlanUtils.addTurnPoint(flightPlan, coordinate[1], coordinate[0]));
       }
     };
     
     mapInstanceRef.current.on('click', clickHandler);
     (mapInstanceRef.current as any).__clickHandler = clickHandler;
-  }, [drawingState.isDrawing]);
+  }, [drawingState.isDrawing, addPoint]);
 
-  // Handle completed line drawing
+  // Add mouse move handler for preview line
   useEffect(() => {
-    if (drawingState.currentLine && drawingState.currentLine.length === 2) {
-      console.log('Line completed, adding to flight plan');
-      const [start, end] = drawingState.currentLine;
-      setFlightPlan(prevPlan => flightPlanUtils.addLine(prevPlan, start, end));
-      clearCurrentLine();
-      
-      // Stop drawing mode after completing a line
-      if (mapInstanceRef.current) {
-        // stopDrawing(mapInstanceRef.current);
-      }
+    if (!mapInstanceRef.current) return;
+
+    // Remove existing mouse move handler
+    const existingMoveHandler = (mapInstanceRef.current as any).__moveHandler;
+    if (existingMoveHandler) {
+      mapInstanceRef.current.un('pointermove', existingMoveHandler);
     }
-  }, [drawingState.currentLine, clearCurrentLine, stopDrawing]);
+
+    // Add new mouse move handler for preview line
+    const moveHandler = (event: any) => {
+      const coordinate = event.coordinate;
+      if (!coordinate) return;
+
+      // Update coordinate display
+      if (onCoordinateChange) {
+        const geographicCoordinate = transform(coordinate, mapInstanceRef.current!.getView().getProjection().getCode(), 'EPSG:4326');
+        onCoordinateChange({
+          raw_x: coordinate[0],
+          raw_y: coordinate[1],
+          lon: geographicCoordinate[0],
+          lat: geographicCoordinate[1]
+        });
+      }
+
+      // Update preview line if in drawing mode
+      if (drawingState.isDrawing) {
+        updatePreviewLine(coordinate);
+      }
+    };
+    
+    mapInstanceRef.current.on('pointermove', moveHandler);
+    (mapInstanceRef.current as any).__moveHandler = moveHandler;
+  }, [drawingState.isDrawing, updatePreviewLine, onCoordinateChange]);
+
+  // Handle adding points to flight plan in real-time during drawing
+  useEffect(() => {
+    console.log('🔄 DRAWING STATE EFFECT - isDrawing:', drawingState.isDrawing, 'points:', drawingState.currentPoints.length);
+    
+    // Add points to flight plan as they're drawn (when currentPoints changes)
+    if (drawingState.isDrawing && drawingState.currentPoints.length > 0) {
+      const latestPoint = drawingState.currentPoints[drawingState.currentPoints.length - 1];
+      
+      setFlightPlan(prevPlan => {
+        // Only add if this point isn't already in the flight plan
+        const pointExists = prevPlan.points.some(p => 
+          Math.abs(p.lat - latestPoint.lat) < 0.0001 && Math.abs(p.lon - latestPoint.lon) < 0.0001
+        );
+        
+        if (!pointExists) {
+          console.log('📍 Adding point to flight plan in real-time:', latestPoint);
+          let updatedPlan = flightPlanUtils.addTurnPoint(prevPlan, latestPoint.lat, latestPoint.lon);
+          
+          // Add line to previous point if there are at least 2 points in current drawing
+          if (drawingState.currentPoints.length > 1) {
+            const previousPoint = drawingState.currentPoints[drawingState.currentPoints.length - 2];
+            updatedPlan = flightPlanUtils.addLine(updatedPlan, previousPoint, latestPoint);
+            console.log('🔗 Added line to flight plan in real-time:', previousPoint, '→', latestPoint);
+          }
+          
+          return updatedPlan;
+        }
+        
+        return prevPlan;
+      });
+    }
+    
+    // Clear current points when drawing stops
+    if (!drawingState.isDrawing && drawingState.currentPoints.length > 0) {
+      console.log('🧹 Drawing stopped, clearing current points');
+      setTimeout(() => {
+        clearCurrentPoints();
+      }, 100);
+    }
+  }, [drawingState.currentPoints, drawingState.isDrawing, clearCurrentPoints]);
+
+  // Update flight plan layer when flight plan changes
+  useEffect(() => {
+    if (!mapInstanceRef.current) return;
+
+    console.log('Flight plan layer update effect triggered. Points:', flightPlan.points.length, 'Lines:', flightPlan.lines.length);
+
+    // Find and remove the existing flight plan layer
+    const layers = mapInstanceRef.current.getLayers().getArray();
+    console.log('Available layers:', layers.map((layer: any) => layer.get('name')));
+    
+    const existingFlightPlanLayer = layers.find((layer: any) => 
+      layer.get('name') === 'flightplan'
+    );
+
+    if (existingFlightPlanLayer) {
+      console.log('Removing existing flight plan layer');
+      mapInstanceRef.current.removeLayer(existingFlightPlanLayer);
+    }
+
+    // Create a new flight plan layer with current data
+    const newFlightPlanLayer = createFlightPlanLayer(flightPlan, mapInstanceRef.current.getView().getProjection());
+    newFlightPlanLayer.set('name', 'flightplan');
+    
+    // Add the new layer to the map
+    mapInstanceRef.current.addLayer(newFlightPlanLayer);
+    console.log('Added new flight plan layer with', flightPlan.points.length, 'points and', flightPlan.lines.length, 'lines');
+  }, [flightPlan]);
 
   // Show loading state
   if (isLoading) {
@@ -273,13 +346,10 @@ const MapComponent: React.FC<MapComponentProps> = ({ onCoordinateChange }) => {
         <div className="flex flex-col gap-2">
           <button
             onClick={() => {
-              console.log('Button clicked, current drawing state:', drawingState.isDrawing);
               if (drawingState.isDrawing) {
-                console.log('Stopping drawing via button');
                 stopDrawing(mapInstanceRef.current!);
               } else {
-                console.log('Starting drawing via button');
-                startDrawing(mapInstanceRef.current!);
+                startDrawing(mapInstanceRef.current!, flightPlan);
               }
             }}
             className={`px-4 py-2 rounded font-medium transition-colors ${
@@ -293,13 +363,16 @@ const MapComponent: React.FC<MapComponentProps> = ({ onCoordinateChange }) => {
           
           {drawingState.isDrawing && (
             <p className="text-sm text-gray-600 text-center">
-              Click two points to draw a line
+              Click to place points. Click "Stop Drawing" when done.
             </p>
           )}
           
           <div className="text-xs text-gray-500">
             <p>Turn Points: {flightPlan.points.length}</p>
             <p>Lines: {flightPlan.lines.length}</p>
+            {drawingState.isDrawing && (
+              <p>Drawing Points: {drawingState.currentPoints.length}</p>
+            )}
           </div>
         </div>
       </div>

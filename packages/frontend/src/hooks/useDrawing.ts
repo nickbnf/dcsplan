@@ -1,28 +1,28 @@
 import { useRef, useCallback, useState } from 'react';
-import { Draw } from 'ol/interaction';
+import { transform } from 'ol/proj';
 import { LineString } from 'ol/geom';
 import { Feature } from 'ol';
-import { transform } from 'ol/proj';
+import { Stroke, Style } from 'ol/style';
 import type { FlightPlanTurnPoint } from '../types/flightPlan';
 
 export interface DrawingState {
   isDrawing: boolean;
-  currentLine: FlightPlanTurnPoint[] | null;
+  currentPoints: FlightPlanTurnPoint[];
+  previewLine: FlightPlanTurnPoint[] | null;
 }
 
 export const useDrawing = () => {
-  const drawInteractionRef = useRef<Draw | null>(null);
+  const previewFeatureRef = useRef<Feature<LineString> | null>(null);
+  const drawingLayerRef = useRef<any>(null);
+  const mapProjectionRef = useRef<any>(null);
+  
   const [drawingState, setDrawingState] = useState<DrawingState>({
     isDrawing: false,
-    currentLine: null
+    currentPoints: [],
+    previewLine: null
   });
 
-  const startDrawing = useCallback((map: any) => {
-    // Clean up existing interaction
-    if (drawInteractionRef.current) {
-      map.removeInteraction(drawInteractionRef.current);
-    }
-
+  const startDrawing = useCallback((map: any, existingFlightPlan?: any) => {
     // Find the drawing layer
     const drawingLayer = map.getLayers().getArray().find((layer: any) => 
       layer.get('name') === 'drawing'
@@ -33,91 +33,130 @@ export const useDrawing = () => {
       return;
     }
 
-    console.log('Found drawing layer:', drawingLayer);
-
-    // Get the map projection
-    const mapProjection = map.getView().getProjection();
-    console.log('Map projection:', mapProjection.getCode());
-
-    // Create new draw interaction for line strings
-    const draw = new Draw({
-      source: drawingLayer.getSource(),
-      type: 'LineString',
-      maxPoints: 4, // Limit to 2 points for line drawing
-      minPoints: 2
+    drawingLayerRef.current = drawingLayer;
+    mapProjectionRef.current = map.getView().getProjection();
+    
+    // Start with the last point of the existing flight plan if available
+    const initialPoints = existingFlightPlan && existingFlightPlan.points.length > 0 
+      ? [existingFlightPlan.points[existingFlightPlan.points.length - 1]]
+      : [];
+    
+    console.log('Drawing mode started', initialPoints.length > 0 ? 'from existing flight plan' : 'from scratch');
+    setDrawingState({
+      isDrawing: true,
+      currentPoints: initialPoints,
+      previewLine: null
     });
+  }, []);
 
-    console.log('Created draw interaction:', draw);
+  const stopDrawing = useCallback((_map: any) => {
+    // Clear preview line
+    if (previewFeatureRef.current && drawingLayerRef.current) {
+      const source = drawingLayerRef.current.getSource();
+      if (source) {
+        source.removeFeature(previewFeatureRef.current);
+      }
+      previewFeatureRef.current = null;
+    }
+    
+    setDrawingState(prev => ({
+      isDrawing: false,
+      currentPoints: prev.currentPoints, // Keep the points for conversion
+      previewLine: null
+    }));
+    
+    console.log('Drawing mode stopped');
+  }, []);
 
-    // Handle drawing start
-    draw.on('drawstart', () => {
-      console.log('Drawing started');
-      setDrawingState(prev => ({ isDrawing: true, currentLine: [] }));
-    });
+  const addPoint = useCallback((coordinate: [number, number]) => {
+    if (!mapProjectionRef.current) return;
 
-    // Handle drawing end
-    draw.on('drawend', (event) => {
-      console.log('Drawing ended');
-      const feature = event.feature as Feature<LineString>;
-      const geometry = feature.getGeometry();
+    const [lon, lat] = transform(coordinate, mapProjectionRef.current.getCode(), 'EPSG:4326');
+    const newPoint: FlightPlanTurnPoint = { lat, lon };
+    
+    setDrawingState(prev => ({
+      ...prev,
+      currentPoints: [...prev.currentPoints, newPoint]
+    }));
+    
+    console.log('Added point:', newPoint);
+  }, []);
+
+  const updatePreviewLine = useCallback((coordinate: [number, number]) => {
+    if (!mapProjectionRef.current || !drawingLayerRef.current) return;
+
+    const [lon, lat] = transform(coordinate, mapProjectionRef.current.getCode(), 'EPSG:4326');
+    const previewPoint: FlightPlanTurnPoint = { lat, lon };
+    
+    setDrawingState(prev => {
+      if (prev.currentPoints.length === 0) {
+        return prev; // No preview if no points yet
+      }
       
-      if (geometry) {
-        const coordinates = geometry.getCoordinates();
-        console.log('Raw coordinates:', coordinates);
-        
-        // Transform coordinates from map projection to geographic
-        const linePoints: FlightPlanTurnPoint[] = coordinates.map(coord => {
-          const [lon, lat] = transform(coord, mapProjection.getCode(), 'EPSG:4326');
-          return { lat, lon };
-        });
-
-        console.log('Transformed coordinates:', linePoints);
-
-        setDrawingState(prev => ({ 
-          ...prev, 
-          currentLine: linePoints 
-        }));
-
-        // Remove the temporary feature
-        const source = drawingLayer.getSource();
+      const lastPoint = prev.currentPoints[prev.currentPoints.length - 1];
+      const previewLine = [lastPoint, previewPoint];
+      
+      // Update preview line on map
+      if (previewFeatureRef.current) {
+        const source = drawingLayerRef.current.getSource();
         if (source) {
-          source.removeFeature(feature);
+          source.removeFeature(previewFeatureRef.current);
         }
       }
-    });
-
-    // Handle drawing abort
-    draw.on('drawabort', () => {
-      console.log('Drawing aborted');
-      setDrawingState(prev => ({ 
-        ...prev, 
-        currentLine: null 
+      
+      // Create new preview line feature
+      const lastPointCoord = transform([lastPoint.lon, lastPoint.lat], 'EPSG:4326', mapProjectionRef.current.getCode());
+      const previewCoord = transform([previewPoint.lon, previewPoint.lat], 'EPSG:4326', mapProjectionRef.current.getCode());
+      
+      const previewFeature = new Feature({
+        geometry: new LineString([lastPointCoord, previewCoord]),
+        type: 'preview'
+      });
+      
+      previewFeature.setStyle(new Style({
+        stroke: new Stroke({
+          color: 'orange',
+          width: 2,
+          lineDash: [10, 5]
+        })
       }));
+      
+      const source = drawingLayerRef.current.getSource();
+      if (source) {
+        source.addFeature(previewFeature);
+        previewFeatureRef.current = previewFeature;
+      }
+      
+      return {
+        ...prev,
+        previewLine
+      };
     });
-
-    drawInteractionRef.current = draw;
-    map.addInteraction(draw);
-    
-    console.log('Added draw interaction to map');
-    return draw;
   }, []);
 
-  const stopDrawing = useCallback((map: any) => {
-    if (drawInteractionRef.current) {
-      map.removeInteraction(drawInteractionRef.current);
-      drawInteractionRef.current = null;
+  const clearCurrentPoints = useCallback(() => {
+    // Clear preview line
+    if (previewFeatureRef.current && drawingLayerRef.current) {
+      const source = drawingLayerRef.current.getSource();
+      if (source) {
+        source.removeFeature(previewFeatureRef.current);
+      }
+      previewFeatureRef.current = null;
     }
-    setDrawingState({ isDrawing: false, currentLine: null });
-  }, []);
-
-  const clearCurrentLine = useCallback(() => {
-    setDrawingState(prev => ({ ...prev, currentLine: null }));
+    
+    setDrawingState(prev => ({
+      ...prev,
+      currentPoints: [],
+      previewLine: null
+    }));
   }, []);
 
   return {
     drawingState,
     startDrawing,
     stopDrawing,
-    clearCurrentLine
+    addPoint,
+    updatePreviewLine,
+    clearCurrentPoints
   };
 };
