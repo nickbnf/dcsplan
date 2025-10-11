@@ -6,11 +6,16 @@ import { transform } from 'ol/proj';
 import { createTransverseMercatorProjection, transformBoundsToTransverseMercator, calculateTransverseMercatorCenter } from '../utils/projectionUtils';
 import { createGridLayer } from '../utils/latLonGrid';
 import { createTileLayer, type TileInfo } from '../utils/tileLayer';
+import type { FlightPlan } from '../types/flightPlan';
+import { flightPlanUtils } from '../utils/flightPlanUtils';
+import { createFlightPlanLayer } from '../utils/flightPlanLayer';
+import { useDrawing } from '../hooks/useDrawing';
+import VectorLayer from 'ol/layer/Vector';
+import VectorSource from 'ol/source/Vector';
 
 interface MapComponentProps {
   onCoordinateChange?: (coord: { raw_x: number; raw_y: number; lat: number; lon: number } | null) => void;
 }
-
 
 const MapComponent: React.FC<MapComponentProps> = ({ onCoordinateChange }) => {
   const mapRef = useRef<HTMLDivElement>(null);
@@ -19,7 +24,8 @@ const MapComponent: React.FC<MapComponentProps> = ({ onCoordinateChange }) => {
   const [error, setError] = useState<string | null>(null);
   const [tileInfo, setTileInfo] = useState<TileInfo | null>(null);
 
-
+  const [flightPlan, setFlightPlan] = useState<FlightPlan>(flightPlanUtils.newFlightPlan());
+  const { drawingState, startDrawing, stopDrawing, clearCurrentLine } = useDrawing();
 
   // Safe function to fetch and parse tile info JSON
   const fetchTileInfo = async (): Promise<TileInfo | null> => {
@@ -111,12 +117,21 @@ const MapComponent: React.FC<MapComponentProps> = ({ onCoordinateChange }) => {
     // Create tile layer and grid layer
     const tileLayer = createTileLayer(tileInfo, regionBounds, transverseMercatorProjection);
     const gridLayer = createGridLayer(regionBounds, transverseMercatorProjection);
+    const flightPlanLayer = createFlightPlanLayer(flightPlan, transverseMercatorProjection);
+    
+    // Create drawing layer
+    const drawingLayer = new VectorLayer({
+      source: new VectorSource()
+    });
+    drawingLayer.set('name', 'drawing');
 
     mapInstanceRef.current = new Map({
       target: mapRef.current,
       layers: [
         tileLayer,
-        gridLayer
+        gridLayer,
+        flightPlanLayer,
+        drawingLayer
       ],
       view: new View({
         projection: transverseMercatorProjection,
@@ -129,6 +144,8 @@ const MapComponent: React.FC<MapComponentProps> = ({ onCoordinateChange }) => {
         multiWorld: false
       })
     });
+
+    console.log("Flight plan:", flightPlan);
 
     // Add mouse pointer tracking
     if (onCoordinateChange && mapInstanceRef.current) {
@@ -150,11 +167,71 @@ const MapComponent: React.FC<MapComponentProps> = ({ onCoordinateChange }) => {
 
     return () => {
       if (mapInstanceRef.current) {
+        // Remove click handler if it exists
+        const clickHandler = (mapInstanceRef.current as any).__clickHandler;
+        if (clickHandler) {
+          mapInstanceRef.current.un('click', clickHandler);
+        }
         mapInstanceRef.current.setTarget(undefined);
         mapInstanceRef.current = null;
       }
     };
   }, [tileInfo, isLoading]); // This effect runs when tileInfo or isLoading changes
+
+  // Handle drawing state changes
+  useEffect(() => {
+    if (!mapInstanceRef.current) return;
+
+    console.log('Drawing state changed:', drawingState.isDrawing);
+    
+    if (drawingState.isDrawing) {
+      console.log('Starting drawing mode');
+      startDrawing(mapInstanceRef.current);
+    } else {
+      console.log('Stopping drawing mode');
+      stopDrawing(mapInstanceRef.current);
+    }
+  }, [drawingState.isDrawing, startDrawing, stopDrawing]);
+
+  // Update click handler when drawing state changes
+  useEffect(() => {
+    if (!mapInstanceRef.current) return;
+
+    // Remove existing click handler
+    const existingHandler = (mapInstanceRef.current as any).__clickHandler;
+    if (existingHandler) {
+      mapInstanceRef.current.un('click', existingHandler);
+    }
+
+    // Add new click handler
+    const clickHandler = (event: any) => {
+      // Only add turn points when not in drawing mode
+      if (!drawingState.isDrawing) {
+        const coordinate = event.coordinate;
+        if (coordinate) {
+          setFlightPlan((flightPlan) => flightPlanUtils.addTurnPoint(flightPlan, coordinate[1], coordinate[0]));
+        }
+      }
+    };
+    
+    mapInstanceRef.current.on('click', clickHandler);
+    (mapInstanceRef.current as any).__clickHandler = clickHandler;
+  }, [drawingState.isDrawing]);
+
+  // Handle completed line drawing
+  useEffect(() => {
+    if (drawingState.currentLine && drawingState.currentLine.length === 2) {
+      console.log('Line completed, adding to flight plan');
+      const [start, end] = drawingState.currentLine;
+      setFlightPlan(prevPlan => flightPlanUtils.addLine(prevPlan, start, end));
+      clearCurrentLine();
+      
+      // Stop drawing mode after completing a line
+      if (mapInstanceRef.current) {
+        // stopDrawing(mapInstanceRef.current);
+      }
+    }
+  }, [drawingState.currentLine, clearCurrentLine, stopDrawing]);
 
   // Show loading state
   if (isLoading) {
@@ -187,7 +264,48 @@ const MapComponent: React.FC<MapComponentProps> = ({ onCoordinateChange }) => {
     );
   }
 
-  return <div ref={mapRef} className="w-full h-full" />;
+  return (
+    <div className="w-full h-full relative">
+      <div ref={mapRef} className="w-full h-full" />
+      
+      {/* Drawing Controls */}
+      <div className="absolute top-4 right-4 bg-white rounded-lg shadow-lg p-4">
+        <div className="flex flex-col gap-2">
+          <button
+            onClick={() => {
+              console.log('Button clicked, current drawing state:', drawingState.isDrawing);
+              if (drawingState.isDrawing) {
+                console.log('Stopping drawing via button');
+                stopDrawing(mapInstanceRef.current!);
+              } else {
+                console.log('Starting drawing via button');
+                startDrawing(mapInstanceRef.current!);
+              }
+            }}
+            className={`px-4 py-2 rounded font-medium transition-colors ${
+              drawingState.isDrawing
+                ? 'bg-red-500 text-white hover:bg-red-600'
+                : 'bg-blue-500 text-white hover:bg-blue-600'
+            }`}
+          >
+            {drawingState.isDrawing ? 'Stop Drawing' : 'Draw Line'}
+          </button>
+          
+          {drawingState.isDrawing && (
+            <p className="text-sm text-gray-600 text-center">
+              Click two points to draw a line
+            </p>
+          )}
+          
+          <div className="text-xs text-gray-500">
+            <p>Turn Points: {flightPlan.points.length}</p>
+            <p>Lines: {flightPlan.lines.length}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 };
 
 export default MapComponent;
+
