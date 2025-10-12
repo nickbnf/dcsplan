@@ -201,9 +201,9 @@ const MapComponent: React.FC<MapComponentProps> = ({ onCoordinateChange }) => {
     (mapInstanceRef.current as any).__clickHandler = clickHandler;
   }, [drawingState.isDrawing, addPoint]);
 
-  // Add mouse move handler for preview line
+  // Set up mouse move handler for coordinate display
   useEffect(() => {
-    if (!mapInstanceRef.current) return;
+    if (!mapInstanceRef.current || !onCoordinateChange) return;
 
     // Remove existing mouse move handler
     const existingMoveHandler = (mapInstanceRef.current as any).__moveHandler;
@@ -211,21 +211,19 @@ const MapComponent: React.FC<MapComponentProps> = ({ onCoordinateChange }) => {
       mapInstanceRef.current.un('pointermove', existingMoveHandler);
     }
 
-    // Add new mouse move handler for preview line
+    // Add new mouse move handler
     const moveHandler = (event: any) => {
       const coordinate = event.coordinate;
       if (!coordinate) return;
 
       // Update coordinate display
-      if (onCoordinateChange) {
-        const geographicCoordinate = transform(coordinate, mapInstanceRef.current!.getView().getProjection().getCode(), 'EPSG:4326');
-        onCoordinateChange({
-          raw_x: coordinate[0],
-          raw_y: coordinate[1],
-          lon: geographicCoordinate[0],
-          lat: geographicCoordinate[1]
-        });
-      }
+      const geographicCoordinate = transform(coordinate, mapInstanceRef.current!.getView().getProjection().getCode(), 'EPSG:4326');
+      onCoordinateChange({
+        raw_x: coordinate[0],
+        raw_y: coordinate[1],
+        lon: geographicCoordinate[0],
+        lat: geographicCoordinate[1]
+      });
 
       // Update preview line if in drawing mode
       if (drawingState.isDrawing) {
@@ -235,7 +233,7 @@ const MapComponent: React.FC<MapComponentProps> = ({ onCoordinateChange }) => {
     
     mapInstanceRef.current.on('pointermove', moveHandler);
     (mapInstanceRef.current as any).__moveHandler = moveHandler;
-  }, [drawingState.isDrawing, updatePreviewLine, onCoordinateChange]);
+  }, [onCoordinateChange, drawingState.isDrawing, updatePreviewLine, tileInfo]);
 
   // Handle adding points to flight plan in real-time during drawing
   useEffect(() => {
