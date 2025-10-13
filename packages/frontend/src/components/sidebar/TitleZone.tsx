@@ -10,22 +10,21 @@ export const TitleZone: React.FC<TitleZoneProps> = ({
   mapName, 
   mouseCoordinates 
 }) => {
+  const lat_deg = Math.trunc(mouseCoordinates?.lat ?? 0);
+  const lat_minutes = ((mouseCoordinates?.lat ?? 0) - lat_deg) * 60;
+  const lon_deg = Math.trunc(mouseCoordinates?.lon ?? 0);
+  const lon_minutes = ((mouseCoordinates?.lon ?? 0) - lon_deg) * 60;
+
   return (
     <div className="p-4 bg-gray-50">
-      {/* Map Name */}
-      <h1 className="text-lg font-semibold text-gray-900 mb-2">
-        {mapName}
+      <h1 className="text-lg font-aero-label text-gray-900 mb-2">
+        DCS Tactical Planner
       </h1>
       
-      {/* Basic Data */}
+      {/* Map Name */}
       <div className="space-y-1 text-sm text-gray-600">
         <div className="flex justify-between">
-          <span>Scale:</span>
-          <span>1:50,000</span>
-        </div>
-        <div className="flex justify-between">
-          <span>Projection:</span>
-          <span>UTM</span>
+          {mapName}
         </div>
       </div>
       
@@ -34,23 +33,23 @@ export const TitleZone: React.FC<TitleZoneProps> = ({
         <>
           <Separator.Root className="my-3 bg-gray-300 h-px" />
           <div className="text-sm text-gray-600">
-            <div className="font-medium text-gray-700 mb-1">Mouse Position</div>
+            <div className="font-aero-label text-gray-700 mb-1">Mouse Position</div>
             <div className="space-y-1">
               <div className="flex justify-between">
-                <span>X:</span>
-                <span className="font-mono">{mouseCoordinates.x.toFixed(0)}</span>
+                <span className="font-aero-label">X:</span>
+                <span className="font-aero-mono">{mouseCoordinates.x.toFixed(0)}</span>
               </div>
               <div className="flex justify-between">
-                <span>Y:</span>
-                <span className="font-mono">{mouseCoordinates.y.toFixed(0)}</span>
+                <span className="font-aero-label">Y:</span>
+                <span className="font-aero-mono">{mouseCoordinates.y.toFixed(0)}</span>
               </div>
               <div className="flex justify-between">
-                <span>Lat:</span>
-                <span className="font-mono">{mouseCoordinates.lat.toFixed(6)}</span>
+                <span className="font-aero-label">Lat:</span>
+                <span className="font-aero-mono">{lat_deg}°{lat_minutes.toFixed(2)}'"</span>
               </div>
               <div className="flex justify-between">
-                <span>Lon:</span>
-                <span className="font-mono">{mouseCoordinates.lon.toFixed(6)}</span>
+                <span className="font-aero-label">Lon:</span>
+                <span className="font-aero-mono">{lon_deg}°{lon_minutes.toFixed(2)}'"</span>
               </div>
             </div>
           </div>
@@ -59,8 +58,8 @@ export const TitleZone: React.FC<TitleZoneProps> = ({
         <>
           <Separator.Root className="my-3 bg-gray-300 h-px" />
           <div className="text-sm text-gray-600">
-            <div className="font-medium text-gray-700 mb-1">Mouse Position</div>
-            <div className="text-gray-500">Move mouse over map</div>
+            <div className="font-aero-label text-gray-700 mb-1">Mouse Position</div>
+            <div className="text-gray-500 font-aero-label">Move mouse over map</div>
           </div>
         </>
       )}

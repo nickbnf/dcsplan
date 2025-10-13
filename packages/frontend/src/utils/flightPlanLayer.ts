@@ -20,17 +20,21 @@ export const createFlightPlanLayer = (flightPlan: FlightPlan, projection: any) =
         source.addFeature(feature);
     });
 
-    // Add line features for flight plan lines
-    flightPlan.lines.forEach((line) => {
-        const startCoord = transform([line.start.lon, line.start.lat], 'EPSG:4326', projection.getCode());
-        const endCoord = transform([line.end.lon, line.end.lat], 'EPSG:4326', projection.getCode());
-        
-        const feature = new Feature({
-            geometry: new LineString([startCoord, endCoord]),
-            type: 'flightline'
-        });
-        source.addFeature(feature);
-    });
+    // Add line features for every pair of points in the flight plan
+    if (Array.isArray(flightPlan.points) && flightPlan.points.length > 1) {
+        for (let i = 0; i < flightPlan.points.length - 1; i++) {
+            const start = flightPlan.points[i];
+            const end = flightPlan.points[i + 1];
+            const startCoord = transform([start.lon, start.lat], 'EPSG:4326', projection.getCode());
+            const endCoord = transform([end.lon, end.lat], 'EPSG:4326', projection.getCode());
+
+            const feature = new Feature({
+                geometry: new LineString([startCoord, endCoord]),
+                type: 'flightline'
+            });
+            source.addFeature(feature);
+        }
+    }
 
     return new VectorLayer({
         source,
@@ -38,19 +42,27 @@ export const createFlightPlanLayer = (flightPlan: FlightPlan, projection: any) =
             const featureType = feature.get('type');
             
             if (featureType === 'turnpoint') {
-                return new Style({
-                    image: new Circle({
-                        radius: 6,
-                        fill: new Fill({ color: 'red' }),
-                        stroke: new Stroke({ color: 'white', width: 2 })
+                return [
+                    // Outer circle
+                    new Style({
+                        image: new Circle({
+                            radius: 12,
+                            stroke: new Stroke({ color: '#0066CC', width: 2 })
+                        })
+                    }),
+                    // Center dot
+                    new Style({
+                        image: new Circle({
+                            radius: 1,
+                            fill: new Fill({ color: '#0066CC' })
+                        })
                     })
-                });
+                ];
             } else if (featureType === 'flightline') {
                 return new Style({
                     stroke: new Stroke({
-                        color: 'blue',
-                        width: 3,
-                        lineDash: [5, 5]
+                        color: '#0066CC',
+                        width: 2
                     })
                 });
             }

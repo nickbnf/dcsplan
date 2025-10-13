@@ -30,7 +30,7 @@ export interface TileInfo {
  */
 export const createTileGrid = (
   tileInfo: TileInfo,
-  bounds: { minLon: number; minLat: number; maxLon: number; maxLat: number },
+  _bounds: { minLon: number; minLat: number; maxLon: number; maxLat: number },
   projection: any
 ) => {
   const tileSize = tileInfo?.tileSize ?? 256;
