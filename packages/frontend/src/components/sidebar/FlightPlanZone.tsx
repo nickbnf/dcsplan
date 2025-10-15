@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import * as Separator from '@radix-ui/react-separator';
 import type { FlightPlan } from '../../types/flightPlan';
 import { flightPlanUtils } from '../../utils/flightPlanUtils';
@@ -87,6 +87,7 @@ const EditableField: React.FC<EditableFieldProps> = ({
 };
 
 const RouteCard: React.FC<{ flightPlan: FlightPlan, index: number }> = ({ flightPlan, index }) => {
+  console.log("RouteCard", flightPlan, index);
   const legData = flightPlanUtils.calculateLegData(flightPlan, index);
   return (
     <div className="ml-4 bg-gray-100 border border-gray-200 rounded p-3">
@@ -95,7 +96,7 @@ const RouteCard: React.FC<{ flightPlan: FlightPlan, index: number }> = ({ flight
         <div className="flex justify-between items-center">
           <div className="flex items-center space-x-1">
             <span className="font-aero-label text-gray-600 text-xs">CRS:</span>
-            <span className="font-aero-mono text-gray-900 text-xs">{legData.course}°</span>
+            <span className="font-aero-mono text-gray-900 text-xs">{legData.course.toFixed(0)}°</span>
           </div>
           <div className="flex items-center space-x-1">
             <span className="font-aero-label text-gray-600 text-xs">DIST:</span>
@@ -148,12 +149,11 @@ const RouteCard: React.FC<{ flightPlan: FlightPlan, index: number }> = ({ flight
 }
 
 // Minimalistic Card-Based Design with Inline Editable Fields
-export const FlightPlanZone: React.FC<FlightPlanZoneProps> = ({
-  flightPlan
-}) => {
+export const FlightPlanZone: React.FC<FlightPlanZoneProps> = ({ flightPlan }) => {
   const [planName, setPlanName] = useState("Flight Plan Alpha");
 
-  return (
+  const fligthPlanZoneContent = useMemo(() => {
+    return (
     <div className="flex-1 p-4 bg-gray-50 overflow-y-auto">
       <h3 className="text-sm font-aero-label text-gray-700 uppercase mb-3">Flight Plan</h3>
       
@@ -204,4 +204,7 @@ export const FlightPlanZone: React.FC<FlightPlanZoneProps> = ({
       </div>
     </div>
   );
+}, [flightPlan, planName]);
+
+return fligthPlanZoneContent
 };

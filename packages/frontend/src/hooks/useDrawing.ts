@@ -2,26 +2,30 @@ import { useRef, useCallback, useState } from 'react';
 import { transform } from 'ol/proj';
 import { LineString, Point } from 'ol/geom';
 import { Feature } from 'ol';
-import { Stroke, Style } from 'ol/style';
+import { Circle, Fill, Stroke, Style } from 'ol/style';
 
+export type DrawingStateType = 'NO_DRAWING' | 'NEW_POINT' | 'DRAG_POINT';
 
 export interface DrawingState {
-  isDrawing: boolean;
+  isDrawing: DrawingStateType;
   currentPoint: Point | null;
   previewLine: Point[] | null;
   lastConfirmedPoint: Point | null;
+  draggedWaypointIndex: number | null;
 }
 
 export const useDrawing = () => {
   const previewFeatureRef = useRef<Feature<LineString> | null>(null);
+  const previewWptFeatureRef = useRef<Feature<Point> | null>(null);
   const drawingLayerRef = useRef<any>(null);
   const mapProjectionRef = useRef<any>(null);
   
   const [drawingState, setDrawingState] = useState<DrawingState>({
-    isDrawing: false,
+    isDrawing: 'NO_DRAWING',
     currentPoint: null,
     previewLine: null,
-    lastConfirmedPoint: null
+    lastConfirmedPoint: null,
+    draggedWaypointIndex: null
   });
 
   const startDrawing = useCallback((map: any, existingFlightPlan?: any) => {
@@ -44,10 +48,11 @@ export const useDrawing = () => {
       : null;
     
     setDrawingState({
-      isDrawing: true,
+      isDrawing: 'NEW_POINT',
       currentPoint: initialPoint,
       previewLine: null,
-      lastConfirmedPoint: initialPoint
+      lastConfirmedPoint: initialPoint,
+      draggedWaypointIndex: null
     });
   }, []);
 
@@ -62,12 +67,31 @@ export const useDrawing = () => {
     }
     
     setDrawingState(prev => ({
-      isDrawing: false,
+      isDrawing: 'NO_DRAWING',
       currentPoint: prev.currentPoint, // Keep the points for conversion
       previewLine: null,
-      lastConfirmedPoint: prev.lastConfirmedPoint
+      lastConfirmedPoint: prev.lastConfirmedPoint,
+      draggedWaypointIndex: null
     }));
     
+  }, []);
+
+  const startDragging = useCallback((waypointIndex: number) => {
+    console.log('startDragging', waypointIndex);
+    setDrawingState(prev => ({
+      ...prev,
+      isDrawing: 'DRAG_POINT',
+      draggedWaypointIndex: waypointIndex
+    }));
+  }, []);
+
+  const stopDragging = useCallback(() => {
+    console.log('stopDragging');
+    setDrawingState(prev => ({
+      ...prev,
+      isDrawing: 'NO_DRAWING',
+      draggedWaypointIndex: null
+    }));
   }, []);
 
   const addPoint = useCallback((coordinate: [number, number]) => {
@@ -85,82 +109,100 @@ export const useDrawing = () => {
   }, []);
 
   const updatePreviewLine = useCallback((coordinate: [number, number]) => {
+    console.log('updatePreviewLine', coordinate, drawingState);
     if (!mapProjectionRef.current || !drawingLayerRef.current) {
       return;
     }
-    
-    setDrawingState(prev => {
-      // Use lastConfirmedPoint if available, otherwise use currentPoint
-      const lastPoint = prev.lastConfirmedPoint || prev.currentPoint;
-      
-      if (lastPoint === null) {
-        return prev; // No preview if no points yet
-      }
-      
-      // Update preview line on map
-      if (previewFeatureRef.current) {
-        const source = drawingLayerRef.current.getSource();
-        if (source) {
-          source.removeFeature(previewFeatureRef.current);
-        }
-      }
-      
-      // Create new preview line feature
-      // Transform the last confirmed point from EPSG:4326 to map projection
-      const lastPointCoord = transform(lastPoint.getCoordinates(), 'EPSG:4326', mapProjectionRef.current.getCode());
-      // Use the mouse coordinate directly (it's already in map projection)
-      const previewCoord = coordinate;
-      
-      const previewFeature = new Feature({
-        geometry: new LineString([lastPointCoord, previewCoord]),
-        type: 'preview'
-      });
-      
-      previewFeature.setStyle(new Style({
-        stroke: new Stroke({
-          color: 'orange',
-          width: 2,
-          lineDash: [10, 5]
-        })
-      }));
-      
+
+    // Update preview line on map
+    if (previewFeatureRef.current) {
       const source = drawingLayerRef.current.getSource();
       if (source) {
-        source.addFeature(previewFeature);
-        previewFeatureRef.current = previewFeature;
+        source.removeFeature(previewFeatureRef.current);
       }
+    }
+
+    if (previewWptFeatureRef.current) {
+      const source = drawingLayerRef.current.getSource();
+      if (source) {
+        source.removeFeature(previewWptFeatureRef.current);
+      }
+    }
+
+    // Use lastConfirmedPoint if available, otherwise use currentPoint
+    const lastPoint = drawingState.lastConfirmedPoint || drawingState.currentPoint;
+    
+    if (lastPoint === null) {
+      return drawingState; // No preview if no points yet
+    }
       
+    // Create new preview line feature
+    // Transform the last confirmed point from EPSG:4326 to map projection
+    const lastPointCoord = transform(lastPoint.getCoordinates() || [0, 0], 'EPSG:4326', mapProjectionRef.current.getCode());
+    // Use the mouse coordinate directly (it's already in map projection)
+    const previewCoord = coordinate;
+
+    const previewFeature = new Feature({
+      geometry: new LineString([lastPointCoord, previewCoord]),
+      type: 'preview'
+    });
+
+    previewFeature.setStyle(new Style({
+      stroke: new Stroke({
+        color: 'orange',
+        width: 2,
+        lineDash: [10, 5]
+      })
+    }));
+
+    const previewWptFeature = new Feature({
+      geometry: new Point(previewCoord),
+      type: 'preview'
+    });
+    previewWptFeature.setStyle([
+      // Outer circle
+      new Style({
+        image: new Circle({
+          radius: 12,
+          stroke: new Stroke({ color: '#0066CC', width: 2 })
+        })
+      }),
+      // Center dot
+      new Style({
+        image: new Circle({
+          radius: 1,
+          fill: new Fill({ color: '#0066CC' })
+        })
+      })
+    ]);
+
+    const source = drawingLayerRef.current.getSource();
+    console.log('source', source, drawingState.isDrawing);
+    if (source) {
+      console.log('addFeature', drawingState.isDrawing);
+      if (drawingState.isDrawing === 'NEW_POINT') {
+        source.addFeature(previewFeature)
+        previewFeatureRef.current = previewFeature
+      }
+      source.addFeature(previewWptFeature)
+      previewWptFeatureRef.current = previewWptFeature
+    }
+
+    setDrawingState(prev => {
       return {
         ...prev,
         previewLine: [lastPoint, new Point(transform(coordinate, mapProjectionRef.current.getCode(), 'EPSG:4326'))]
       };
     });
-  }, []);
-
-  const clearCurrentPoints = useCallback(() => {
-    // Clear preview line
-    if (previewFeatureRef.current && drawingLayerRef.current) {
-      const source = drawingLayerRef.current.getSource();
-      if (source) {
-        source.removeFeature(previewFeatureRef.current);
-      }
-      previewFeatureRef.current = null;
-    }
-    
-    setDrawingState(prev => ({
-      ...prev,
-      currentPoint: null,
-      previewLine: null,
-      lastConfirmedPoint: null
-    }));
-  }, []);
+  }, [drawingState]);
 
   return {
     drawingState,
     startDrawing,
     stopDrawing,
+    startDragging,
+    stopDragging,
     addPoint,
     updatePreviewLine,
-    clearCurrentPoints
   };
 };

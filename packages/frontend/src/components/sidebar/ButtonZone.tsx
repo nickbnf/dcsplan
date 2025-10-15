@@ -32,7 +32,7 @@ export const ButtonZone: React.FC<ButtonZoneProps> = ({
       return;
     }
 
-    if (drawingState.isDrawing) {
+    if (drawingState.isDrawing === 'NEW_POINT') {
       onStopDrawing(mapInstance);
     } else {
       onStartDrawing(mapInstance, flightPlan);
@@ -119,7 +119,7 @@ export const ButtonZone: React.FC<ButtonZoneProps> = ({
           <button 
             onClick={handleAddWPTsClick}
             className={`px-3 py-2 text-xs font-medium rounded border transition-colors ${
-              drawingState.isDrawing
+              drawingState.isDrawing === 'NEW_POINT'
                 ? 'border-red-300 bg-red-50 hover:bg-red-100 text-red-700'
                 : 'border-gray-300 bg-white hover:bg-gray-50 text-gray-700'
             }`}

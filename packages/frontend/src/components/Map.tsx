@@ -3,6 +3,11 @@ import 'ol/ol.css';
 import Map from 'ol/Map';
 import View from 'ol/View';
 import { transform } from 'ol/proj';
+import Modify from 'ol/interaction/Modify';
+import Snap from 'ol/interaction/Snap';
+import { Point, LineString } from 'ol/geom';
+import Feature from 'ol/Feature';
+import Collection from 'ol/Collection';
 import { createTransverseMercatorProjection, transformBoundsToTransverseMercator, calculateTransverseMercatorCenter } from '../utils/projectionUtils';
 import { createGridLayer } from '../utils/latLonGrid';
 import { createTileLayer, type TileInfo } from '../utils/tileLayer';
@@ -18,9 +23,10 @@ interface MapComponentProps {
   flightPlan: FlightPlan;
   onFlightPlanUpdate: (flightPlan: FlightPlan) => void;
   drawingState: DrawingState;
+  onStartDragging: (waypointIndex: number) => void;
+  onStopDragging: () => void;
   addPoint: (coordinate: [number, number]) => void;
   updatePreviewLine: (coordinate: [number, number]) => void;
-  clearCurrentPoints: () => void;
 }
 
 const MapComponent: React.FC<MapComponentProps> = ({ 
@@ -28,12 +34,18 @@ const MapComponent: React.FC<MapComponentProps> = ({
   flightPlan, 
   onFlightPlanUpdate, 
   drawingState, 
+  onStartDragging,
+  onStopDragging,
   addPoint, 
   updatePreviewLine, 
-  clearCurrentPoints 
 }) => {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<Map | null>(null);
+  const modifyInteractionRef = useRef<Modify | null>(null);
+  const snapInteractionRef = useRef<Snap | null>(null);
+  const isUpdatingFromModifyRef = useRef<boolean>(false);
+  const previousFlightPlanRef = useRef<FlightPlan | null>(null);
+  const [draggedWaypointIndex, setDraggedWaypointIndex] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tileInfo, setTileInfo] = useState<TileInfo | null>(null);
@@ -176,6 +188,13 @@ const MapComponent: React.FC<MapComponentProps> = ({
         if (moveHandler) {
           mapInstanceRef.current.un('pointermove', moveHandler);
         }
+        // Remove interactions if they exist
+        if (modifyInteractionRef.current) {
+          mapInstanceRef.current.removeInteraction(modifyInteractionRef.current);
+        }
+        if (snapInteractionRef.current) {
+          mapInstanceRef.current.removeInteraction(snapInteractionRef.current);
+        }
         mapInstanceRef.current.setTarget(undefined);
         mapInstanceRef.current = null;
       }
@@ -197,7 +216,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
       const coordinate = event.coordinate;
       if (!coordinate) return;
 
-      if (drawingState.isDrawing) {
+      if (drawingState.isDrawing === 'NEW_POINT') {
         // In drawing mode, add points to the current drawing
         console.log('Adding point to current drawing', coordinate);
         addPoint(coordinate);
@@ -206,7 +225,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
     
     mapInstanceRef.current.on('click', clickHandler);
     (mapInstanceRef.current as any).__clickHandler = clickHandler;
-  }, [drawingState.isDrawing, addPoint, flightPlan, onFlightPlanUpdate]);
+  }, [drawingState.isDrawing === 'NEW_POINT', addPoint, flightPlan, onFlightPlanUpdate]);
 
   // Set up mouse move handler for coordinate display
   useEffect(() => {
@@ -233,7 +252,8 @@ const MapComponent: React.FC<MapComponentProps> = ({
       });
 
       // Update preview line if in drawing mode
-      if (drawingState.isDrawing) {
+      if (drawingState.isDrawing !== 'NO_DRAWING') {
+        console.log('Updating preview line');
         updatePreviewLine(coordinate);
       }
     };
@@ -242,11 +262,31 @@ const MapComponent: React.FC<MapComponentProps> = ({
     (mapInstanceRef.current as any).__moveHandler = moveHandler;
   }, [onCoordinateChange, drawingState.isDrawing, updatePreviewLine, tileInfo]);
 
-  // Handle adding points to flight plan in real-time during drawing
+  // Manage Modify and Snap interactions based on drawing state
+  useEffect(() => {
+    if (!mapInstanceRef.current || !modifyInteractionRef.current || !snapInteractionRef.current) {
+      console.log('Interaction management: missing map or interactions');
+      return;
+    }
+
+    if (drawingState.isDrawing === 'NEW_POINT') {
+      // Remove interactions when drawing
+      console.log('Removing Modify/Snap interactions (drawing mode)');
+      mapInstanceRef.current.removeInteraction(modifyInteractionRef.current);
+      mapInstanceRef.current.removeInteraction(snapInteractionRef.current);
+    } else if (drawingState.isDrawing === 'NO_DRAWING') {
+      // Add interactions when not drawing
+      console.log('Adding Modify/Snap interactions (normal mode)');
+      mapInstanceRef.current.addInteraction(modifyInteractionRef.current);
+      mapInstanceRef.current.addInteraction(snapInteractionRef.current);
+    }
+  }, [drawingState.isDrawing]);
+
+  // Handle adding points to flight plan during drawing
   useEffect(() => {
     console.log('Drawing state changed:', drawingState);
     // Add points to flight plan as they're drawn (when currentPoints changes)
-    if (drawingState.isDrawing && drawingState.currentPoint) {
+    if (drawingState.isDrawing === 'NEW_POINT' && drawingState.currentPoint) {
       const latestPoint = drawingState.currentPoint;
       
       console.log('Adding to flightplan, latest point:', latestPoint.getCoordinates());
@@ -271,17 +311,11 @@ const MapComponent: React.FC<MapComponentProps> = ({
         onFlightPlanUpdate(updatedPlan);
       }
     }
-    
-    // Clear current points when drawing stops
-    if (!drawingState.isDrawing && drawingState.currentPoint) {
-      setTimeout(() => {
-        clearCurrentPoints();
-      }, 100);
-    }
-  }, [drawingState.currentPoint, drawingState.isDrawing, clearCurrentPoints]);
+  }, [drawingState.currentPoint, drawingState.isDrawing]);
 
   // Update flight plan layer when flight plan changes
   useEffect(() => {
+    console.log('Flight plan changed:', flightPlan);
     if (!mapInstanceRef.current) return;
 
     // Find and remove the existing flight plan layer
@@ -295,12 +329,27 @@ const MapComponent: React.FC<MapComponentProps> = ({
     }
 
     // Create a new flight plan layer with current data
-    const newFlightPlanLayer = createFlightPlanLayer(flightPlan, mapInstanceRef.current.getView().getProjection());
+    const newFlightPlanLayer = createFlightPlanLayer(flightPlan, mapInstanceRef.current.getView().getProjection(), drawingState.draggedWaypointIndex ?? undefined);
     newFlightPlanLayer.set('name', 'flightplan');
     
     // Add the new layer to the map
     mapInstanceRef.current.addLayer(newFlightPlanLayer);
-  }, [flightPlan]);
+
+    // Install the right interactions
+    if (drawingState.isDrawing !== 'DRAG_POINT') {
+      installInteractions(newFlightPlanLayer,
+        drawingState,
+        mapInstanceRef,
+        onStartDragging,
+        onStopDragging,
+        onFlightPlanUpdate,
+        modifyInteractionRef,
+        snapInteractionRef,
+        setDraggedWaypointIndex,
+        isUpdatingFromModifyRef,
+        flightPlan);
+    }
+  }, [flightPlan, isLoading, drawingState.isDrawing === 'DRAG_POINT']);
 
   // Show loading state
   if (isLoading) {
@@ -340,5 +389,108 @@ const MapComponent: React.FC<MapComponentProps> = ({
   );
 };
 
-export default MapComponent;
+const installInteractions = (flightPlanLayer: VectorLayer<any>,
+  drawingState: DrawingState,
+  mapInstanceRef: React.RefObject<Map | null>,
+  onStartDragging: (waypointIndex: number) => void,
+  onStopDragging: () => void,
+  onFlightPlanUpdate: (flightPlan: FlightPlan) => void,
+  modifyInteractionRef: React.RefObject<Modify | null>,
+  snapInteractionRef: React.RefObject<Snap | null>,
+  setDraggedWaypointIndex: (waypointIndex: number | null) => void,
+  isUpdatingFromModifyRef: React.RefObject<boolean>,
+  flightPlan: FlightPlan) => {
+  const source = flightPlanLayer.getSource();
+  if (source) {
+    // Remove interactions if they exist
+    if (modifyInteractionRef.current) {
+      mapInstanceRef.current?.removeInteraction(modifyInteractionRef.current);
+    }
+    if (snapInteractionRef.current) {
+      mapInstanceRef.current?.removeInteraction(snapInteractionRef.current);
+    }
 
+    // Create Modify interaction for editing waypoints only
+    const waypointFeatures = source.getFeatures().filter((feature: any) =>
+      feature.get('type') === 'turnpoint'
+    );
+    console.log('Creating Modify interaction with', waypointFeatures.length, 'waypoint features');
+
+    const modifyInteraction = new Modify({
+      features: new Collection(waypointFeatures)
+    });
+
+    // Create Snap interaction for snapping to waypoints
+    const snapInteraction = new Snap({
+      source: source
+    });
+
+    // Store references
+    modifyInteractionRef.current = modifyInteraction;
+    snapInteractionRef.current = snapInteraction;
+
+    // Add interactions to map (only when not drawing)
+    if (drawingState.isDrawing === 'NO_DRAWING' && mapInstanceRef.current) {
+      mapInstanceRef.current.addInteraction(modifyInteraction);
+      mapInstanceRef.current.addInteraction(snapInteraction);
+    }
+
+    // Handle modify start event to hide lines around dragged waypoint
+    if (modifyInteractionRef.current) {
+      console.log('Setting up event handlers for Modify interaction');
+      // Remove existing event listeners to avoid duplicates
+      modifyInteractionRef.current.un('modifystart', () => { });
+      modifyInteractionRef.current.un('modifyend', () => { });
+
+      modifyInteractionRef.current.on('modifystart', (event: any) => {
+        console.log('Modify start event triggered', event);
+        const features = event.features.getArray();
+        features.forEach((feature: any) => {
+          if (feature.get('type') === 'turnpoint') {
+            const waypointIndex = feature.get('waypointIndex');
+            console.log('Starting to drag waypoint', waypointIndex);
+            console.log('Setting draggedWaypointIndex to:', waypointIndex);
+            setDraggedWaypointIndex(waypointIndex);
+            onStartDragging(waypointIndex);
+          }
+        });
+      });
+    }
+
+    // Handle modify events to update flight plan
+    if (modifyInteractionRef.current) {
+      modifyInteractionRef.current.on('modifyend', (event: any) => {
+        console.log('Modify end event triggered', event);
+        const features = event.features.getArray();
+        console.log('Modified features:', features.length);
+        features.forEach((feature: any) => {
+          if (feature.get('type') === 'turnpoint') {
+            const coordinates = feature.getGeometry().getCoordinates();
+            const [lon, lat] = transform(coordinates, mapInstanceRef.current!.getView().getProjection().getCode(), 'EPSG:4326');
+
+            // Get the waypoint index directly from the feature
+            const waypointIndex = feature.get('waypointIndex');
+            console.log('Moving waypoint', waypointIndex, 'to', lat, lon);
+
+            if (waypointIndex !== undefined && waypointIndex >= 0) {
+              onStopDragging();
+              isUpdatingFromModifyRef.current = true;
+              const updatedFlightPlan = flightPlanUtils.moveTurnPoint(flightPlan, waypointIndex, lat, lon);
+              console.log('Updating flight plan with', updatedFlightPlan.points.length, 'points');
+              onFlightPlanUpdate(updatedFlightPlan);
+              setTimeout(() => {
+                isUpdatingFromModifyRef.current = false;
+              }, 50);
+            }
+          }
+        });
+
+        // Clear the dragged waypoint index to restore all lines
+        console.log('Drag ended, restoring all flight lines');
+        setDraggedWaypointIndex(null);
+      });
+    }
+  }
+}
+
+export default MapComponent;
