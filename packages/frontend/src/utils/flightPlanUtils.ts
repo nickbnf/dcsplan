@@ -54,5 +54,17 @@ export const flightPlanUtils = {
         console.log("Distance:", lengthMeters);
 
         return {course: course, distance: lengthMeters / 1852}; // Convert to nautical miles
-    }
+    },
+    prevWptPosition: (flightPlan: FlightPlan, index: number): (null | [number, number]) => {
+        if (index === 0) {
+            return null;
+        }
+        return [flightPlan.points[index - 1].lon, flightPlan.points[index - 1].lat];
+    },
+    nextWptPosition: (flightPlan: FlightPlan, index: number): (null | [number, number]) => {
+        if (index === flightPlan.points.length - 1) {
+            return null;
+        }
+        return [flightPlan.points[index + 1].lon, flightPlan.points[index + 1].lat];
+    },
 }

@@ -7,6 +7,7 @@ import Feature from "ol/Feature";
 import { transform } from "ol/proj";
 
 // Create a vector layer from the flight plan
+// excludeWaypointIndex is the index of the waypoint to exclude (i.e. because it is being dragged)
 export const createFlightPlanLayer = (flightPlan: FlightPlan, projection: any, excludedWaypointIndex?: number) => {
     const source = new VectorSource();
     
@@ -14,13 +15,15 @@ export const createFlightPlanLayer = (flightPlan: FlightPlan, projection: any, e
 
     // Add point features for turn points
     flightPlan.points.forEach((point, index) => {
-        const [x, y] = transform([point.lon, point.lat], 'EPSG:4326', projection.getCode());
-        const feature = new Feature({
-            geometry: new Point([x, y]),
-            type: 'turnpoint',
-            waypointIndex: index
-        });
-        source.addFeature(feature);
+        if (excludedWaypointIndex === undefined || index !== excludedWaypointIndex) {
+            const [x, y] = transform([point.lon, point.lat], 'EPSG:4326', projection.getCode());
+            const feature = new Feature({
+                geometry: new Point([x, y]),
+                type: 'turnpoint',
+                waypointIndex: index
+            });
+            source.addFeature(feature);
+        }
     });
 
     // Add line features for every pair of points in the flight plan

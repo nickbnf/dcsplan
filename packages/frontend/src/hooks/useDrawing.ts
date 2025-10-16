@@ -12,28 +12,32 @@ export interface DrawingState {
   previewLine: Point[] | null;
   lastConfirmedPoint: Point | null;
   draggedWaypointIndex: number | null;
+  prevWpPos: [number, number] | null;
+  nextWpPos: [number, number] | null;
 }
 
 export const useDrawing = () => {
-  const previewFeatureRef = useRef<Feature<LineString> | null>(null);
+  const previewFeatureRef = useRef<Feature<LineString>[] | null>(null);
   const previewWptFeatureRef = useRef<Feature<Point> | null>(null);
   const drawingLayerRef = useRef<any>(null);
   const mapProjectionRef = useRef<any>(null);
-  
+
   const [drawingState, setDrawingState] = useState<DrawingState>({
     isDrawing: 'NO_DRAWING',
     currentPoint: null,
     previewLine: null,
     lastConfirmedPoint: null,
-    draggedWaypointIndex: null
+    draggedWaypointIndex: null,
+    prevWpPos: null,
+    nextWpPos: null,
   });
 
   const startDrawing = useCallback((map: any, existingFlightPlan?: any) => {
     // Find the drawing layer
-    const drawingLayer = map.getLayers().getArray().find((layer: any) => 
+    const drawingLayer = map.getLayers().getArray().find((layer: any) =>
       layer.get('name') === 'drawing'
     );
-    
+
     if (!drawingLayer) {
       console.error('Drawing layer not found');
       return;
@@ -52,7 +56,9 @@ export const useDrawing = () => {
       currentPoint: initialPoint,
       previewLine: null,
       lastConfirmedPoint: initialPoint,
-      draggedWaypointIndex: null
+      draggedWaypointIndex: null,
+      prevWpPos: null,
+      nextWpPos: null,
     });
   }, []);
 
@@ -61,7 +67,7 @@ export const useDrawing = () => {
     if (previewFeatureRef.current && drawingLayerRef.current) {
       const source = drawingLayerRef.current.getSource();
       if (source) {
-        source.removeFeature(previewFeatureRef.current);
+        source.removeFeatures(previewFeatureRef.current);
       }
       previewFeatureRef.current = null;
     }
@@ -71,22 +77,50 @@ export const useDrawing = () => {
       currentPoint: prev.currentPoint, // Keep the points for conversion
       previewLine: null,
       lastConfirmedPoint: prev.lastConfirmedPoint,
-      draggedWaypointIndex: null
+      draggedWaypointIndex: null,
+      prevWpPos: null,
+      nextWpPos: null,
     }));
     
   }, []);
 
-  const startDragging = useCallback((waypointIndex: number) => {
+  const startDragging = useCallback((map: any, waypointIndex: number, prevWpPos: [number, number] | null, nextWpPos: [number, number] | null) => {
     console.log('startDragging', waypointIndex);
+  
+    // Find the drawing layer
+    const drawingLayer = map.getLayers().getArray().find((layer: any) =>
+      layer.get('name') === 'drawing'
+    );
+
+    if (!drawingLayer) {
+      console.error('Drawing layer not found');
+      return;
+    }
+
+    drawingLayerRef.current = drawingLayer;
+    mapProjectionRef.current = map.getView().getProjection();
+
     setDrawingState(prev => ({
       ...prev,
       isDrawing: 'DRAG_POINT',
-      draggedWaypointIndex: waypointIndex
+      draggedWaypointIndex: waypointIndex,
+      prevWpPos: prevWpPos,
+      nextWpPos: nextWpPos
     }));
   }, []);
 
   const stopDragging = useCallback(() => {
     console.log('stopDragging');
+
+    // Clear preview line
+    if (previewFeatureRef.current && drawingLayerRef.current) {
+      const source = drawingLayerRef.current.getSource();
+      if (source) {
+        source.removeFeatures(previewFeatureRef.current);
+      }
+      previewFeatureRef.current = null;
+    }
+
     setDrawingState(prev => ({
       ...prev,
       isDrawing: 'NO_DRAWING',
@@ -105,12 +139,12 @@ export const useDrawing = () => {
       currentPoint: newPoint,
       lastConfirmedPoint: newPoint // Update the last confirmed point when a new point is added
     }));
-    
   }, []);
 
   const updatePreviewLine = useCallback((coordinate: [number, number]) => {
     console.log('updatePreviewLine', coordinate, drawingState);
     if (!mapProjectionRef.current || !drawingLayerRef.current) {
+      console.log('updatePreviewLine: no map or drawing layer');
       return;
     }
 
@@ -118,7 +152,7 @@ export const useDrawing = () => {
     if (previewFeatureRef.current) {
       const source = drawingLayerRef.current.getSource();
       if (source) {
-        source.removeFeature(previewFeatureRef.current);
+        source.removeFeatures(previewFeatureRef.current);
       }
     }
 
@@ -129,31 +163,7 @@ export const useDrawing = () => {
       }
     }
 
-    // Use lastConfirmedPoint if available, otherwise use currentPoint
-    const lastPoint = drawingState.lastConfirmedPoint || drawingState.currentPoint;
-    
-    if (lastPoint === null) {
-      return drawingState; // No preview if no points yet
-    }
-      
-    // Create new preview line feature
-    // Transform the last confirmed point from EPSG:4326 to map projection
-    const lastPointCoord = transform(lastPoint.getCoordinates() || [0, 0], 'EPSG:4326', mapProjectionRef.current.getCode());
-    // Use the mouse coordinate directly (it's already in map projection)
     const previewCoord = coordinate;
-
-    const previewFeature = new Feature({
-      geometry: new LineString([lastPointCoord, previewCoord]),
-      type: 'preview'
-    });
-
-    previewFeature.setStyle(new Style({
-      stroke: new Stroke({
-        color: 'orange',
-        width: 2,
-        lineDash: [10, 5]
-      })
-    }));
 
     const previewWptFeature = new Feature({
       geometry: new Point(previewCoord),
@@ -181,19 +191,86 @@ export const useDrawing = () => {
     if (source) {
       console.log('addFeature', drawingState.isDrawing);
       if (drawingState.isDrawing === 'NEW_POINT') {
-        source.addFeature(previewFeature)
-        previewFeatureRef.current = previewFeature
+        // Use lastConfirmedPoint if available, otherwise use currentPoint
+        const lastPoint = drawingState.lastConfirmedPoint || drawingState.currentPoint;
+
+        if (lastPoint !== null) {
+          const lastPointCoord = transform(lastPoint.getCoordinates() || [0, 0], 'EPSG:4326', mapProjectionRef.current.getCode());
+          const previewFeature = new Feature({
+            geometry: new LineString([lastPointCoord, previewCoord]),
+            type: 'preview'
+          });
+
+          previewFeature.setStyle(new Style({
+            stroke: new Stroke({
+              color: 'orange',
+              width: 2,
+              lineDash: [10, 5]
+            })
+          }));
+
+          source.addFeature(previewFeature)
+          if (!previewFeatureRef.current) {
+            previewFeatureRef.current = [];
+          }
+          previewFeatureRef.current.push(previewFeature)
+        }
+      } else if (drawingState.isDrawing === 'DRAG_POINT') {
+        if (drawingState.prevWpPos) {
+          const prevWpPosCoord = transform(drawingState.prevWpPos, 'EPSG:4326', mapProjectionRef.current.getCode());
+          const previewFeature = new Feature({
+            geometry: new LineString([prevWpPosCoord, coordinate]),
+            type: 'preview'
+          });
+
+          previewFeature.setStyle(new Style({
+            stroke: new Stroke({
+              color: 'orange',
+              width: 2,
+              lineDash: [10, 5]
+            })
+          }));
+
+          source.addFeature(previewFeature)
+          if (!previewFeatureRef.current) {
+            previewFeatureRef.current = [];
+          }
+          previewFeatureRef.current.push(previewFeature)
+        }
+        if (drawingState.nextWpPos) {
+          const nextWpPosCoord = transform(drawingState.nextWpPos, 'EPSG:4326', mapProjectionRef.current.getCode());
+          const previewFeature = new Feature({
+            geometry: new LineString([nextWpPosCoord, coordinate]),
+            type: 'preview'
+          });
+          
+          previewFeature.setStyle(new Style({
+            stroke: new Stroke({
+              color: 'orange',
+              width: 2,
+              lineDash: [10, 5]
+            })
+          }));
+
+          source.addFeature(previewFeature)
+          if (!previewFeatureRef.current) {
+            previewFeatureRef.current = [];
+          }
+          previewFeatureRef.current.push(previewFeature)
+        }
       }
       source.addFeature(previewWptFeature)
       previewWptFeatureRef.current = previewWptFeature
     }
 
+    /*
     setDrawingState(prev => {
       return {
         ...prev,
-        previewLine: [lastPoint, new Point(transform(coordinate, mapProjectionRef.current.getCode(), 'EPSG:4326'))]
+        // previewLine: [lastPoint, new Point(transform(coordinate, mapProjectionRef.current.getCode(), 'EPSG:4326'))]
       };
     });
+    */
   }, [drawingState]);
 
   return {
