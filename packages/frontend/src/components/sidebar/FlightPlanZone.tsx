@@ -85,9 +85,13 @@ const EditableField: React.FC<EditableFieldProps> = ({
     </span>
   );
 };
+const displayMinutes = (minutes: number) => {
+  const wholeMins = Math.trunc(minutes)
+  const seconds = Math.trunc((minutes-wholeMins) * 60)
+  return wholeMins+"+"+seconds
+}
 
-const RouteCard: React.FC<{ flightPlan: FlightPlan, index: number }> = ({ flightPlan, index }) => {
-  console.log("RouteCard", flightPlan, index);
+const RouteCard: React.FC<{ flightPlan: FlightPlan, index: number, onFlightPlanUpdate: (flightPlan: FlightPlan) => void }> = ({ flightPlan, index, onFlightPlanUpdate }) => {
   const legData = flightPlanUtils.calculateLegData(flightPlan, index);
   return (
     <div className="ml-4 bg-gray-100 border border-gray-200 rounded p-3">
@@ -95,40 +99,100 @@ const RouteCard: React.FC<{ flightPlan: FlightPlan, index: number }> = ({ flight
         {/* Line 1: CRS, DIST, ETE */}
         <div className="flex justify-between items-center">
           <div className="flex items-center space-x-1">
-            <span className="font-aero-label text-gray-600 text-xs">CRS:</span>
+            <span className="font-aero-label text-gray-600 text-xs">CRS</span>
             <span className="font-aero-mono text-gray-900 text-xs">{legData.course.toFixed(0)}°</span>
           </div>
           <div className="flex items-center space-x-1">
-            <span className="font-aero-label text-gray-600 text-xs">DIST:</span>
-            <span className="font-aero-mono text-gray-900 text-xs">{legData.distance.toFixed(1)} nm</span>
+            <span className="font-aero-label text-gray-600 text-xs">DIST</span>
+            <span className="font-aero-mono text-gray-900 text-xs">{legData.distance.toFixed(1)}nm</span>
           </div>
           <div className="flex items-center space-x-1">
-            <span className="font-aero-label text-gray-600 text-xs">ETE:</span>
-            <span className="font-aero-mono text-gray-900 text-xs">0:08</span>
+            <span className="font-aero-label text-gray-600 text-xs">ETE</span>
+            <span className="font-aero-mono text-gray-900 text-xs">{displayMinutes(legData.ete)}</span>
           </div>
         </div>
 
-        {/* Line 2: Alt, TAS */}
+        {/* Line 2: Alt, TAS, FF */}
         <div className="flex justify-between items-center">
           <div className="flex items-center space-x-1">
-            <span className="font-aero-label text-gray-600 text-xs">Alt:</span>
+            <span className="font-aero-label text-gray-600 text-xs">Alt</span>
             <EditableField
               value={`${flightPlan.points[index].alt}'`}
-              onChange={() => { }}
+              onChange={(value: string) => {
+                const alt = value.match(/\d+/);
+                if (alt && alt[0]) {
+                  const updatedFlightPlan = flightPlanUtils.updateTurnPoint(flightPlan, index, { alt: parseInt(alt[0]) });
+                  onFlightPlanUpdate(updatedFlightPlan);
+                }
+              }}
               className="font-aero-mono text-gray-900 text-xs"
               maxLength={5}
               unit="'"
             />
           </div>
           <div className="flex items-center space-x-1">
-            <span className="font-aero-label text-gray-600 text-xs">TAS:</span>
+            <span className="font-aero-label text-gray-600 text-xs">TAS</span>
             <EditableField
               value={`${flightPlan.points[index].tas}K`}
-              onChange={() => { }}
+              onChange={(value: string) => {
+                const alt = value.match(/\d+/);
+                if (alt && alt[0]) {
+                  const updatedFlightPlan = flightPlanUtils.updateTurnPoint(flightPlan, index, { tas: parseInt(alt[0]) });
+                  onFlightPlanUpdate(updatedFlightPlan);
+                }
+              }}
               className="font-aero-mono text-gray-900 text-xs"
               maxLength={3}
               unit="K"
             />
+          </div>
+          <div className="flex items-center space-x-1">
+            <span className="font-aero-label text-gray-600 text-xs">FF</span>
+            <EditableField
+              value={`${flightPlan.points[index].fuelFlow}pph`}
+              onChange={(value: string) => {
+                const alt = value.match(/\d+/);
+                if (alt && alt[0]) {
+                  const updatedFlightPlan = flightPlanUtils.updateTurnPoint(flightPlan, index, { fuelFlow: parseInt(alt[0]) });
+                  onFlightPlanUpdate(updatedFlightPlan);
+                }
+              }}
+              className="font-aero-mono text-gray-900 text-xs"
+              maxLength={5}
+              unit="pph"
+            />
+          </div>
+          <div className="flex items-center space-x-1">
+            <span className="font-aero-label text-gray-600 text-xs">WND</span>
+            <span>
+            <EditableField
+              value={`${flightPlan.points[index].windDir}°`}
+              onChange={(value: string) => {
+                const alt = value.match(/\d+/);
+                if (alt && alt[0]) {
+                  const updatedFlightPlan = flightPlanUtils.updateTurnPoint(flightPlan, index, { windDir: parseInt(alt[0]) });
+                  onFlightPlanUpdate(updatedFlightPlan);
+                }
+              }}
+              className="font-aero-mono text-gray-900 text-xs"
+              maxLength={3}
+              unit="°"
+            />
+            /
+            <EditableField
+              value={`${flightPlan.points[index].windSpeed}K`}
+              onChange={(value: string) => {
+                const alt = value.match(/\d+/);
+                if (alt && alt[0]) {
+                  const updatedFlightPlan = flightPlanUtils.updateTurnPoint(flightPlan, index, { windSpeed: parseInt(alt[0]) });
+                  onFlightPlanUpdate(updatedFlightPlan);
+                }
+              }}
+              className="font-aero-mono text-gray-900 text-xs"
+              maxLength={2}
+              unit="K"
+            />
+            </span>
           </div>
         </div>
 
@@ -136,7 +200,7 @@ const RouteCard: React.FC<{ flightPlan: FlightPlan, index: number }> = ({ flight
         <div className="flex justify-between items-center">
           <div className="flex items-center space-x-1">
             <span className="font-aero-label text-gray-600 text-xs">Leg Fuel:</span>
-            <span className="font-aero-mono text-gray-900 text-xs">2.1 gal</span>
+            <span className="font-aero-mono text-gray-900 text-xs">{legData.legFuel.toFixed(0)}lbs</span>
           </div>
           <div className="flex items-center space-x-1">
             <span className="font-aero-label text-gray-600 text-xs">EFR:</span>
@@ -149,7 +213,7 @@ const RouteCard: React.FC<{ flightPlan: FlightPlan, index: number }> = ({ flight
 }
 
 // Minimalistic Card-Based Design with Inline Editable Fields
-export const FlightPlanZone: React.FC<FlightPlanZoneProps> = ({ flightPlan }) => {
+export const FlightPlanZone: React.FC<FlightPlanZoneProps> = ({ flightPlan, onFlightPlanUpdate }) => {
   const [planName, setPlanName] = useState("Flight Plan Alpha");
 
   const fligthPlanZoneContent = useMemo(() => {
@@ -189,14 +253,14 @@ export const FlightPlanZone: React.FC<FlightPlanZoneProps> = ({ flightPlan }) =>
                     />
                   </span>
                   <span className="text-xs font-aero-mono text-gray-500">
-                    {waypoint.lat.toFixed(4)}, {waypoint.lon.toFixed(4)}
+                    {waypoint.lat?.toFixed(4)}, {waypoint.lon?.toFixed(4)}
                   </span>
                 </div>
               </div>
 
               {/* Route Card (indented) */}
               {index < flightPlan.points.length - 1 && (
-                <RouteCard flightPlan={flightPlan} index={index} />
+                <RouteCard flightPlan={flightPlan} index={index} onFlightPlanUpdate={onFlightPlanUpdate} />
               )}
             </React.Fragment>
           ))

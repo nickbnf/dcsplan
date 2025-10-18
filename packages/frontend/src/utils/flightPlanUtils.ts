@@ -1,7 +1,10 @@
-import type { FlightPlan, LegData } from "../types/flightPlan";
+import type { FlightPlan, FlightPlanPointChange, LegData } from "../types/flightPlan";
 
 const defaultTas = 400;
 const defaultAlt = 3000;
+const defaultFuelFlow = 6000;
+const defaultWindSpeed = 0;
+const defaultWindDir = 0;
 
 // A bunch of functions to manipulate the flight plan
 export const flightPlanUtils = {
@@ -9,14 +12,31 @@ export const flightPlanUtils = {
         return { points: [] };
     },
     addTurnPoint: (flightPlan: FlightPlan, lat: number, lon: number): FlightPlan => {
-        const tas = flightPlan.points.length > 0 ? flightPlan.points[flightPlan.points.length - 1].tas : defaultTas;
-        const alt = flightPlan.points.length > 0 ? flightPlan.points[flightPlan.points.length - 1].alt : defaultAlt;
+        const tas = flightPlan.points.length > 1 ? flightPlan.points[flightPlan.points.length - 2].tas : defaultTas;
+        const alt = flightPlan.points.length > 1 ? flightPlan.points[flightPlan.points.length - 2].alt : defaultAlt;
+        const fuelFlow = flightPlan.points.length > 1 ? flightPlan.points[flightPlan.points.length - 2].fuelFlow : defaultFuelFlow;
+        const windSpeed = flightPlan.points.length > 1 ? flightPlan.points[flightPlan.points.length - 2].windSpeed : defaultWindSpeed;
+        const windDir = flightPlan.points.length > 1 ? flightPlan.points[flightPlan.points.length - 2].windDir : defaultWindDir;
 
-        return { ...flightPlan, points: [...flightPlan.points, { lat, lon, tas, alt }] };
+        const newPoints = [...flightPlan.points, { lat, lon, tas, alt, fuelFlow, windSpeed, windDir }];
+        if (newPoints.length > 1) {
+            newPoints[newPoints.length - 2] = { ...newPoints[newPoints.length - 2], tas, alt, fuelFlow, windSpeed, windDir };
+        }
+
+        return { ...flightPlan, points: newPoints };
     },
     moveTurnPoint: (flightPlan: FlightPlan, index: number, lat: number, lon: number): FlightPlan => {
         const newPoints = [...flightPlan.points];
-        newPoints[index] = { lat, lon, tas: newPoints[index].tas, alt: newPoints[index].alt };
+        newPoints[index] = { lat, lon, tas: newPoints[index].tas, alt: newPoints[index].alt,
+            fuelFlow: newPoints[index].fuelFlow, windSpeed: newPoints[index].windSpeed, windDir: newPoints[index].windDir };
+
+        return { ...flightPlan, points: newPoints };
+    },
+    updateTurnPoint: (flightPlan: FlightPlan, index: number, pointChange: FlightPlanPointChange): FlightPlan => {
+        const newPoints = [...flightPlan.points];
+        newPoints[index] = { ...newPoints[index], ...pointChange };
+        
+        console.log("updateTurnPoint", index, newPoints[index]);
 
         return { ...flightPlan, points: newPoints };
     },
@@ -51,9 +71,18 @@ export const flightPlanUtils = {
         const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
         const lengthMeters = R * c;
 
-        console.log("Distance:", lengthMeters);
+        // Wind calculations
+        const windAngleRad = ((((originWpt.windDir + 180) % 360) - course + 360) % 360) * (Math.PI / 180)
+        const tailComponent = originWpt.windSpeed * Math.cos(windAngleRad)
+        console.log("windAngle", windAngleRad)
+        console.log("XComponent", tailComponent)
 
-        return {course: course, distance: lengthMeters / 1852}; // Convert to nautical miles
+        const groundSpeed = originWpt.tas + tailComponent
+        const ete = lengthMeters / 1852 / (groundSpeed / 60)
+
+        const legFuel = ete * (originWpt.fuelFlow / 60)
+
+        return {course: course, distance: lengthMeters / 1852, ete, legFuel}; // Convert to nautical miles
     },
     prevWptPosition: (flightPlan: FlightPlan, index: number): (null | [number, number]) => {
         if (index === 0) {
