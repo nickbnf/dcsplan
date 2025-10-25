@@ -27,4 +27,8 @@ export type FlightPlanPointChange = {
 // Main type containing the full flight plan
 export type FlightPlan = {
   points: FlightPlanTurnPoint[];
+  declination: number;
+  initTimeHour: number;
+  initTimeMin: number;
+  initFob: number;
 }

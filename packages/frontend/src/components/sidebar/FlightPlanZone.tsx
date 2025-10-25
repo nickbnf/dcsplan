@@ -85,6 +85,86 @@ const EditableField: React.FC<EditableFieldProps> = ({
     </span>
   );
 };
+
+interface TimeEditableFieldProps {
+  hour: number;
+  minute: number;
+  onChange: (hour: number, minute: number) => void;
+  className?: string;
+}
+
+const TimeEditableField: React.FC<TimeEditableFieldProps> = ({ 
+  hour, 
+  minute, 
+  onChange, 
+  className = ""
+}) => {
+  const [isEditing, setIsEditing] = useState(false);
+  const [editValue, setEditValue] = useState(`${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`);
+
+  const handleSave = () => {
+    const timeMatch = editValue.match(/^(\d{1,2}):(\d{1,2})$/);
+    if (timeMatch) {
+      const newHour = Math.min(23, Math.max(0, parseInt(timeMatch[1])));
+      const newMinute = Math.min(59, Math.max(0, parseInt(timeMatch[2])));
+      onChange(newHour, newMinute);
+    }
+    setIsEditing(false);
+  };
+
+  const handleCancel = () => {
+    setEditValue(`${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`);
+    setIsEditing(false);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleSave();
+    } else if (e.key === 'Escape') {
+      handleCancel();
+    }
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const inputValue = e.target.value;
+    // Allow digits and colon, format as user types
+    if (/^[\d:]*$/.test(inputValue)) {
+      // Auto-format as user types
+      let formatted = inputValue.replace(/[^\d]/g, '');
+      if (formatted.length >= 3) {
+        formatted = formatted.substring(0, 2) + ':' + formatted.substring(2, 4);
+      }
+      if (formatted.length <= 5) { // Max 5 chars for HH:MM
+        setEditValue(formatted);
+      }
+    }
+  };
+
+  if (isEditing) {
+    return (
+      <input
+        type="text"
+        value={editValue}
+        onChange={handleInputChange}
+        onBlur={handleSave}
+        onKeyDown={handleKeyDown}
+        className={`bg-transparent border-b border-gray-400 focus:border-gray-600 outline-none text-sm w-12 ${className}`}
+        autoFocus
+        placeholder="HH:MM"
+      />
+    );
+  }
+
+  return (
+    <span
+      onClick={() => setIsEditing(true)}
+      className={`cursor-pointer hover:bg-gray-100 px-1 py-0.5 rounded text-sm ${className}`}
+    >
+      {`${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`}
+    </span>
+  );
+};
+
 const displayMinutes = (minutes: number) => {
   const wholeMins = Math.trunc(minutes)
   const seconds = Math.trunc((minutes-wholeMins) * 60)
@@ -222,14 +302,45 @@ export const FlightPlanZone: React.FC<FlightPlanZoneProps> = ({ flightPlan, onFl
       <h3 className="text-sm font-aero-label text-gray-700 uppercase mb-3">Flight Plan</h3>
       
       {/* Flight Plan Header */}
-      <div className="space-y-3 mb-4">
-        <div className="flex items-center justify-between">
+      <div className="space-y-3 mb-2">
+        <div className="flex items-center space-x-1">
           <span className="text-xs font-aero-label text-gray-600">Name:</span>
           <EditableField
             value={planName}
             onChange={setPlanName}
             className="text-gray-900 font-aero-label"
           />
+        </div>
+      </div>
+      <div className="space-y-3 mb-2">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-1">
+            <span className="text-xs font-aero-label text-gray-600">Initial time:</span>
+            <TimeEditableField
+              hour={flightPlan.initTimeHour}
+              minute={flightPlan.initTimeMin}
+              onChange={(hour, minute) => {
+                const updatedFlightPlan = { ...flightPlan, initTimeHour: hour, initTimeMin: minute };
+                onFlightPlanUpdate(updatedFlightPlan);
+              }}
+              className="text-gray-900 font-aero-label"
+            />
+          </div>
+          <div className="flex items-center space-x-1">
+            <span className="text-xs font-aero-label text-gray-600">Initial FOB:</span>
+            <EditableField
+              value={`${flightPlan.initFob}`}
+              onChange={(value: string) => {
+                const fob = value.match(/\d+/);
+                if (fob && fob[0]) {
+                  const updatedFlightPlan = { ...flightPlan, initFob: parseInt(fob[0]) };
+                  onFlightPlanUpdate(updatedFlightPlan);
+                }
+              }}
+              className="text-gray-900 font-aero-label"
+              maxLength={5}
+            />
+          </div>
         </div>
       </div>
 
@@ -244,7 +355,7 @@ export const FlightPlanZone: React.FC<FlightPlanZoneProps> = ({ flightPlan, onFl
             <React.Fragment key={index}>
               {/* Waypoint Card */}
               <div className="bg-white border border-gray-200 rounded p-3">
-                <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center justify-between">
                   <span className="text-sm font-aero-label text-gray-900">
                     {index + 1}. <EditableField
                       value={`WP${index + 1}`}

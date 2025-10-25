@@ -3,6 +3,7 @@ import * as Switch from '@radix-ui/react-switch';
 import * as Separator from '@radix-ui/react-separator';
 import type { FlightPlan } from '../../types/flightPlan';
 import type { DrawingState } from '../../hooks/useDrawing';
+import { flightPlanUtils } from '../../utils/flightPlanUtils';
 
 interface ButtonZoneProps {
   drawingState: DrawingState;
@@ -11,6 +12,7 @@ interface ButtonZoneProps {
   onRedo?: () => void;
   onStartDrawing: (map: any, existingFlightPlan?: any) => void;
   onStopDrawing: (map: any) => void;
+  onFlightPlanUpdate: (flightPlan: FlightPlan) => void;
 }
 
 export const ButtonZone: React.FC<ButtonZoneProps> = ({
@@ -19,10 +21,13 @@ export const ButtonZone: React.FC<ButtonZoneProps> = ({
   onUndo,
   onRedo,
   onStartDrawing,
-  onStopDrawing
+  onStopDrawing,
+  onFlightPlanUpdate,
 }) => {
   const [gridEnabled, setGridEnabled] = useState(false);
   const [measureEnabled, setMeasureEnabled] = useState(false);
+
+  const declination = flightPlan.declination
 
   const handleAddWPTsClick = () => {
     // Get the map instance from the window (we'll need to expose it from Map component)
@@ -96,6 +101,39 @@ export const ButtonZone: React.FC<ButtonZoneProps> = ({
             >
               <Switch.Thumb className="block w-4 h-4 bg-white rounded-full shadow-sm transition-transform data-[state=checked]:translate-x-4" />
             </Switch.Root>
+          </div>
+        </div>
+      </div>
+
+      <Separator.Root className="my-4 bg-gray-300 h-px" />
+
+      {/* Settings */}
+      <div className="mb-4">
+        <h3 className="text-sm font-aero-label text-gray-700 uppercase mb-3">Settings</h3>
+        <div className="space-y-3">
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-aero-label text-gray-600">Declination</label>
+              <span className="text-sm font-aero-label text-gray-700">
+                {declination === 0 ? '0°' : declination > 0 ? `${declination}°E` : `${Math.abs(declination)}°W`}
+              </span>
+            </div>
+            <input
+              type="range"
+              min="-15"
+              max="15"
+              step="0.5"
+              value={declination}
+              onChange={(e) => { 
+                  const updatedFlightPlan = flightPlanUtils.updateDeclination(flightPlan, parseFloat(e.target.value));
+                  console.log(updatedFlightPlan)
+                  onFlightPlanUpdate(updatedFlightPlan);
+              }}
+              className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+              style={{
+                background: `linear-gradient(to right, #6b7280 0%, #6b7280 ${((declination + 15) / 30) * 100}%, #e5e7eb ${((declination + 15) / 30) * 100}%, #e5e7eb 100%)`
+              }}
+            />
           </div>
         </div>
       </div>

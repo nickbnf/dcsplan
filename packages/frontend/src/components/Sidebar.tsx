@@ -47,6 +47,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         onRedo={onRedo}
         onStartDrawing={onStartDrawing}
         onStopDrawing={onStopDrawing}
+        onFlightPlanUpdate={onFlightPlanUpdate}
       />
       
       {/* Flight Plan Zone */}

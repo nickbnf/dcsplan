@@ -33,23 +33,33 @@ export const TitleZone: React.FC<TitleZoneProps> = ({
         <>
           <Separator.Root className="my-3 bg-gray-300 h-px" />
           <div className="text-sm text-gray-600">
-            <div className="font-aero-label text-gray-700 mb-1">Mouse Position</div>
-            <div className="space-y-1">
-              <div className="flex justify-between">
-                <span className="font-aero-label">X:</span>
-                <span className="font-aero-mono">{mouseCoordinates.x.toFixed(0)}</span>
+            <div className="font-aero-label text-gray-700 mb-2">Mouse Position</div>
+            <div className="flex">
+              {/* Left Column - X and Y */}
+              <div className="flex-1 space-y-1">
+                <div className="flex justify-between">
+                  <span className="font-aero-label">X:</span>
+                  <span className="font-aero-mono">{mouseCoordinates.x.toFixed(0)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="font-aero-label">Y:</span>
+                  <span className="font-aero-mono">{mouseCoordinates.y.toFixed(0)}</span>
+                </div>
               </div>
-              <div className="flex justify-between">
-                <span className="font-aero-label">Y:</span>
-                <span className="font-aero-mono">{mouseCoordinates.y.toFixed(0)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="font-aero-label">Lat:</span>
-                <span className="font-aero-mono">{lat_deg}°{lat_minutes.toFixed(2)}'"</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="font-aero-label">Lon:</span>
-                <span className="font-aero-mono">{lon_deg}°{lon_minutes.toFixed(2)}'"</span>
+              
+              {/* Vertical Separator */}
+              <div className="w-px bg-gray-300 mx-2 self-stretch"></div>
+              
+              {/* Right Column - Lat and Lon */}
+              <div className="flex-1 space-y-1">
+                <div className="flex justify-between">
+                  <span className="font-aero-label">Lat:</span>
+                  <span className="font-aero-mono">{lat_deg}°{lat_minutes.toFixed(2)}'</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="font-aero-label">Lon:</span>
+                  <span className="font-aero-mono">{lon_deg}°{lon_minutes.toFixed(2)}'</span>
+                </div>
               </div>
             </div>
           </div>
