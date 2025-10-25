@@ -468,7 +468,7 @@ const installInteractions = (flightPlanLayer: VectorLayer<any>,
 
     // Create Snap interaction for snapping to waypoints
     const snapInteraction = new Snap({
-      source: source
+      features: new Collection(waypointFeatures)
     });
 
     // Store references
