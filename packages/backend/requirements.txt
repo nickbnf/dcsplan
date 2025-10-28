@@ -1,3 +1,7 @@
 fastapi
 uvicorn[standard]
 Pillow
+pytest
+pytest-asyncio
+pytest-watch
+requests

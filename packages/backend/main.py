@@ -1,8 +1,8 @@
-from fastapi import FastAPI
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi import Response
+from kneeboard import FlightPlan, calculate_total_duration, generate_kneeboard_png
 import os
 
 app = FastAPI()
@@ -22,6 +22,27 @@ TILES_DIR = os.path.join(STATIC_DIR, "tiles")
 
 # Path to the blank tile
 BLANK_TILE_PATH = os.path.join(os.path.dirname(__file__), "tiles", "blank.png")
+
+
+@app.post("/kneeboard")
+async def generate_kneeboard(flight_plan: FlightPlan):
+    """Generate a kneeboard PNG from a flight plan."""
+    try:
+        # Validate that we have at least 2 points
+        if len(flight_plan.points) < 2:
+            raise HTTPException(status_code=400, detail="Flight plan must have at least 2 waypoints")
+        
+        # Calculate total duration
+        total_duration = calculate_total_duration(flight_plan)
+        
+        # Generate PNG
+        png_data = generate_kneeboard_png(total_duration)
+        
+        # Return as PNG
+        return Response(content=png_data, media_type="image/png")
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error generating kneeboard: {str(e)}")
 
 @app.get("/api")
 def read_root():

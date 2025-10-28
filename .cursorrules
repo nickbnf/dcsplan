@@ -1,0 +1,22 @@
+# DCSPlan Project Rules
+
+## Testing
+- **Always run tests after making changes**: After modifying backend code, run `pnpm test:backend` to ensure all tests pass
+- When in doubt, run the full test suite to catch regressions
+
+## Code Organization
+- Backend validation and generation logic should be kept in `packages/backend/kneeboard.py`
+- FastAPI route definitions belong in `packages/backend/main.py`
+- Unit tests should be comprehensive and cover error conditions
+
+## Development Workflow
+1. Make changes to the codebase
+2. **Run tests** (`pnpm test` or `pnpm test:backend`)
+3. Verify all tests pass
+4. Commit changes
+
+## Backend Structure
+- Use Pydantic models for validation in `kneeboard.py`
+- Keep business logic separate from API routes
+- Write tests for every new function, especially error cases
+

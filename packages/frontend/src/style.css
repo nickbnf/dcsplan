@@ -21,3 +21,86 @@ body {
     font-weight: 500;
     letter-spacing: 0.01em;
 }
+
+/* Radix Dialog animations */
+[data-radix-portal] {
+    z-index: 50;
+}
+
+[data-radix-dialog-overlay] {
+    animation: overlayShow 150ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+[data-radix-dialog-content] {
+    animation: contentShow 150ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes overlayShow {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes contentShow {
+    from {
+        opacity: 0;
+        transform: translate(-50%, -48%) scale(0.96);
+    }
+    to {
+        opacity: 1;
+        transform: translate(-50%, -50%) scale(1);
+    }
+}
+
+/* Range slider customization for aviation-inspired colors */
+input[type="range"] {
+    appearance: none;
+    -webkit-appearance: none;
+    background: transparent;
+}
+
+/* WebKit browsers (Chrome, Safari, Edge) */
+input[type="range"]::-webkit-slider-thumb {
+    appearance: none;
+    -webkit-appearance: none;
+    height: 18px;
+    width: 18px;
+    border-radius: 50%;
+    background: #475569; /* avio-primary */
+    cursor: pointer;
+    border: 2px solid white;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+input[type="range"]::-webkit-slider-thumb:hover {
+    background: #334155; /* avio-primary-hover */
+}
+
+/* Firefox */
+input[type="range"]::-moz-range-thumb {
+    height: 18px;
+    width: 18px;
+    border-radius: 50%;
+    background: #475569; /* avio-primary */
+    cursor: pointer;
+    border: 2px solid white;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+input[type="range"]::-moz-range-thumb:hover {
+    background: #334155; /* avio-primary-hover */
+}
+
+/* IE/Edge */
+input[type="range"]::-ms-thumb {
+    height: 18px;
+    width: 18px;
+    border-radius: 50%;
+    background: #475569; /* avio-primary */
+    cursor: pointer;
+    border: 2px solid white;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}

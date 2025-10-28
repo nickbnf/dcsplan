@@ -7,7 +7,10 @@
     "install:backend": "cd packages/backend && python3 -m venv venv && . venv/bin/activate && pip install -r requirements.txt",
     "dev": "concurrently \"pnpm --filter frontend dev\" \"pnpm dev:backend\"",
     "dev:frontend": "pnpm --filter frontend dev",
-    "dev:backend": "cd packages/backend && . venv/bin/activate && uvicorn main:app --reload"
+    "dev:backend": "cd packages/backend && . venv/bin/activate && uvicorn main:app --reload",
+    "test:backend": "cd packages/backend && . venv/bin/activate && pytest -v",
+    "test:backend:watch": "cd packages/backend && . venv/bin/activate && ptw -- -v",
+    "test": "pnpm test:backend"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"

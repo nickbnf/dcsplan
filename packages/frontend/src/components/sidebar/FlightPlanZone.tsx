@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import * as Separator from '@radix-ui/react-separator';
 import type { FlightPlan } from '../../types/flightPlan';
 import { flightPlanUtils } from '../../utils/flightPlanUtils';
+import { GenerateDialog } from './GenerateDialog';
 
 interface FlightPlanZoneProps {
   flightPlan: FlightPlan;
@@ -298,85 +299,91 @@ export const FlightPlanZone: React.FC<FlightPlanZoneProps> = ({ flightPlan, onFl
 
   const fligthPlanZoneContent = useMemo(() => {
     return (
-    <div className="flex-1 p-4 bg-gray-50 overflow-y-auto">
-      <h3 className="text-sm font-aero-label text-gray-700 uppercase mb-3">Flight Plan</h3>
-      
-      {/* Flight Plan Header */}
-      <div className="space-y-3 mb-2">
-        <div className="flex items-center space-x-1">
-          <span className="text-xs font-aero-label text-gray-600">Name:</span>
-          <EditableField
-            value={planName}
-            onChange={setPlanName}
-            className="text-gray-900 font-aero-label"
-          />
-        </div>
-      </div>
-      <div className="space-y-3 mb-2">
-        <div className="flex items-center justify-between">
+    <div className="flex-1 p-4 bg-gray-50 flex flex-col">
+      {/* Scrollable content area */}
+      <div className="flex-1 overflow-y-auto mb-4">
+        <h3 className="text-sm font-aero-label text-gray-700 uppercase mb-3">Flight Plan</h3>
+        
+        {/* Flight Plan Header */}
+        <div className="space-y-3 mb-2">
           <div className="flex items-center space-x-1">
-            <span className="text-xs font-aero-label text-gray-600">Initial time:</span>
-            <TimeEditableField
-              hour={flightPlan.initTimeHour}
-              minute={flightPlan.initTimeMin}
-              onChange={(hour, minute) => {
-                const updatedFlightPlan = { ...flightPlan, initTimeHour: hour, initTimeMin: minute };
-                onFlightPlanUpdate(updatedFlightPlan);
-              }}
-              className="text-gray-900 font-aero-label"
-            />
-          </div>
-          <div className="flex items-center space-x-1">
-            <span className="text-xs font-aero-label text-gray-600">Initial FOB:</span>
+            <span className="text-xs font-aero-label text-gray-600">Name:</span>
             <EditableField
-              value={`${flightPlan.initFob}`}
-              onChange={(value: string) => {
-                const fob = value.match(/\d+/);
-                if (fob && fob[0]) {
-                  const updatedFlightPlan = { ...flightPlan, initFob: parseInt(fob[0]) };
-                  onFlightPlanUpdate(updatedFlightPlan);
-                }
-              }}
+              value={planName}
+              onChange={setPlanName}
               className="text-gray-900 font-aero-label"
-              maxLength={5}
             />
           </div>
         </div>
-      </div>
+        <div className="space-y-3 mb-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-1">
+              <span className="text-xs font-aero-label text-gray-600">Initial time:</span>
+              <TimeEditableField
+                hour={flightPlan.initTimeHour}
+                minute={flightPlan.initTimeMin}
+                onChange={(hour, minute) => {
+                  const updatedFlightPlan = { ...flightPlan, initTimeHour: hour, initTimeMin: minute };
+                  onFlightPlanUpdate(updatedFlightPlan);
+                }}
+                className="text-gray-900 font-aero-label"
+              />
+            </div>
+            <div className="flex items-center space-x-1">
+              <span className="text-xs font-aero-label text-gray-600">Initial FOB:</span>
+              <EditableField
+                value={`${flightPlan.initFob}`}
+                onChange={(value: string) => {
+                  const fob = value.match(/\d+/);
+                  if (fob && fob[0]) {
+                    const updatedFlightPlan = { ...flightPlan, initFob: parseInt(fob[0]) };
+                    onFlightPlanUpdate(updatedFlightPlan);
+                  }
+                }}
+                className="text-gray-900 font-aero-label"
+                maxLength={5}
+              />
+            </div>
+          </div>
+        </div>
 
-      <Separator.Root className="my-4 bg-gray-300 h-px" />
+        <Separator.Root className="my-4 bg-gray-300 h-px" />
 
-      {/* Flight Plan Entries */}
-      <div className="space-y-2">
-        {flightPlan.points.length === 0 ? (
-          <div className="text-sm text-gray-500 italic">No waypoints added yet</div>
-        ) : (
-          flightPlan.points.map((waypoint, index) => (
-            <React.Fragment key={index}>
-              {/* Waypoint Card */}
-              <div className="bg-white border border-gray-200 rounded p-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-aero-label text-gray-900">
-                    {index + 1}. <EditableField
-                      value={`WP${index + 1}`}
-                      onChange={() => {}}
-                      className="font-aero-label text-gray-900"
-                    />
-                  </span>
-                  <span className="text-xs font-aero-mono text-gray-500">
-                    {waypoint.lat?.toFixed(4)}, {waypoint.lon?.toFixed(4)}
-                  </span>
+        {/* Flight Plan Entries */}
+        <div className="space-y-2">
+          {flightPlan.points.length === 0 ? (
+            <div className="text-sm text-gray-500 italic">No waypoints added yet</div>
+          ) : (
+            flightPlan.points.map((waypoint, index) => (
+              <React.Fragment key={index}>
+                {/* Waypoint Card */}
+                <div className="bg-white border border-gray-200 rounded p-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-aero-label text-gray-900">
+                      {index + 1}. <EditableField
+                        value={`WP${index + 1}`}
+                        onChange={() => {}}
+                        className="font-aero-label text-gray-900"
+                      />
+                    </span>
+                    <span className="text-xs font-aero-mono text-gray-500">
+                      {waypoint.lat?.toFixed(4)}, {waypoint.lon?.toFixed(4)}
+                    </span>
+                  </div>
                 </div>
-              </div>
 
-              {/* Route Card (indented) */}
-              {index < flightPlan.points.length - 1 && (
-                <RouteCard flightPlan={flightPlan} index={index} onFlightPlanUpdate={onFlightPlanUpdate} />
-              )}
-            </React.Fragment>
-          ))
-        )}
+                {/* Route Card (indented) */}
+                {index < flightPlan.points.length - 1 && (
+                  <RouteCard flightPlan={flightPlan} index={index} onFlightPlanUpdate={onFlightPlanUpdate} />
+                )}
+              </React.Fragment>
+            ))
+          )}
+        </div>
       </div>
+      
+      {/* Generate button at the bottom */}
+      <GenerateDialog flightPlan={flightPlan} />
     </div>
   );
 }, [flightPlan, planName]);
