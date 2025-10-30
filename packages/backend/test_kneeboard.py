@@ -16,12 +16,13 @@ from kneeboard import (
 
 
 # Test fixtures for valid flight plan data
+# Using coordinates within tile bounds (Middle East region: ~30-42°E, 31-38°N)
 @pytest.fixture
 def valid_turn_point():
     """Create a valid turn point for testing."""
     return {
-        "lat": 32.0,
-        "lon": -110.0,
+        "lat": 34.0,
+        "lon": 36.0,
         "tas": 400,
         "alt": 3000,
         "fuelFlow": 6000,
@@ -36,26 +37,26 @@ def valid_flight_plan():
     return {
         "points": [
             {
-                "lat": 32.0,
-                "lon": -110.0,
-                "tas": 400,
-                "alt": 3000,
-                "fuelFlow": 6000,
-                "windSpeed": 20,
-                "windDir": 270
-            },
-            {
-                "lat": 33.0,
-                "lon": -111.0,
-                "tas": 400,
-                "alt": 3000,
-                "fuelFlow": 6000,
-                "windSpeed": 20,
-                "windDir": 270
-            },
-            {
                 "lat": 34.0,
-                "lon": -112.0,
+                "lon": 36.0,
+                "tas": 400,
+                "alt": 3000,
+                "fuelFlow": 6000,
+                "windSpeed": 20,
+                "windDir": 270
+            },
+            {
+                "lat": 35.0,
+                "lon": 37.0,
+                "tas": 400,
+                "alt": 3000,
+                "fuelFlow": 6000,
+                "windSpeed": 20,
+                "windDir": 270
+            },
+            {
+                "lat": 36.0,
+                "lon": 38.0,
                 "tas": 400,
                 "alt": 3000,
                 "fuelFlow": 6000,
@@ -75,8 +76,8 @@ def minimal_flight_plan():
     """Create a minimal flight plan with just 2 waypoints."""
     return {
         "points": [
-            {"lat": 32.0, "lon": -110.0, "tas": 400, "alt": 3000, "fuelFlow": 6000, "windSpeed": 20, "windDir": 270},
-            {"lat": 33.0, "lon": -111.0, "tas": 400, "alt": 3000, "fuelFlow": 6000, "windSpeed": 20, "windDir": 270}
+            {"lat": 34.0, "lon": 36.0, "tas": 400, "alt": 3000, "fuelFlow": 6000, "windSpeed": 20, "windDir": 270},
+            {"lat": 35.0, "lon": 37.0, "tas": 400, "alt": 3000, "fuelFlow": 6000, "windSpeed": 20, "windDir": 270}
         ],
         "declination": 12.5,
         "initTimeHour": 12,
@@ -91,8 +92,8 @@ class TestFlightPlanTurnPoint:
     def test_valid_turn_point(self, valid_turn_point):
         """Test that a valid turn point is accepted."""
         point = FlightPlanTurnPoint(**valid_turn_point)
-        assert point.lat == 32.0
-        assert point.lon == -110.0
+        assert point.lat == 34.0
+        assert point.lon == 36.0
     
     def test_invalid_latitude_too_high(self, valid_turn_point):
         """Test that latitude > 90 is rejected."""
@@ -231,11 +232,11 @@ class TestCalculateETE:
     def test_calculate_ete_normal_case(self):
         """Test ETE calculation between two waypoints."""
         origin = FlightPlanTurnPoint(
-            lat=32.0, lon=-110.0, tas=400, alt=3000,
+            lat=34.0, lon=36.0, tas=400, alt=3000,
             fuelFlow=6000, windSpeed=20, windDir=270
         )
         destination = FlightPlanTurnPoint(
-            lat=33.0, lon=-111.0, tas=400, alt=3000,
+            lat=35.0, lon=37.0, tas=400, alt=3000,
             fuelFlow=6000, windSpeed=20, windDir=270
         )
         
@@ -248,11 +249,11 @@ class TestCalculateETE:
     def test_calculate_ete_with_headwind(self):
         """Test ETE calculation with strong headwind."""
         origin = FlightPlanTurnPoint(
-            lat=32.0, lon=-110.0, tas=400, alt=3000,
+            lat=34.0, lon=36.0, tas=400, alt=3000,
             fuelFlow=6000, windSpeed=100, windDir=90  # Strong headwind
         )
         destination = FlightPlanTurnPoint(
-            lat=33.0, lon=-111.0, tas=400, alt=3000,
+            lat=35.0, lon=37.0, tas=400, alt=3000,
             fuelFlow=6000, windSpeed=100, windDir=90
         )
         
@@ -265,11 +266,11 @@ class TestCalculateETE:
     def test_calculate_ete_with_tailwind(self):
         """Test ETE calculation with tailwind."""
         origin = FlightPlanTurnPoint(
-            lat=32.0, lon=-110.0, tas=400, alt=3000,
+            lat=34.0, lon=36.0, tas=400, alt=3000,
             fuelFlow=6000, windSpeed=50, windDir=270  # Tailwind
         )
         destination = FlightPlanTurnPoint(
-            lat=33.0, lon=-111.0, tas=400, alt=3000,
+            lat=35.0, lon=37.0, tas=400, alt=3000,
             fuelFlow=6000, windSpeed=50, windDir=270
         )
         
@@ -320,10 +321,10 @@ class TestCalculateTotalDuration:
 class TestGenerateKneeboardPNG:
     """Test suite for PNG generation."""
     
-    def test_generate_png_valid_duration(self):
-        """Test PNG generation with a valid duration."""
-        duration = 125.5  # minutes
-        png_data = generate_kneeboard_png(duration)
+    def test_generate_png_valid_flight_plan(self, minimal_flight_plan):
+        """Test PNG generation with a valid flight plan."""
+        plan = FlightPlan(**minimal_flight_plan)
+        png_data = generate_kneeboard_png(plan)
         
         assert isinstance(png_data, bytes)
         assert len(png_data) > 0
@@ -331,32 +332,22 @@ class TestGenerateKneeboardPNG:
         # Check that it's valid PNG data (starts with PNG signature)
         assert png_data[:8] == b'\x89PNG\r\n\x1a\n'
     
-    def test_generate_png_zero_duration(self):
-        """Test PNG generation with zero duration."""
-        duration = 0
-        png_data = generate_kneeboard_png(duration)
+    def test_generate_png_multiple_legs(self, valid_flight_plan):
+        """Test PNG generation with multiple legs (should use first leg)."""
+        plan = FlightPlan(**valid_flight_plan)
+        png_data = generate_kneeboard_png(plan)
         
         assert isinstance(png_data, bytes)
         assert len(png_data) > 0
         assert png_data[:8] == b'\x89PNG\r\n\x1a\n'
     
-    def test_generate_png_large_duration(self):
-        """Test PNG generation with a large duration."""
-        duration = 1440  # 24 hours in minutes
-        png_data = generate_kneeboard_png(duration)
+    def test_generate_png_insufficient_waypoints(self, valid_flight_plan):
+        """Test PNG generation with insufficient waypoints."""
+        valid_flight_plan["points"] = [valid_flight_plan["points"][0]]
+        plan = FlightPlan(**valid_flight_plan)
         
-        assert isinstance(png_data, bytes)
-        assert len(png_data) > 0
-        assert png_data[:8] == b'\x89PNG\r\n\x1a\n'
-    
-    def test_generate_png_fractional_minutes(self):
-        """Test PNG generation with fractional minutes."""
-        duration = 45.7  # minutes
-        png_data = generate_kneeboard_png(duration)
-        
-        assert isinstance(png_data, bytes)
-        assert len(png_data) > 0
-        assert png_data[:8] == b'\x89PNG\r\n\x1a\n'
+        with pytest.raises(ValueError, match="at least 2 waypoints"):
+            generate_kneeboard_png(plan)
 
 
 class TestIntegration:
@@ -370,8 +361,8 @@ class TestIntegration:
         # Calculate total duration
         duration = calculate_total_duration(plan)
         
-        # Generate PNG
-        png_data = generate_kneeboard_png(duration)
+        # Generate PNG (first leg map)
+        png_data = generate_kneeboard_png(plan)
         
         # Verify results
         assert duration > 0

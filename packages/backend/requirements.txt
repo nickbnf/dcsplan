@@ -5,3 +5,5 @@ pytest
 pytest-asyncio
 pytest-watch
 requests
+pyproj
+numpy
