@@ -570,7 +570,7 @@ def _tm_to_pixel_on_rotated_image(
     # PIL rotates the image counterclockwise by rotation_angle_deg.
     # To find where a point from the original image is in the rotated image,
     # we rotate the point counterclockwise by the same angle.
-    angle_rad = math.radians(rotation_angle_deg)
+    angle_rad = -math.radians(rotation_angle_deg)
     
     # Get rotation center (should be in the scaled composite coordinate system)
     cx, cy = rotation_center_orig
@@ -708,13 +708,15 @@ def generate_leg_map(
     dx = dest_x_px - origin_x_px
     dy = dest_y_px - origin_y_px
     leg_angle_rad = math.atan2(dy, dx)
-    leg_angle_deg = math.degrees(leg_angle_rad)
+    leg_angle_deg = 90 + math.degrees(leg_angle_rad)
+    if leg_angle_deg < 0:
+        leg_angle_deg = 360 + leg_angle_deg
     logger.info(f"Leg angle in pixel coordinates: {leg_angle_deg:.2f}° (dx={dx:.1f}, dy={dy:.1f})")
     
     # Rotate so leg is vertical (pointing north/up)
     # In PIL coordinates: -90° = up (north), 0° = right (east), 90° = down (south), 180° = left (west)
     # To make the leg point upward (-90°), we need to rotate by: -90° - leg_angle_deg
-    rotation_angle = -90 - leg_angle_deg
+    rotation_angle = leg_angle_deg
     logger.info(f"Rotation angle: {rotation_angle:.2f}° (to make leg point up at -90°)")
     
     # Get center of scaled composite image (before rotation)
