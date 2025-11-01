@@ -18,7 +18,7 @@ from flight_plan import FlightPlan, FlightPlanTurnPoint
 
 # Set up logger
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 
 def generate_kneeboard_png(flight_plan: FlightPlan) -> bytes:
@@ -40,14 +40,10 @@ def generate_kneeboard_png(flight_plan: FlightPlan) -> bytes:
         raise ValueError("Flight plan must have at least 2 waypoints to generate a leg map")
     
     # Generate map for the first leg
-    origin = flight_plan.points[0]
-    destination = flight_plan.points[1]
-    logger.info(f"Generating kneeboard for first leg: ({origin.lat}, {origin.lon}) -> ({destination.lat}, {destination.lon})")
+    leg_map_png = generate_leg_map(flight_plan, origin_index=0, destination_index=1)
+    logger.info(f"Kneeboard PNG generated: {len(leg_map_png)} bytes")
     
-    leg_map = generate_leg_map(origin, destination)
-    logger.info(f"Kneeboard PNG generated: {len(leg_map)} bytes")
-    
-    return leg_map
+    return leg_map_png
 
 
 # Constants for leg map generation
@@ -623,8 +619,9 @@ def _tm_to_pixel_on_rotated_image(
     return px_x_rot, px_y_rot
 
 def generate_leg_map(
-    origin: FlightPlanTurnPoint,
-    destination: FlightPlanTurnPoint
+    flight_plan: FlightPlan,
+    origin_index: int,
+    destination_index: int
 ) -> bytes:
     """
     Generate a map image for a single leg of the flight plan.
@@ -636,12 +633,14 @@ def generate_leg_map(
     Returns:
         PNG image data as bytes (768x1024)
     """
-    logger.info(f"=== Starting leg map generation ===")
-    logger.info(f"Origin: lat={origin.lat}, lon={origin.lon}")
-    logger.info(f"Destination: lat={destination.lat}, lon={destination.lon}")
-    
     tile_info = _get_tile_info()
     
+    origin = flight_plan.points[origin_index]
+    destination = flight_plan.points[destination_index]
+
+    logger.info(f"=== Starting leg map generation ===")
+    logger.info(f"Origin: {origin_index}, Destination: {destination_index}")
+
     # Calculate leg distance
     leg_distance = _calculate_distance_meters(
         origin.lat, origin.lon,
@@ -672,13 +671,10 @@ def generate_leg_map(
     
     # Scale the composite before rotation to make leg exactly 70% of height
     if scale_factor != 1.0:
-        original_composite_size_before_scale = (composite.width, composite.height)
         new_width = int(composite.width * scale_factor)
         new_height = int(composite.height * scale_factor)
         logger.info(f"Scaling composite from {composite.width}x{composite.height} to {new_width}x{new_height}")
         composite = composite.resize((new_width, new_height), Image.Resampling.LANCZOS)
-    else:
-        original_composite_size_before_scale = (composite.width, composite.height)
     
     # Calculate the angle of the leg line in pixel/image coordinates
     # We need to use the projected coordinates (Transverse Mercator) converted to pixels
@@ -718,7 +714,7 @@ def generate_leg_map(
     # Rotate so leg is vertical (pointing north/up)
     # In PIL coordinates: -90° = up (north), 0° = right (east), 90° = down (south), 180° = left (west)
     # To make the leg point upward (-90°), we need to rotate by: -90° - leg_angle_deg
-    rotation_angle = -270 + leg_angle_deg
+    rotation_angle = -90 - leg_angle_deg
     logger.info(f"Rotation angle: {rotation_angle:.2f}° (to make leg point up at -90°)")
     
     # Get center of scaled composite image (before rotation)
