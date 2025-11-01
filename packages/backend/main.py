@@ -2,7 +2,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-from kneeboard import FlightPlan, generate_kneeboard_png, generate_leg_maps, generate_leg_map
+from flight_plan import FlightPlan
+from kneeboard import generate_kneeboard_png, generate_leg_maps, generate_leg_map
 import os
 import logging
 

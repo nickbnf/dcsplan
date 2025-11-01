@@ -6,13 +6,8 @@ Tests cover validation, error conditions, and PNG generation.
 
 import pytest
 from pydantic import ValidationError
-from kneeboard import (
-    FlightPlan, 
-    FlightPlanTurnPoint,
-    calculate_ete,
-    calculate_total_duration,
-    generate_kneeboard_png
-)
+from flight_plan import FlightPlan, FlightPlanTurnPoint
+from kneeboard import generate_kneeboard_png
 
 
 # Test fixtures for valid flight plan data
