@@ -9,7 +9,7 @@ const defaultWindDir = 0;
 // A bunch of functions to manipulate the flight plan
 export const flightPlanUtils = {
     newFlightPlan: (): FlightPlan => {
-        return { points: [], declination: 0, initTimeHour: 12, initTimeMin: 0, initFob: 12000 };
+        return { points: [], declination: 0, initTimeSec: 12 * 3600, initFob: 12000 };
     },
     addTurnPoint: (flightPlan: FlightPlan, lat: number, lon: number): FlightPlan => {
         const tas = flightPlan.points.length > 1 ? flightPlan.points[flightPlan.points.length - 2].tas : defaultTas;
@@ -59,7 +59,7 @@ export const flightPlanUtils = {
         const y = Math.sin(dLon) * Math.cos(lat2);
         const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
         const bearing = Math.atan2(y, x) * 180 / Math.PI;
-        const course = (bearing + 360) % 360; // Normalize to 0-360
+        const course = (bearing + flightPlan.declination + 360) % 360; // Normalize to 0-360
 
         // Distance calculation using Haversine formula
         const R = 6371000; // Earth's radius in meters
@@ -74,15 +74,32 @@ export const flightPlanUtils = {
         // Wind calculations
         const windAngleRad = ((((originWpt.windDir + 180) % 360) - course + 360) % 360) * (Math.PI / 180)
         const tailComponent = originWpt.windSpeed * Math.cos(windAngleRad)
+        const crossComponent = originWpt.windSpeed * Math.sin(windAngleRad)
         console.log("windAngle", windAngleRad)
-        console.log("XComponent", tailComponent)
+        console.log("tailComponent", tailComponent, "crossComponent", crossComponent, "originWpt.windSpeed", originWpt.windSpeed)
 
         const groundSpeed = originWpt.tas + tailComponent
-        const ete = lengthMeters / 1852 / (groundSpeed / 60)
+        const ete = Math.round(lengthMeters / 1852 / (groundSpeed / 3600))
 
-        const legFuel = ete * (originWpt.fuelFlow / 60)
+        const legFuel = ete * (originWpt.fuelFlow / 3600)
 
-        return {course: course, distance: lengthMeters / 1852, ete, legFuel}; // Convert to nautical miles
+        let heading = course - Math.asin(crossComponent / groundSpeed) * 180 / Math.PI;
+        if (heading < 0) {
+            heading += 360;
+        }
+
+        // ETA and EFR: need the previous turn point if it exists
+        let initTimeSec = flightPlan.initTimeSec;
+        let initEfr = flightPlan.initFob;
+        if (indexWptFrom > 0) {
+            const prevData = flightPlanUtils.calculateLegData(flightPlan, indexWptFrom - 1);
+            initTimeSec = prevData.eta;
+            initEfr = prevData.efr;
+        }
+        const eta = initTimeSec + ete;
+        const efr = initEfr - legFuel;
+
+        return {course: course, distance: lengthMeters / 1852, ete, legFuel, heading, eta, efr}; // Convert to nautical miles
     },
     prevWptPosition: (flightPlan: FlightPlan, index: number): (null | [number, number]) => {
         if (index === 0) {

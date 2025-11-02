@@ -1,8 +1,11 @@
 export type LegData = {
   course: number;
   distance: number;
-  ete: number;
   legFuel: number;
+  heading: number;
+  ete: number; // ETE for this leg, in seconds
+  eta: number; // ETA at this TP, in seconds since midnight
+  efr: number; // EFR at this TP, unitless (typically in lbs)
 }
 
 // A single turn point
@@ -28,7 +31,6 @@ export type FlightPlanPointChange = {
 export type FlightPlan = {
   points: FlightPlanTurnPoint[];
   declination: number;
-  initTimeHour: number;
-  initTimeMin: number;
+  initTimeSec: number; // Initial time in seconds since midnight
   initFob: number;
 }

@@ -88,33 +88,43 @@ const EditableField: React.FC<EditableFieldProps> = ({
 };
 
 interface TimeEditableFieldProps {
-  hour: number;
-  minute: number;
-  onChange: (hour: number, minute: number) => void;
+  timeSec: number;
+  onChange: (hour: number, minute: number, seconds: number) => void;
   className?: string;
 }
 
+const secondsToTimeString = (timeSec: number) => {
+  const hour = Math.trunc(timeSec / 3600);
+  const minute = Math.trunc((timeSec % 3600) / 60);
+  const seconds = timeSec % 60;
+  return `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}:${seconds.toFixed(0).padStart(2, '0')}`;
+}
+
 const TimeEditableField: React.FC<TimeEditableFieldProps> = ({ 
-  hour, 
-  minute, 
+  timeSec, 
   onChange, 
   className = ""
 }) => {
   const [isEditing, setIsEditing] = useState(false);
-  const [editValue, setEditValue] = useState(`${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`);
+  const [editValue, setEditValue] = useState(() => {
+    return secondsToTimeString(timeSec);
+  });
 
   const handleSave = () => {
-    const timeMatch = editValue.match(/^(\d{1,2}):(\d{1,2})$/);
+    const timeMatch = editValue.match(/^(\d{1,2}):(\d{1,2}):(\d{1,2})$/);
     if (timeMatch) {
       const newHour = Math.min(23, Math.max(0, parseInt(timeMatch[1])));
       const newMinute = Math.min(59, Math.max(0, parseInt(timeMatch[2])));
-      onChange(newHour, newMinute);
+      const newSeconds = Math.min(59, Math.max(0, parseInt(timeMatch[3])));
+      onChange(newHour, newMinute, newSeconds);
     }
     setIsEditing(false);
   };
 
   const handleCancel = () => {
-    setEditValue(`${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`);
+    setEditValue(() => {
+      return secondsToTimeString(timeSec);
+    });
     setIsEditing(false);
   };
 
@@ -133,9 +143,9 @@ const TimeEditableField: React.FC<TimeEditableFieldProps> = ({
       // Auto-format as user types
       let formatted = inputValue.replace(/[^\d]/g, '');
       if (formatted.length >= 3) {
-        formatted = formatted.substring(0, 2) + ':' + formatted.substring(2, 4);
+        formatted = formatted.substring(0, 2) + ':' + formatted.substring(2, 4) + ':' + formatted.substring(4, 6);
       }
-      if (formatted.length <= 5) { // Max 5 chars for HH:MM
+      if (formatted.length <= 8) { // Max 8 chars for HH:MM:SS
         setEditValue(formatted);
       }
     }
@@ -151,7 +161,7 @@ const TimeEditableField: React.FC<TimeEditableFieldProps> = ({
         onKeyDown={handleKeyDown}
         className={`bg-transparent border-b border-gray-400 focus:border-gray-600 outline-none text-sm w-12 ${className}`}
         autoFocus
-        placeholder="HH:MM"
+        placeholder="HH:MM:SS"
       />
     );
   }
@@ -161,15 +171,15 @@ const TimeEditableField: React.FC<TimeEditableFieldProps> = ({
       onClick={() => setIsEditing(true)}
       className={`cursor-pointer hover:bg-gray-100 px-1 py-0.5 rounded text-sm ${className}`}
     >
-      {`${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`}
+      {secondsToTimeString(timeSec)}
     </span>
   );
 };
 
-const displayMinutes = (minutes: number) => {
-  const wholeMins = Math.trunc(minutes)
-  const seconds = Math.trunc((minutes-wholeMins) * 60)
-  return wholeMins+"+"+seconds
+const displaySecondsInMinutes = (totalSeconds: number) => {
+  const minutes = Math.trunc(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  return minutes+"+"+seconds
 }
 
 const RouteCard: React.FC<{ flightPlan: FlightPlan, index: number, onFlightPlanUpdate: (flightPlan: FlightPlan) => void }> = ({ flightPlan, index, onFlightPlanUpdate }) => {
@@ -177,7 +187,7 @@ const RouteCard: React.FC<{ flightPlan: FlightPlan, index: number, onFlightPlanU
   return (
     <div className="ml-4 bg-gray-100 border border-gray-200 rounded p-3">
       <div className="space-y-2 text-xs">
-        {/* Line 1: CRS, DIST, ETE */}
+        {/* Line 1: CRS, DIST, ETE, ETA */}
         <div className="flex justify-between items-center">
           <div className="flex items-center space-x-1">
             <span className="font-aero-label text-gray-600 text-xs">CRS</span>
@@ -189,7 +199,11 @@ const RouteCard: React.FC<{ flightPlan: FlightPlan, index: number, onFlightPlanU
           </div>
           <div className="flex items-center space-x-1">
             <span className="font-aero-label text-gray-600 text-xs">ETE</span>
-            <span className="font-aero-mono text-gray-900 text-xs">{displayMinutes(legData.ete)}</span>
+            <span className="font-aero-mono text-gray-900 text-xs">{displaySecondsInMinutes(legData.ete)}</span>
+          </div>
+          <div className="flex items-center space-x-1">
+            <span className="font-aero-label text-gray-600 text-xs">ETA</span>
+            <span className="font-aero-mono text-gray-900 text-xs">{secondsToTimeString(legData.eta)}</span>
           </div>
         </div>
 
@@ -277,15 +291,19 @@ const RouteCard: React.FC<{ flightPlan: FlightPlan, index: number, onFlightPlanU
           </div>
         </div>
 
-        {/* Line 3: Leg Fuel, EFR */}
+        {/* Line 3: HDG, Leg Fuel, EFR */}
         <div className="flex justify-between items-center">
+          <div className="flex items-center space-x-1">
+            <span className="font-aero-label text-gray-600 text-xs">HDG:</span>
+            <span className="font-aero-mono text-gray-900 text-xs">{legData.heading.toFixed(0)}°</span>
+          </div>
           <div className="flex items-center space-x-1">
             <span className="font-aero-label text-gray-600 text-xs">Leg Fuel:</span>
             <span className="font-aero-mono text-gray-900 text-xs">{legData.legFuel.toFixed(0)}lbs</span>
           </div>
           <div className="flex items-center space-x-1">
             <span className="font-aero-label text-gray-600 text-xs">EFR:</span>
-            <span className="font-aero-mono text-gray-900 text-xs">15.2 gal</span>
+            <span className="font-aero-mono text-gray-900 text-xs">{legData.efr.toFixed(0)}lbs</span>
           </div>
         </div>
       </div>
@@ -320,10 +338,10 @@ export const FlightPlanZone: React.FC<FlightPlanZoneProps> = ({ flightPlan, onFl
             <div className="flex items-center space-x-1">
               <span className="text-xs font-aero-label text-gray-600">Initial time:</span>
               <TimeEditableField
-                hour={flightPlan.initTimeHour}
-                minute={flightPlan.initTimeMin}
-                onChange={(hour, minute) => {
-                  const updatedFlightPlan = { ...flightPlan, initTimeHour: hour, initTimeMin: minute };
+                timeSec={flightPlan.initTimeSec}
+                onChange={(hour, minute, seconds) => {
+                  const timeSec = hour * 3600 + minute * 60 + seconds;
+                  const updatedFlightPlan = { ...flightPlan, initTimeSec: timeSec };
                   onFlightPlanUpdate(updatedFlightPlan);
                 }}
                 className="text-gray-900 font-aero-label"
