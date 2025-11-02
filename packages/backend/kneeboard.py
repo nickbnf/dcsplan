@@ -627,8 +627,9 @@ def generate_leg_map(
     Generate a map image for a single leg of the flight plan.
     
     Args:
-        origin: Starting waypoint
-        destination: Ending waypoint
+        flight_plan: The flight plan
+        origin_index: Index of the starting waypoint
+        destination_index: Index of the ending waypoint
         
     Returns:
         PNG image data as bytes (768x1024)
@@ -744,19 +745,10 @@ def generate_leg_map(
             scale_factor
         )
     
-    # Create a minimal flight plan with just this leg for annotation
-    leg_flight_plan = FlightPlan(
-        points=[origin, destination],
-        declination=0.0,  # Not used for annotation
-        initTimeHour=0,
-        initTimeMin=0,
-        initFob=0.0
-    )
-    
     # Draw the leg onto the rotated image
     annotate_map(
         rotated,
-        leg_flight_plan,
+        flight_plan,
         coord_to_pixel
     )
     
