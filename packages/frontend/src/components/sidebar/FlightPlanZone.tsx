@@ -100,7 +100,7 @@ const secondsToTimeString = (timeSec: number) => {
   return `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}:${seconds.toFixed(0).padStart(2, '0')}`;
 }
 
-const TimeEditableField: React.FC<TimeEditableFieldProps> = ({ 
+export const TimeEditableField: React.FC<TimeEditableFieldProps> = ({ 
   timeSec, 
   onChange, 
   className = ""
@@ -109,15 +109,51 @@ const TimeEditableField: React.FC<TimeEditableFieldProps> = ({
   const [editValue, setEditValue] = useState(() => {
     return secondsToTimeString(timeSec);
   });
+  const [prevLength, setPrevLength] = useState(8);
 
   const handleSave = () => {
-    const timeMatch = editValue.match(/^(\d{1,2}):(\d{1,2}):(\d{1,2})$/);
-    if (timeMatch) {
-      const newHour = Math.min(23, Math.max(0, parseInt(timeMatch[1])));
-      const newMinute = Math.min(59, Math.max(0, parseInt(timeMatch[2])));
-      const newSeconds = Math.min(59, Math.max(0, parseInt(timeMatch[3])));
-      onChange(newHour, newMinute, newSeconds);
+    // Try different patterns for partial entry support
+    let newHour = 0;
+    let newMinute = 0;
+    let newSeconds = 0;
+    
+    // Full format: HH:MM:SS
+    const fullMatch = editValue.match(/^(\d{1,2}):(\d{1,2}):(\d{1,2})$/);
+    if (fullMatch) {
+      newHour = parseInt(fullMatch[1]);
+      newMinute = parseInt(fullMatch[2]);
+      newSeconds = parseInt(fullMatch[3]);
     }
+    // Partial format: HH:MM
+    else {
+      const partialMatch = editValue.match(/^(\d{1,2}):(\d{1,2})$/);
+      if (partialMatch) {
+        newHour = parseInt(partialMatch[1]);
+        newMinute = parseInt(partialMatch[2]);
+        newSeconds = 0;
+      }
+      // Just digits: HH
+      else {
+        const digitsOnly = editValue.replace(/[^\d]/g, '');
+        if (digitsOnly.length > 0) {
+          newHour = parseInt(digitsOnly);
+          newMinute = 0;
+          newSeconds = 0;
+        } else {
+          // If format is invalid, restore to original
+          setEditValue(secondsToTimeString(timeSec));
+          setIsEditing(false);
+          return;
+        }
+      }
+    }
+    
+    // Clamp values to valid ranges
+    newHour = Math.min(23, Math.max(0, newHour));
+    newMinute = Math.min(59, Math.max(0, newMinute));
+    newSeconds = Math.min(59, Math.max(0, newSeconds));
+    
+    onChange(newHour, newMinute, newSeconds);
     setIsEditing(false);
   };
 
@@ -138,15 +174,37 @@ const TimeEditableField: React.FC<TimeEditableFieldProps> = ({
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const inputValue = e.target.value;
-    // Allow digits and colon, format as user types
+    const isDeleting = inputValue.length < prevLength;
+    
+    // Allow digits and colons
     if (/^[\d:]*$/.test(inputValue)) {
-      // Auto-format as user types
-      let formatted = inputValue.replace(/[^\d]/g, '');
-      if (formatted.length >= 3) {
-        formatted = formatted.substring(0, 2) + ':' + formatted.substring(2, 4) + ':' + formatted.substring(4, 6);
+      // If deleting, allow natural backspace through all characters
+      if (isDeleting) {
+        setEditValue(inputValue);
+        setPrevLength(inputValue.length);
+        return;
       }
-      if (formatted.length <= 8) { // Max 8 chars for HH:MM:SS
-        setEditValue(formatted);
+      
+      // If typing, auto-format by inserting colons at appropriate positions
+      const digitsOnly = inputValue.replace(/[^\d]/g, '');
+      
+      // Only format if we have digits and user is adding characters
+      if (digitsOnly.length > 0 && inputValue.length >= prevLength) {
+        let formatted = '';
+        if (digitsOnly.length <= 2) {
+          formatted = digitsOnly;
+        } else if (digitsOnly.length <= 4) {
+          formatted = digitsOnly.substring(0, 2) + ':' + digitsOnly.substring(2);
+        } else {
+          formatted = digitsOnly.substring(0, 2) + ':' + digitsOnly.substring(2, 4) + ':' + digitsOnly.substring(4, 6);
+        }
+        if (formatted.length <= 8) {
+          setEditValue(formatted);
+          setPrevLength(formatted.length);
+        }
+      } else {
+        setEditValue(inputValue);
+        setPrevLength(inputValue.length);
       }
     }
   };
@@ -159,16 +217,21 @@ const TimeEditableField: React.FC<TimeEditableFieldProps> = ({
         onChange={handleInputChange}
         onBlur={handleSave}
         onKeyDown={handleKeyDown}
-        className={`bg-transparent border-b border-gray-400 focus:border-gray-600 outline-none text-sm w-12 ${className}`}
+        className={`bg-transparent border-b border-gray-400 focus:border-gray-600 outline-none text-sm w-20 ${className}`}
         autoFocus
-        placeholder="HH:MM:SS"
+        placeholder="HH or HH:MM or HH:MM:SS"
       />
     );
   }
 
   return (
     <span
-      onClick={() => setIsEditing(true)}
+      onClick={() => {
+        const timeStr = secondsToTimeString(timeSec);
+        setEditValue(timeStr);
+        setPrevLength(timeStr.length);
+        setIsEditing(true);
+      }}
       className={`cursor-pointer hover:bg-gray-100 px-1 py-0.5 rounded text-sm ${className}`}
     >
       {secondsToTimeString(timeSec)}
@@ -182,12 +245,54 @@ const displaySecondsInMinutes = (totalSeconds: number) => {
   return minutes+"+"+seconds
 }
 
+const WaypointCard: React.FC<{ flightPlan: FlightPlan, index: number, onFlightPlanUpdate: (flightPlan: FlightPlan) => void }> = ({ flightPlan, index, onFlightPlanUpdate: _onFlightPlanUpdate }) => {
+  const waypoint = flightPlan.points[index];
+  
+  // Calculate ETA and EFR for this waypoint
+  let eta = flightPlan.initTimeSec;
+  let efr = flightPlan.initFob;
+  if (index > 0) {
+    const prevLegData = flightPlanUtils.calculateLegData(flightPlan, index - 1);
+    eta = prevLegData.eta;
+    efr = prevLegData.efr;
+  }
+
+  return (
+    <div className="bg-white border border-gray-200 rounded p-3">
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-aero-label text-gray-900">
+          {index + 1}. <EditableField
+            value={`WP${index + 1}`}
+            onChange={() => {}}
+            className="font-aero-label text-gray-900"
+          />
+        </span>
+        <div className="flex flex-col items-end text-right">
+          <span className="text-xs font-aero-mono text-gray-500">
+            {waypoint.lat?.toFixed(4)}, {waypoint.lon?.toFixed(4)}
+          </span>
+          <div className="flex items-center space-x-3 mt-1">
+            <div className="flex items-center space-x-1">
+              <span className="font-aero-label text-gray-600 text-xs">ETA:</span>
+              <span className="font-aero-mono text-gray-900 text-xs">{secondsToTimeString(eta)}</span>
+            </div>
+            <div className="flex items-center space-x-1">
+              <span className="font-aero-label text-gray-600 text-xs">EFR:</span>
+              <span className="font-aero-mono text-gray-900 text-xs">{efr.toFixed(0)}lbs</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const RouteCard: React.FC<{ flightPlan: FlightPlan, index: number, onFlightPlanUpdate: (flightPlan: FlightPlan) => void }> = ({ flightPlan, index, onFlightPlanUpdate }) => {
   const legData = flightPlanUtils.calculateLegData(flightPlan, index);
   return (
     <div className="ml-4 bg-gray-100 border border-gray-200 rounded p-3">
       <div className="space-y-2 text-xs">
-        {/* Line 1: CRS, DIST, ETE, ETA */}
+        {/* Line 1: CRS, DIST, ETE */}
         <div className="flex justify-between items-center">
           <div className="flex items-center space-x-1">
             <span className="font-aero-label text-gray-600 text-xs">CRS</span>
@@ -200,10 +305,6 @@ const RouteCard: React.FC<{ flightPlan: FlightPlan, index: number, onFlightPlanU
           <div className="flex items-center space-x-1">
             <span className="font-aero-label text-gray-600 text-xs">ETE</span>
             <span className="font-aero-mono text-gray-900 text-xs">{displaySecondsInMinutes(legData.ete)}</span>
-          </div>
-          <div className="flex items-center space-x-1">
-            <span className="font-aero-label text-gray-600 text-xs">ETA</span>
-            <span className="font-aero-mono text-gray-900 text-xs">{secondsToTimeString(legData.eta)}</span>
           </div>
         </div>
 
@@ -291,7 +392,7 @@ const RouteCard: React.FC<{ flightPlan: FlightPlan, index: number, onFlightPlanU
           </div>
         </div>
 
-        {/* Line 3: HDG, Leg Fuel, EFR */}
+        {/* Line 3: HDG, Leg Fuel */}
         <div className="flex justify-between items-center">
           <div className="flex items-center space-x-1">
             <span className="font-aero-label text-gray-600 text-xs">HDG:</span>
@@ -300,10 +401,6 @@ const RouteCard: React.FC<{ flightPlan: FlightPlan, index: number, onFlightPlanU
           <div className="flex items-center space-x-1">
             <span className="font-aero-label text-gray-600 text-xs">Leg Fuel:</span>
             <span className="font-aero-mono text-gray-900 text-xs">{legData.legFuel.toFixed(0)}lbs</span>
-          </div>
-          <div className="flex items-center space-x-1">
-            <span className="font-aero-label text-gray-600 text-xs">EFR:</span>
-            <span className="font-aero-mono text-gray-900 text-xs">{legData.efr.toFixed(0)}lbs</span>
           </div>
         </div>
       </div>
@@ -372,23 +469,10 @@ export const FlightPlanZone: React.FC<FlightPlanZoneProps> = ({ flightPlan, onFl
           {flightPlan.points.length === 0 ? (
             <div className="text-sm text-gray-500 italic">No waypoints added yet</div>
           ) : (
-            flightPlan.points.map((waypoint, index) => (
+            flightPlan.points.map((_waypoint, index) => (
               <React.Fragment key={index}>
                 {/* Waypoint Card */}
-                <div className="bg-white border border-gray-200 rounded p-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-aero-label text-gray-900">
-                      {index + 1}. <EditableField
-                        value={`WP${index + 1}`}
-                        onChange={() => {}}
-                        className="font-aero-label text-gray-900"
-                      />
-                    </span>
-                    <span className="text-xs font-aero-mono text-gray-500">
-                      {waypoint.lat?.toFixed(4)}, {waypoint.lon?.toFixed(4)}
-                    </span>
-                  </div>
-                </div>
+                <WaypointCard flightPlan={flightPlan} index={index} onFlightPlanUpdate={onFlightPlanUpdate} />
 
                 {/* Route Card (indented) */}
                 {index < flightPlan.points.length - 1 && (

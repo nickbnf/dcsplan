@@ -75,7 +75,6 @@ export const flightPlanUtils = {
         const windAngleRad = ((((originWpt.windDir + 180) % 360) - course + 360) % 360) * (Math.PI / 180)
         const tailComponent = originWpt.windSpeed * Math.cos(windAngleRad)
         const crossComponent = originWpt.windSpeed * Math.sin(windAngleRad)
-        console.log("windAngle", windAngleRad)
         console.log("tailComponent", tailComponent, "crossComponent", crossComponent, "originWpt.windSpeed", originWpt.windSpeed)
 
         const groundSpeed = originWpt.tas + tailComponent
@@ -99,7 +98,7 @@ export const flightPlanUtils = {
         const eta = initTimeSec + ete;
         const efr = initEfr - legFuel;
 
-        return {course: course, distance: lengthMeters / 1852, ete, legFuel, heading, eta, efr}; // Convert to nautical miles
+        return {course: course, distance: lengthMeters / 1852, ete, legFuel, heading, eta, efr};
     },
     prevWptPosition: (flightPlan: FlightPlan, index: number): (null | [number, number]) => {
         if (index === 0) {

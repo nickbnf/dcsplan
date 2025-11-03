@@ -2,7 +2,7 @@ import VectorSource from "ol/source/Vector";
 import type { FlightPlan } from "../types/flightPlan";
 import VectorLayer from "ol/layer/Vector";
 import { Point, LineString } from "ol/geom";
-import { Stroke, Style, Circle, Fill } from "ol/style";
+import { Stroke, Style, Circle, Fill, Text } from "ol/style";
 import Feature from "ol/Feature";
 import { transform } from "ol/proj";
 
@@ -55,6 +55,9 @@ export const createFlightPlanLayer = (flightPlan: FlightPlan, projection: any, e
             const featureType = feature.get('type');
             
             if (featureType === 'turnpoint') {
+                const waypointIndex = feature.get('waypointIndex');
+                const turnpointNumber = (waypointIndex !== undefined ? waypointIndex + 1 : '').toString();
+                
                 return [
                     // Outer circle
                     new Style({
@@ -68,6 +71,20 @@ export const createFlightPlanLayer = (flightPlan: FlightPlan, projection: any, e
                         image: new Circle({
                             radius: 1,
                             fill: new Fill({ color: '#0066CC' })
+                        })
+                    }),
+                    // Turnpoint number label
+                    new Style({
+                        text: new Text({
+                            text: turnpointNumber,
+                            offsetX: 20, // Position to the right of the turnpoint
+                            offsetY: 0,
+                            fill: new Fill({ color: '#0066CC' }),
+                            stroke: new Stroke({ 
+                                color: '#ffffff', 
+                                width: 3 
+                            }),
+                            font: 'bold 14px sans-serif'
                         })
                     })
                 ];

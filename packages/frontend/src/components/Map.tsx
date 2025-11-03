@@ -367,6 +367,12 @@ const MapComponent: React.FC<MapComponentProps> = ({
         isUpdatingFromModifyRef,
         flightPlan);
     }
+    else {
+      console.log('Removing interactions (dragging mode)');
+      if (snapInteractionRef.current) {
+        mapInstanceRef.current.removeInteraction(snapInteractionRef.current);
+      }
+    }
   }, [flightPlan, isLoading, drawingState.isDrawing === 'DRAG_POINT']);
 
   // Ensure interactions are properly installed when transitioning from drawing to normal mode

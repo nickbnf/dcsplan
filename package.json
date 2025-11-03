@@ -10,7 +10,8 @@
     "dev:backend": "cd packages/backend && . venv/bin/activate && uvicorn main:app --reload",
     "test:backend": "cd packages/backend && . venv/bin/activate && pytest -v",
     "test:backend:watch": "cd packages/backend && . venv/bin/activate && ptw -- -v",
-    "test": "pnpm test:backend"
+    "test:frontend": "pnpm --filter frontend test",
+    "test": "pnpm test:backend && pnpm test:frontend"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"
