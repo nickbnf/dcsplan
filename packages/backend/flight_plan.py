@@ -23,7 +23,6 @@ class FlightPlan(BaseModel):
     """Represents a complete flight plan with waypoints and initial conditions."""
     points: List[FlightPlanTurnPoint]
     declination: float
-    initTimeHour: int = Field(..., ge=0, le=23, description="Initial time hour (0-23)")
-    initTimeMin: int = Field(..., ge=0, le=59, description="Initial time minute (0-59)")
+    initTimeSec: int = Field(..., ge=0, le=86399, description="Initial time seconds (0-86399)")
     initFob: float = Field(..., ge=0, description="Initial fuel on board")
 

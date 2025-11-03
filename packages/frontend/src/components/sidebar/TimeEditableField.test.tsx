@@ -305,7 +305,7 @@ describe('TimeEditableField', () => {
       // Since we only allow digits and colons, -5 won't parse as negative
       // But if it did, it should clamp to 0
       // Let's test with a valid format that might result in edge case
-      expect(input.value).not.toContain('-');
+      expect((input as HTMLInputElement).value).not.toContain('-');
     });
   });
 
