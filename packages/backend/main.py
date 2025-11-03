@@ -13,10 +13,18 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 
 app = FastAPI()
 
+# Get CORS origins from environment variable
+# Defaults to localhost for development if not set
+cors_origins_env = os.getenv("CORS_ORIGINS", "http://localhost:5173")
+# Support comma-separated list of origins
+cors_origins = [origin.strip() for origin in cors_origins_env.split(",")]
+
+logger.info(f"CORS allowed origins: {cors_origins}")
+
 # Add CORS middleware to allow cross-origin requests
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],  # Allow requests from your frontend
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],  # Allow all HTTP methods
     allow_headers=["*"],  # Allow all headers

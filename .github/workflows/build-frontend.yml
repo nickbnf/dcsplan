@@ -1,0 +1,76 @@
+name: Build and Push Frontend Image
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'packages/frontend/**'
+      - '.github/workflows/build-frontend.yml'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'packages/frontend/**'
+      - '.github/workflows/build-frontend.yml'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+  tags:
+    - 'v*'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}/frontend
+  VITE_API_URL: ${{ vars.VITE_API_URL || 'http://localhost:8000' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Podman
+        uses: containers/podman-action@v1
+        with:
+          podman-version: latest
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./packages/frontend/Dockerfile
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VITE_API_URL=${{ env.VITE_API_URL }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+

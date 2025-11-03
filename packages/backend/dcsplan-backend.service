@@ -1,0 +1,16 @@
+[Unit]
+Description=DCSPlan Backend Container
+After=network.target podman.service
+Requires=podman.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/podman start dcsplan-backend
+ExecStop=/usr/bin/podman stop dcsplan-backend
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+

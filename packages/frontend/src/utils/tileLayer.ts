@@ -72,13 +72,15 @@ export const createTileLayer = (
   tileInfo: TileInfo,
   bounds: { minLon: number; minLat: number; maxLon: number; maxLat: number },
   projection: any,
-  baseUrl: string = 'http://localhost:8000/tiles/{z}/{x}/{y}.png'
+  baseUrl?: string
 ) => {
+  // Default to localhost for development if not provided
+  const defaultBaseUrl = baseUrl || 'http://localhost:8000/tiles/{z}/{x}/{y}.png';
   const tileGrid = createTileGrid(tileInfo, bounds, projection);
   
   return new TileLayer({
     source: new ImageTileSource({
-      url: baseUrl,
+      url: defaultBaseUrl,
       projection: projection,
       tileGrid: tileGrid
     })

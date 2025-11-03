@@ -41,3 +41,18 @@ pnpm dev
 
 - The front-end (Vite) will be available at `http://localhost:5173` (or the next available port).
 - The back-end (FastAPI) will be available at `http://localhost:8000`.
+
+## Deployment
+
+### Container Images
+
+This project uses Podman for containerization. Images are automatically built and pushed to GitHub Container Registry (ghcr.io) on each commit to main and on version tags.
+
+**Backend Image:** `ghcr.io/<username>/<repo>/backend:latest`  
+**Frontend Image:** `ghcr.io/<username>/<repo>/frontend:latest`
+
+See [packages/backend/DEPLOYMENT.md](packages/backend/DEPLOYMENT.md) for detailed deployment instructions.
+
+### CI/CD
+
+GitHub Actions workflows automatically build and publish container images. See [.github/README.md](.github/README.md) for more information about the CI/CD pipeline.

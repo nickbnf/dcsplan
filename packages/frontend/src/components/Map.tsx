@@ -15,6 +15,7 @@ import { createFlightPlanLayer } from '../utils/flightPlanLayer';
 import type { DrawingState } from '../hooks/useDrawing';
 import VectorLayer from 'ol/layer/Vector';
 import VectorSource from 'ol/source/Vector';
+import { getApiUrl, getTilesBaseUrl } from '../config/api';
 
 interface MapComponentProps {
   onCoordinateChange?: (coord: { raw_x: number; raw_y: number; lat: number; lon: number } | null) => void;
@@ -52,7 +53,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
       setIsLoading(true);
       setError(null);
       
-      const response = await fetch('http://localhost:8000/tiles/tiles_info.json', {
+      const response = await fetch(getApiUrl('tiles/tiles_info.json'), {
         method: 'GET',
         headers: {
           'Accept': 'application/json',
@@ -134,7 +135,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
     const transverseMercatorCenter = calculateTransverseMercatorCenter(regionBounds, transverseMercatorProjection);
 
     // Create tile layer and grid layer
-    const tileLayer = createTileLayer(tileInfo, regionBounds, transverseMercatorProjection);
+    const tileLayer = createTileLayer(tileInfo, regionBounds, transverseMercatorProjection, getTilesBaseUrl());
     const gridLayer = createGridLayer(regionBounds, transverseMercatorProjection);
     const flightPlanLayer = createFlightPlanLayer(flightPlan, transverseMercatorProjection);
     flightPlanLayer.set('name', 'flightplan');

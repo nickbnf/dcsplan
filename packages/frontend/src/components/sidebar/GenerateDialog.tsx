@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import type { FlightPlan } from '../../types/flightPlan';
+import { getApiUrl } from '../../config/api';
 
 interface GenerateDialogProps {
   flightPlan?: FlightPlan;
@@ -30,7 +31,7 @@ export const GenerateDialog: React.FC<GenerateDialogProps> = ({ flightPlan }) =>
     setError(null);
 
     try {
-      const response = await fetch('http://localhost:8000/kneeboard', {
+      const response = await fetch(getApiUrl('kneeboard'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
