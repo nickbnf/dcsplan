@@ -5,8 +5,10 @@ This module handles validation of flight plan data and generation of
 kneeboard PNG images.
 """
 
+import pprint
 from typing import List, Tuple, Optional, Dict, Callable
-from PIL import Image, ImageDraw, ImageFont
+import zipfile
+from PIL import Image
 import math
 import io
 import os
@@ -14,37 +16,73 @@ import json
 import logging
 from pyproj import Transformer
 from map_annotations import annotate_map
-from flight_plan import FlightPlan, FlightPlanTurnPoint
+from flight_plan import FlightPlan, FlightPlanData
 
 # Set up logger
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 
-def generate_kneeboard_png(flight_plan: FlightPlan) -> bytes:
+def generate_kneeboard_single_png(flight_plan: FlightPlan, leg_index: int) -> bytes:
     """
-    Generate a 768x1024 PNG image with the map for the first leg of the flight plan.
+    Generate a 768x1024 PNG image with the map for the given leg of the flight plan.
     
     Args:
         flight_plan: The flight plan
-        
+        leg_index: Index of the leg to generate the map for
     Returns:
         PNG image data as bytes (768x1024)
         
     Raises:
         ValueError: If flight plan has fewer than 2 waypoints
     """
-    logger.info("=== Generating kneeboard PNG (first leg map) ===")
+    logger.info(f"=== Generating kneeboard PNG (leg {leg_index} map) ===")
     
     if len(flight_plan.points) < 2:
         raise ValueError("Flight plan must have at least 2 waypoints to generate a leg map")
     
-    # Generate map for the first leg
-    leg_map_png = generate_leg_map(flight_plan, origin_index=0, destination_index=1)
+    # Generate map for the given leg
+    flightPlanData = FlightPlanData(flight_plan)
+    logger.info(f"Flight plan data: {pprint.pformat(flightPlanData)}")
+    leg_map_png = generate_leg_map(flight_plan, flightPlanData, leg_index)
     logger.info(f"Kneeboard PNG generated: {len(leg_map_png)} bytes")
     
     return leg_map_png
 
+def generate_kneeboard_zip(flight_plan: FlightPlan) -> bytes:
+    """
+    Generate a ZIP file containing all the leg maps for the flight plan.
+    
+    Args:
+        flight_plan: The flight plan
+    Returns:
+        ZIP file data as bytes
+    """
+    logger.info(f"=== Generating kneeboard ZIP ===")
+    
+    if len(flight_plan.points) < 2:
+        raise ValueError("Flight plan must have at least 2 waypoints to generate a leg map")
+    
+    # Generate all leg maps
+    flightPlanData = FlightPlanData(flight_plan)
+    leg_maps = []
+    for i in range(len(flightPlanData.legData)):
+        logger.info(f"Processing leg {i+1}/{len(flightPlanData.legData)}")
+        origin = flight_plan.points[i]
+        destination = flight_plan.points[i + 1]
+        
+        leg_map = generate_leg_map(origin, destination)
+        leg_maps.append(leg_map)
+        logger.info(f"Leg {i+1}/{len(flightPlanData.legData)} completed: {len(leg_map)} bytes")
+
+    logger.info(f"All leg maps generated: {len(leg_maps)} maps")
+    
+    # Create ZIP file
+    zip_data = io.BytesIO()
+    with zipfile.ZipFile(zip_data, 'w') as zipf:
+        for i, leg_map in enumerate(leg_maps):
+            zipf.writestr(f"leg_{i+1}.png", leg_map)
+    return zip_data.getvalue()
 
 # Constants for leg map generation
 TILES_DIR = os.path.join(os.path.dirname(__file__), "static", "tiles")
@@ -620,27 +658,27 @@ def _tm_to_pixel_on_rotated_image(
 
 def generate_leg_map(
     flight_plan: FlightPlan,
-    origin_index: int,
-    destination_index: int
+    flightPlanData: FlightPlanData,
+    leg_index: int
 ) -> bytes:
     """
     Generate a map image for a single leg of the flight plan.
     
     Args:
         flight_plan: The flight plan
-        origin_index: Index of the starting waypoint
-        destination_index: Index of the ending waypoint
+        flightPlanData: The flight plan data
+        leg_index: Index of the leg to generate the map for
         
     Returns:
         PNG image data as bytes (768x1024)
     """
     tile_info = _get_tile_info()
     
-    origin = flight_plan.points[origin_index]
-    destination = flight_plan.points[destination_index]
+    origin = flight_plan.points[leg_index]
+    destination = flight_plan.points[leg_index + 1]
 
     logger.info(f"=== Starting leg map generation ===")
-    logger.info(f"Origin: {origin_index}, Destination: {destination_index}")
+    logger.info(f"Leg: {leg_index}")
 
     # Calculate leg distance
     leg_distance = _calculate_distance_meters(
@@ -689,7 +727,7 @@ def generate_leg_map(
     effective_resolution = resolution / scale_factor
     
     # Get tile bounds for the composite
-    min_tile_x, min_tile_y, max_tile_x, max_tile_y = _bbox_tm_to_tile_bounds(bbox_tm, tile_info, zoom)
+    min_tile_x, min_tile_y, _, _ = _bbox_tm_to_tile_bounds(bbox_tm, tile_info, zoom)
     
     # Convert TM to pixel coordinates using effective resolution (accounts for scaling)
     origin_px_x = (origin_x_tm - grid_origin_x) / effective_resolution
@@ -749,6 +787,8 @@ def generate_leg_map(
     annotate_map(
         rotated,
         flight_plan,
+        flightPlanData,
+        leg_index,
         coord_to_pixel
     )
     
@@ -827,35 +867,3 @@ def generate_leg_map(
     logger.info(f"Generated cropped PNG: {len(img_bytes)} bytes")
     logger.info("=== Leg map generation completed ===")
     return img_bytes
-
-def generate_leg_maps(flight_plan: FlightPlan) -> List[bytes]:
-    """
-    Generate map images for all legs of the flight plan.
-    
-    Args:
-        flight_plan: The flight plan
-        
-    Returns:
-        List of PNG image data as bytes, one for each leg
-        
-    Raises:
-        ValueError: If flight plan has fewer than 2 waypoints
-    """
-    if len(flight_plan.points) < 2:
-        raise ValueError("Flight plan must have at least 2 waypoints")
-    
-    num_legs = len(flight_plan.points) - 1
-    logger.info(f"Generating maps for {num_legs} leg(s)")
-    
-    leg_maps = []
-    for i in range(num_legs):
-        logger.info(f"Processing leg {i+1}/{num_legs}")
-        origin = flight_plan.points[i]
-        destination = flight_plan.points[i + 1]
-        
-        leg_map = generate_leg_map(origin, destination)
-        leg_maps.append(leg_map)
-        logger.info(f"Leg {i+1}/{num_legs} completed: {len(leg_map)} bytes")
-    
-    logger.info(f"Generated {len(leg_maps)} leg map(s)")
-    return leg_maps
