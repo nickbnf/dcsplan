@@ -20,7 +20,7 @@ from flight_plan import FlightPlan, FlightPlanData
 
 # Set up logger
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 
 def generate_kneeboard_single_png(flight_plan: FlightPlan, leg_index: int) -> bytes:

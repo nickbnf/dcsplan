@@ -5,7 +5,7 @@ This module provides functions for annotating map images with flight plan legs,
 waypoints, and other visual markers.
 """
 
-from typing import Callable, Tuple
+from typing import Callable, Tuple, Optional
 from PIL import Image, ImageDraw, ImageFont
 import logging
 import math
@@ -261,6 +261,239 @@ def annotate_turnpoint(
         logger.warning(f"Failed to annotate turnpoint: {e}")
 
 
+def _calculate_doghouse_position(
+    origin: FlightPlanTurnPoint,
+    destination: FlightPlanTurnPoint,
+    coord_to_pixel: Callable[[float, float], Tuple[float, float]],
+    image_width: int,
+    image_height: int,
+    offset_distance: float = 80,
+    position: str = "middle"
+) -> Tuple[Optional[float], Optional[float], Optional[float], Optional[float]]:
+    """
+    Calculate the position and orientation of a doghouse relative to a leg.
+    
+    Args:
+        origin: The origin turnpoint of the leg
+        destination: The destination turnpoint of the leg
+        coord_to_pixel: Function that converts geographic coordinates to pixel coordinates
+        image_width: Width of the image (for clamping)
+        image_height: Height of the image (for clamping)
+        offset_distance: Distance in pixels to offset the doghouse from the leg (perpendicular)
+        position: Position along the leg - "beginning", "middle", or "end"
+        
+    Returns:
+        Tuple of (doghouse_center_x, doghouse_center_y, reference_x, reference_y)
+        Returns (None, None, None, None) if leg has zero length
+    """
+    # Convert leg endpoints to pixel coordinates
+    origin_x_px, origin_y_px = coord_to_pixel(origin.lat, origin.lon)
+    dest_x_px, dest_y_px = coord_to_pixel(destination.lat, destination.lon)
+    
+    # Clamp to image bounds
+    def _clamp(val, lo, hi):
+        return max(lo, min(val, hi))
+    ox = _clamp(origin_x_px, 0, image_width - 1)
+    oy = _clamp(origin_y_px, 0, image_height - 1)
+    dx = _clamp(dest_x_px, 0, image_width - 1)
+    dy = _clamp(dest_y_px, 0, image_height - 1)
+    
+    # Calculate the direction vector of the leg
+    leg_dx = dx - ox
+    leg_dy = dy - oy
+    leg_length = math.sqrt(leg_dx**2 + leg_dy**2)
+    
+    if leg_length == 0:
+        logger.warning("Leg has zero length, cannot calculate doghouse position")
+        return None, None, None, None
+    
+    # Normalize the leg direction vector
+    leg_dir_x = leg_dx / leg_length
+    leg_dir_y = leg_dy / leg_length
+    
+    # Calculate perpendicular vector pointing to the left (rotate 90 degrees counterclockwise)
+    perp_x = -leg_dir_y
+    perp_y = leg_dir_x
+    
+    logger.info(f"perp_x: {perp_x:.1f}, perp_y: {perp_y:.1f}")
+
+    # Hardcoded pixel offset for beginning/end positioning
+    POSITION_OFFSET_PIXELS = 60
+    
+    # Determine position along the leg
+    if position == "beginning":
+        # Position at absolute pixel offset from beginning
+        ref_x = ox + leg_dir_x * POSITION_OFFSET_PIXELS
+        ref_y = oy + leg_dir_y * POSITION_OFFSET_PIXELS
+    elif position == "end":
+        # Position at absolute pixel offset from end (going backwards from destination)
+        ref_x = dx - leg_dir_x * POSITION_OFFSET_PIXELS
+        ref_y = dy - leg_dir_y * POSITION_OFFSET_PIXELS
+    else:  # "middle" (default)
+        # Position at midpoint
+        ref_x = (ox + dx) / 2
+        ref_y = (oy + dy) / 2
+    
+    # Calculate doghouse position (offset to the left)
+    doghouse_center_x = ref_x - perp_x * offset_distance
+    doghouse_center_y = ref_y - perp_y * offset_distance
+    
+    return doghouse_center_x, doghouse_center_y, ref_x, ref_y
+
+
+def _draw_doghouse_roof(
+    draw: ImageDraw.ImageDraw,
+    roof_left_x: float,
+    roof_right_x: float,
+    roof_top_y: float,
+    roof_bottom_y: float,
+    roof_height: float,
+    turnpoint_number: str,
+    font: ImageFont.FreeTypeFont,
+    text_color: Tuple[int, int, int, int],
+    outline_color: Tuple[int, int, int, int],
+    line_width: int
+) -> None:
+    """
+    Draw the roof of a doghouse with the turnpoint number.
+    
+    Args:
+        draw: The ImageDraw object to draw on
+        roof_left_x: Left edge X coordinate
+        roof_right_x: Right edge X coordinate
+        roof_top_y: Top edge Y coordinate
+        roof_bottom_y: Bottom edge Y coordinate
+        roof_height: Height of the roof
+        turnpoint_number: The turnpoint number string to display
+        font: Font to use for the turnpoint number
+        text_color: Color for text
+        outline_color: Color for outline
+        line_width: Width of outline lines
+    """
+    roof_center_x = roof_left_x + (roof_right_x - roof_left_x) / 2
+    roof_top_center_y = roof_top_y + roof_height * 0.15  # Peak of roof
+    
+    # Draw roof (triangular shape) - outline only
+    roof_points = [
+        (roof_left_x, roof_bottom_y),  # Bottom left
+        (roof_center_x, roof_top_center_y),  # Top center (peak)
+        (roof_right_x, roof_bottom_y),  # Bottom right
+    ]
+    # Draw roof lines explicitly to ensure consistent thickness
+    draw.line([roof_points[0], roof_points[1]], fill=outline_color, width=line_width)
+    draw.line([roof_points[1], roof_points[2]], fill=outline_color, width=line_width)
+    draw.line([roof_points[2], roof_points[0]], fill=outline_color, width=line_width)
+    
+    # Draw turnpoint number in the roof
+    bbox_roof = draw.textbbox((0, 0), str(int(turnpoint_number)+1), font=font)
+    text_width_roof = bbox_roof[2] - bbox_roof[0]
+    text_height_roof = bbox_roof[3] - bbox_roof[1]
+    text_x_roof = roof_center_x - text_width_roof / 2
+    # Center vertically in roof
+    roof_center_y = (roof_top_y + roof_bottom_y) / 2
+    text_y_roof = roof_center_y - text_height_roof / 2
+    draw.text((text_x_roof, text_y_roof), str(int(turnpoint_number)+1), fill=text_color, font=font)
+
+
+def _draw_doghouse_boxes(
+    draw: ImageDraw.ImageDraw,
+    box_left_x: float,
+    box_start_y: float,
+    box_width: float,
+    box_height: float,
+    box_values: list[str],
+    font: ImageFont.FreeTypeFont,
+    text_color: Tuple[int, int, int, int],
+    outline_color: Tuple[int, int, int, int],
+    line_width: int
+) -> None:
+    """
+    Draw boxes below the roof with values.
+    
+    Args:
+        draw: The ImageDraw object to draw on
+        box_left_x: Left edge X coordinate of boxes
+        box_start_y: Top Y coordinate of first box
+        box_width: Width of each box
+        box_height: Height of each box
+        box_values: List of strings to display in each box
+        font: Font to use for values
+        text_color: Color for text
+        outline_color: Color for outline
+        line_width: Width of outline lines
+    """
+    for i, value in enumerate(box_values):
+        box_y = box_start_y + i * box_height
+        box_top = box_y
+        box_bottom = box_y + box_height
+        box_right = box_left_x + box_width
+        
+        # Draw box lines explicitly to ensure consistent thickness for all lines
+        # Top horizontal line
+        draw.line([(box_left_x, box_top), (box_right, box_top)], fill=outline_color, width=line_width)
+        # Bottom horizontal line
+        draw.line([(box_left_x, box_bottom), (box_right, box_bottom)], fill=outline_color, width=line_width)
+        # Left vertical line
+        draw.line([(box_left_x, box_top), (box_left_x, box_bottom)], fill=outline_color, width=line_width)
+        # Right vertical line
+        draw.line([(box_right, box_top), (box_right, box_bottom)], fill=outline_color, width=line_width)
+        
+        # Draw value centered in the box
+        bbox_value = draw.textbbox((0, 0), value, font=font)
+        value_width = bbox_value[2] - bbox_value[0]
+        value_height = bbox_value[3] - bbox_value[1]
+        # Center horizontally
+        value_x = box_left_x + (box_width - value_width) / 2
+        # Center vertically
+        box_center_y = box_top + box_height / 2
+        value_y = box_center_y - value_height / 2
+        draw.text((value_x, value_y), value, fill=text_color, font=font)
+
+
+def _draw_doghouse_background(
+    draw: ImageDraw.ImageDraw,
+    roof_left_x: float,
+    roof_right_x: float,
+    roof_top_y: float,
+    roof_bottom_y: float,
+    roof_height: float,
+    box_start_y: float,
+    box_bottom_y: float,
+    fill_color: Tuple[int, int, int, int],
+    fill_overhang: int,
+    line_width: int
+) -> None:
+    """
+    Draw the unified background fill for a doghouse.
+    
+    Args:
+        draw: The ImageDraw object to draw on
+        roof_left_x: Left edge X coordinate of roof
+        roof_right_x: Right edge X coordinate of roof
+        roof_top_y: Top edge Y coordinate of roof
+        roof_bottom_y: Bottom edge Y coordinate of roof
+        roof_height: Height of the roof
+        box_start_y: Top Y coordinate of boxes
+        box_bottom_y: Bottom Y coordinate of boxes
+        fill_color: Color for fill
+        fill_overhang: Pixels to extend fill beyond outline
+        line_width: Width of outline lines
+    """
+    roof_center_x = roof_left_x + (roof_right_x - roof_left_x) / 2
+    roof_top_center_y = roof_top_y + roof_height * 0.15  # Peak of roof
+    
+    # Draw unified background fill as a polygon: triangular roof + rectangular body (with overhang)
+    background_polygon = [
+        (roof_center_x, roof_top_center_y - fill_overhang),  # Peak - moved up
+        (roof_left_x - fill_overhang, box_start_y - fill_overhang + line_width),  # Bottom left of roof
+        (roof_left_x - fill_overhang, box_bottom_y + fill_overhang),  # Bottom left of boxes
+        (roof_right_x + fill_overhang, box_bottom_y + fill_overhang),  # Bottom right of boxes
+        (roof_right_x + fill_overhang, box_start_y - fill_overhang + line_width),  # Bottom right of roof
+    ]
+    
+    draw.polygon(background_polygon, fill=fill_color)
+
+
 def draw_doghouse(
     draw: ImageDraw.ImageDraw,
     origin: FlightPlanTurnPoint,
@@ -276,7 +509,7 @@ def draw_doghouse(
     
     The doghouse consists of:
     - A roof containing the destination turnpoint number
-    - Four boxes showing (from top to bottom): Heading, Distance, ETE, Alt
+    - Five boxes showing (from top to bottom): Heading, Distance, ETE, TAS, Alt
     
     Args:
         draw: The ImageDraw object to draw on (must be RGBA mode for transparency)
@@ -289,54 +522,23 @@ def draw_doghouse(
         image_height: Height of the image (for clamping)
     """
     try:
-        # Convert leg endpoints to pixel coordinates
-        origin_x_px, origin_y_px = coord_to_pixel(origin.lat, origin.lon)
-        dest_x_px, dest_y_px = coord_to_pixel(destination.lat, destination.lon)
+        # Calculate doghouse position
+        doghouse_center_x, doghouse_center_y, ref_x, ref_y = _calculate_doghouse_position(
+            origin, destination, coord_to_pixel, image_width, image_height, offset_distance=80
+        )
         
-        # Clamp to image bounds
-        def _clamp(val, lo, hi):
-            return max(lo, min(val, hi))
-        ox = _clamp(origin_x_px, 0, image_width - 1)
-        oy = _clamp(origin_y_px, 0, image_height - 1)
-        dx = _clamp(dest_x_px, 0, image_width - 1)
-        dy = _clamp(dest_y_px, 0, image_height - 1)
-        
-        # Calculate the midpoint of the leg
-        mid_x = (ox + dx) / 2
-        mid_y = (oy + dy) / 2
-        
-        # Calculate the direction vector of the leg
-        leg_dx = dx - ox
-        leg_dy = dy - oy
-        leg_length = math.sqrt(leg_dx**2 + leg_dy**2)
-        
-        if leg_length == 0:
-            logger.warning("Leg has zero length, cannot draw doghouse")
+        if doghouse_center_x is None:
             return
         
-        # Normalize the leg direction vector
-        leg_dir_x = leg_dx / leg_length
-        leg_dir_y = leg_dy / leg_length
-        
-        # Calculate perpendicular vector pointing to the left (rotate 90 degrees counterclockwise)
-        perp_x = -leg_dir_y
-        perp_y = leg_dir_x
-        
-        # Offset distance from the leg (to position doghouse on the left)
-        offset_distance = 80  # pixels
-        
-        # Calculate doghouse position (midpoint of leg, offset to the left)
-        doghouse_center_x = mid_x - perp_x * offset_distance
-        doghouse_center_y = mid_y + perp_y * offset_distance
-        
-        # Doghouse dimensions (enlarged to fit medium font)
+        # Doghouse dimensions (enlarged to fit large font)
         box_width = 95
         box_height = 40
         roof_height = 35
         line_width = 3  # Consistent line width for all lines
+        num_boxes = 5
         
-        # Total height of doghouse (roof + 4 boxes)
-        total_height = roof_height + 4 * box_height
+        # Total height of doghouse (roof + boxes)
+        total_height = roof_height + num_boxes * box_height
         
         # Starting position (top of roof)
         doghouse_top_x = doghouse_center_x - box_width / 2
@@ -354,55 +556,23 @@ def draw_doghouse(
         roof_bottom_y = doghouse_top_y + roof_height
         roof_left_x = doghouse_top_x
         roof_right_x = doghouse_top_x + box_width
-        roof_center_x = doghouse_top_x + box_width / 2
-        roof_top_center_y = roof_top_y + roof_height * 0.15  # Peak of roof - higher for more space above number
         
         # Calculate bottom of last box
         box_start_y = roof_bottom_y
-        box_bottom_y = box_start_y + 4 * box_height
+        box_bottom_y = box_start_y + num_boxes * box_height
         
-        # Draw unified background fill as a polygon: triangular roof + rectangular body (with 2px overhang)
-        # The polygon points form a "house" shape:
-        # 1. Peak (top center, moved up by overhang)
-        # 2. Bottom left of roof (moved down and left by overhang)
-        # 3. Bottom left of boxes (moved down and left by overhang)
-        # 4. Bottom right of boxes (moved down and right by overhang)
-        # 5. Bottom right of roof (moved down and right by overhang)
-        background_polygon = [
-            (roof_center_x, roof_top_center_y - fill_overhang),  # Peak - moved up
-            (roof_left_x - fill_overhang, box_start_y - fill_overhang + line_width),  # Bottom left of roof - moved down and left
-            (roof_left_x - fill_overhang, box_bottom_y + fill_overhang),  # Bottom left of boxes - moved down and left
-            (roof_right_x + fill_overhang, box_bottom_y + fill_overhang),  # Bottom right of boxes - moved down and right
-            (roof_right_x + fill_overhang, box_start_y - fill_overhang + line_width),  # Bottom right of roof - moved down and right
-        ]
+        # Draw unified background fill
+        _draw_doghouse_background(
+            draw, roof_left_x, roof_right_x, roof_top_y, roof_bottom_y,
+            roof_height, box_start_y, box_bottom_y, fill_color, fill_overhang, line_width
+        )
         
-        draw.polygon(background_polygon, fill=fill_color)
-        
-        # Draw roof (triangular/trapezoid shape) - outline only
-        roof_points = [
-            (roof_left_x, roof_bottom_y),  # Bottom left
-            (roof_center_x, roof_top_center_y),  # Top center (peak)
-            (roof_right_x, roof_bottom_y),  # Bottom right
-        ]
-        # Draw roof lines explicitly to ensure consistent thickness
-        draw.line([roof_points[0], roof_points[1]], fill=outline_color, width=line_width)
-        draw.line([roof_points[1], roof_points[2]], fill=outline_color, width=line_width)
-        draw.line([roof_points[2], roof_points[0]], fill=outline_color, width=line_width)
-        
-        # Draw turnpoint number in the roof
+        # Draw roof with turnpoint number
         turnpoint_number = str(destination_turnpoint_index + 1)  # 1-based for display
-        # Use the actual font for bbox calculation
-        bbox_roof = draw.textbbox((0, 0), turnpoint_number, font=LARGE_FONT)
-        text_width_roof = bbox_roof[2] - bbox_roof[0]
-        text_height_roof = bbox_roof[3] - bbox_roof[1]
-        text_x_roof = roof_center_x - text_width_roof / 2
-        # Center vertically in roof - account for font baseline
-        roof_center_y = (roof_top_y + roof_bottom_y) / 2
-        text_y_roof = roof_center_y - text_height_roof / 2
-        draw.text((text_x_roof, text_y_roof), turnpoint_number, fill=text_color, font=LARGE_FONT)
-        
-        # Draw four boxes below the roof
-        box_left_x = doghouse_top_x
+        _draw_doghouse_roof(
+            draw, roof_left_x, roof_right_x, roof_top_y, roof_bottom_y,
+            roof_height, turnpoint_number, LARGE_FONT, text_color, outline_color, line_width
+        )
         
         # Format leg data
         heading_str = f"{leg_data.heading:.0f}°M"
@@ -413,48 +583,204 @@ def draw_doghouse(
         ete_seconds = leg_data.eteSec % 60
         ete_str = f"{ete_minutes:02d}+{ete_seconds:02d}"
         
+        # TAS from destination turnpoint
+        tas_str = f"{destination.tas:.0f}K"
+        
         # Altitude from destination turnpoint
         alt_str = f"{destination.alt:.0f}'"
         
-        # Values for each box (from top to bottom: Heading, Distance, ETE, Alt)
+        # Values for each box (from top to bottom: Heading, Distance, ETE, TAS, Alt)
         box_values = [
             heading_str,
             distance_str,
             ete_str,
+            tas_str,
             alt_str,
         ]
         
-        for i, value in enumerate(box_values):
-            box_y = box_start_y + i * box_height
-            box_top = box_y
-            box_bottom = box_y + box_height
-            box_right = box_left_x + box_width
-            
-            # Draw box lines explicitly to ensure consistent thickness for all lines
-            # (Background fill already drawn as unified shape above)
-            # Top horizontal line
-            draw.line([(box_left_x, box_top), (box_right, box_top)], fill=outline_color, width=line_width)
-            # Bottom horizontal line
-            draw.line([(box_left_x, box_bottom), (box_right, box_bottom)], fill=outline_color, width=line_width)
-            # Left vertical line
-            draw.line([(box_left_x, box_top), (box_left_x, box_bottom)], fill=outline_color, width=line_width)
-            # Right vertical line
-            draw.line([(box_right, box_top), (box_right, box_bottom)], fill=outline_color, width=line_width)
-            
-            # Draw value centered in the box - use the actual font for bbox calculation
-            bbox_value = draw.textbbox((0, 0), value, font=LARGE_FONT)
-            value_width = bbox_value[2] - bbox_value[0]
-            value_height = bbox_value[3] - bbox_value[1]
-            # Center horizontally
-            value_x = box_left_x + (box_width - value_width) / 2
-            # Center vertically - account for font baseline by using box center
-            box_center_y = box_top + box_height / 2
-            value_y = box_center_y - value_height / 2
-            draw.text((value_x, value_y), value, fill=text_color, font=LARGE_FONT)
+        # Draw boxes
+        _draw_doghouse_boxes(
+            draw, doghouse_top_x, box_start_y, box_width, box_height,
+            box_values, LARGE_FONT, text_color, outline_color, line_width
+        )
         
-        logger.debug(f"Drew doghouse for leg at ({mid_x:.1f}, {mid_y:.1f})")
+        logger.debug(f"Drew doghouse for leg at ({ref_x:.1f}, {ref_y:.1f})")
     except Exception as e:
         logger.warning(f"Failed to draw doghouse: {e}")
+
+
+def draw_mini_doghouse(
+    draw: ImageDraw.ImageDraw,
+    overlay_image: Image.Image,
+    origin: FlightPlanTurnPoint,
+    destination: FlightPlanTurnPoint,
+    leg_data: LegData,
+    destination_turnpoint_index: int,
+    coord_to_pixel: Callable[[float, float], Tuple[float, float]],
+    image_width: int,
+    image_height: int,
+    position: str = "end"
+) -> None:
+    """
+    Draw a "mini-doghouse" diagram on the left of a leg, rotated to be parallel to the leg.
+    
+    The mini-doghouse consists of:
+    - A roof containing the destination turnpoint number
+    - Three boxes showing (from top to bottom): Heading, Alt, TAS
+    
+    Args:
+        draw: The ImageDraw object to draw on (must be RGBA mode for transparency)
+        overlay_image: The overlay image to paste the rotated doghouse onto
+        origin: The origin turnpoint of the leg
+        destination: The destination turnpoint of the leg
+        leg_data: The leg data containing heading, distance, ETE
+        destination_turnpoint_index: The index of the destination turnpoint (0-based)
+        coord_to_pixel: Function that converts geographic coordinates (lat, lon) to pixel coordinates (x, y)
+        image_width: Width of the image (for clamping)
+        image_height: Height of the image (for clamping)
+        position: Position along the leg - "beginning" or "end" (default: "end")
+    """
+    try:
+        # Calculate doghouse position
+        doghouse_center_x, doghouse_center_y, ref_x, ref_y = _calculate_doghouse_position(
+            origin, destination, coord_to_pixel, image_width, image_height, 
+            offset_distance=70, position=position
+        )
+        
+        logger.info(f"Minidoghouse position: ({doghouse_center_x:.1f}, {doghouse_center_y:.1f})")
+
+        if doghouse_center_x is None:
+            return
+        
+        logger.info(f"Origin: ({origin.lat:.1f}, {origin.lon:.1f}), Destination: ({destination.lat:.1f}, {destination.lon:.1f})")
+
+        # Convert leg endpoints to pixel coordinates to calculate leg angle
+        origin_x_px, origin_y_px = coord_to_pixel(origin.lat, origin.lon)
+        dest_x_px, dest_y_px = coord_to_pixel(destination.lat, destination.lon)
+        
+        # Clamp to image bounds
+        def _clamp(val, lo, hi):
+            return max(lo, min(val, hi))
+        ox = _clamp(origin_x_px, 0, image_width - 1)
+        oy = _clamp(origin_y_px, 0, image_height - 1)
+        dx = _clamp(dest_x_px, 0, image_width - 1)
+        dy = _clamp(dest_y_px, 0, image_height - 1)
+        
+        logger.info(f"Origin: ({ox:.1f}, {oy:.1f}), Destination: ({dx:.1f}, {dy:.1f})")
+
+        # Calculate leg direction vector and angle
+        leg_dx = dest_x_px - origin_x_px
+        leg_dy = dest_y_px - origin_y_px
+        leg_length = math.sqrt(leg_dx**2 + leg_dy**2)
+        
+        logger.info(f"leg_dx: {leg_dx:.1f}, leg_dy: {leg_dy:.1f}")
+
+        if leg_length == 0:
+            logger.warning("Leg has zero length, cannot draw mini-doghouse")
+            return
+        
+        # Calculate rotation angle in degrees
+        # The doghouse is drawn vertically (roof at top, boxes below)
+        # To make it parallel to the leg, we need to rotate by leg_angle - 90 degrees
+        leg_angle_rad = math.atan2(leg_dx, leg_dy)
+        leg_angle_deg = math.degrees(leg_angle_rad)
+        logger.info(f"Leg angle: {leg_angle_deg:.1f}°")
+        rotation_angle = 180 + leg_angle_deg
+        
+        # Mini-doghouse dimensions (smaller to fit small font)
+        box_width = 70
+        box_height = 28
+        roof_height = 25
+        line_width = 2  # Thinner lines for mini version
+        num_boxes = 3
+        
+        # Total height of mini-doghouse (roof + 3 boxes)
+        total_height = roof_height + num_boxes * box_height
+        
+        # Calculate size needed for rotated image (diagonal)
+        diagonal = math.sqrt(box_width**2 + total_height**2)
+        temp_size = int(diagonal) + 20  # Add padding
+        temp_center = temp_size / 2
+        
+        # Create temporary image for drawing the doghouse (ensure RGBA mode)
+        temp_image = Image.new('RGBA', (temp_size, temp_size), (0, 0, 0, 0))
+        temp_draw = ImageDraw.Draw(temp_image, mode='RGBA')
+        
+        # Calculate positions relative to temp image center
+        temp_box_left_x = temp_center - box_width / 2
+        temp_roof_top_y = temp_center - total_height / 2
+        temp_roof_bottom_y = temp_roof_top_y + roof_height
+        temp_roof_left_x = temp_box_left_x
+        temp_roof_right_x = temp_box_left_x + box_width
+        temp_box_start_y = temp_roof_bottom_y
+        temp_box_bottom_y = temp_box_start_y + num_boxes * box_height
+        
+        # Text color - using blue to match other annotations
+        text_color = (0, 102, 204, 255)  # Solid blue for text
+        outline_color = BLUE_COLOR_RGBA
+        # Transparent white fill at 30% opacity
+        fill_color = (255, 255, 255, int(255 * 0.3))  # 30% opacity white
+        fill_overhang = 3  # Smaller overhang for mini version
+        
+        # Draw unified background fill on temp image
+        _draw_doghouse_background(
+            temp_draw, temp_roof_left_x, temp_roof_right_x, temp_roof_top_y, temp_roof_bottom_y,
+            roof_height, temp_box_start_y, temp_box_bottom_y, fill_color, fill_overhang, line_width
+        )
+        
+        # Draw roof with turnpoint number on temp image
+        turnpoint_number = str(destination_turnpoint_index + 1)  # 1-based for display
+        _draw_doghouse_roof(
+            temp_draw, temp_roof_left_x, temp_roof_right_x, temp_roof_top_y, temp_roof_bottom_y,
+            roof_height, turnpoint_number, SMALL_FONT, text_color, outline_color, line_width
+        )
+        
+        # Format heading from leg data
+        heading_str = f"{leg_data.heading:.0f}°M"
+        
+        # Format Alt and TAS from destination turnpoint
+        tas_str = f"{destination.tas:.0f}K"
+        alt_str = f"{destination.alt:.0f}'"
+        
+        # Values for each box (from top to bottom: Heading, Alt, TAS)
+        box_values = [heading_str, alt_str, tas_str]
+        
+        # Draw boxes on temp image
+        _draw_doghouse_boxes(
+            temp_draw, temp_box_left_x, temp_box_start_y, box_width, box_height,
+            box_values, SMALL_FONT, text_color, outline_color, line_width
+        )
+        
+        # Rotate the temporary image around its center
+        # Use expand=True to ensure the rotated image isn't clipped
+        # Use resample=Image.Resampling.BILINEAR for better quality
+        rotated_temp = temp_image.rotate(
+           rotation_angle, 
+           center=(temp_center, temp_center), 
+           expand=True, 
+           resample=Image.Resampling.BILINEAR
+        )
+
+        # After rotation with expand=True, the image size changes, so recalculate center
+        rotated_center_x = rotated_temp.width / 2
+        rotated_center_y = rotated_temp.height / 2
+        
+        # Calculate paste position (center of rotated image should be at doghouse_center)
+        paste_x = int(doghouse_center_x - rotated_center_x)
+        paste_y = int(doghouse_center_y - rotated_center_y)
+        
+        # Create a temporary overlay the same size as the main overlay
+        # Paste the rotated doghouse onto it at the correct position
+        temp_overlay = Image.new('RGBA', overlay_image.size, (0, 0, 0, 0))
+        temp_overlay.paste(rotated_temp, (paste_x, paste_y))
+        
+        # Alpha composite the temporary overlay onto the main overlay
+        # This properly blends the alpha channels
+        overlay_image.paste(Image.alpha_composite(overlay_image, temp_overlay))
+        
+        logger.debug(f"Drew mini-doghouse for leg at ({ref_x:.1f}, {ref_y:.1f}) with rotation {rotation_angle:.1f}° (leg angle: {leg_angle_deg:.1f}°)")
+    except Exception as e:
+        logger.warning(f"Failed to draw mini-doghouse: {e}")
 
 
 def annotate_map(
@@ -499,18 +825,38 @@ def annotate_map(
             draw_turnpoint(overlay_draw, point, coord_to_pixel, image.width, image.height)
             annotate_turnpoint(overlay_draw, point, i, flight_plan_data, coord_to_pixel, image.width, image.height)
         
-        # Add the doghouse for this leg
+        # Add the doghouses for this leg
         if focus_leg_index < len(flight_plan_data.legData):
             draw_doghouse(
                 overlay_draw,
                 flight_plan.points[focus_leg_index],
                 flight_plan.points[focus_leg_index + 1],
                 flight_plan_data.legData[focus_leg_index],
-                focus_leg_index + 1,  # Destination turnpoint index (0-based)
+                focus_leg_index,  # This leg's index
                 coord_to_pixel,
                 image.width,
                 image.height
             )
+        if focus_leg_index > 0:
+            draw_mini_doghouse(
+                overlay_draw,
+                overlay,
+                flight_plan.points[focus_leg_index - 1],
+                flight_plan.points[focus_leg_index],
+                flight_plan_data.legData[focus_leg_index - 1],
+                focus_leg_index - 1,  # Destination turnpoint index (where it connects to focus leg)
+                coord_to_pixel,
+                image.width, image.height, position="end")
+        if focus_leg_index < len(flight_plan_data.legData) - 1:
+            draw_mini_doghouse(
+                overlay_draw,
+                overlay,
+                flight_plan.points[focus_leg_index + 1],
+                flight_plan.points[focus_leg_index + 2],
+                flight_plan_data.legData[focus_leg_index + 1],
+                focus_leg_index + 1,  # Destination turnpoint index (0-based)
+                coord_to_pixel,
+                image.width, image.height, position="beginning")
 
         # Composite the overlay onto the image
         if image.mode != 'RGBA':
