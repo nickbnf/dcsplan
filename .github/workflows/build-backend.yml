@@ -1,15 +1,19 @@
 name: Build and Push Backend Image
 
+permissions:
+  contents: read
+  packages: write
+
 on:
   push:
     branches:
-      - main
+      - master
     paths:
       - 'packages/backend/**'
       - '.github/workflows/build-backend.yml'
   pull_request:
     branches:
-      - main
+      - master
     paths:
       - 'packages/backend/**'
       - '.github/workflows/build-backend.yml'

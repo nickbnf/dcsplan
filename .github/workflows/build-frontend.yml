@@ -3,7 +3,7 @@ name: Build and Push Frontend Image
 on:
   push:
     branches:
-      - main
+      - master
     paths:
       - 'packages/frontend/**'
       - '.github/workflows/build-frontend.yml'
@@ -11,7 +11,7 @@ on:
       - 'pnpm-workspace.yaml'
   pull_request:
     branches:
-      - main
+      - master
     paths:
       - 'packages/frontend/**'
       - '.github/workflows/build-frontend.yml'
