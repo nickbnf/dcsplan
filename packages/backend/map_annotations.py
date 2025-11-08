@@ -27,7 +27,7 @@ def _load_fonts() -> Tuple[ImageFont.FreeTypeFont, ImageFont.FreeTypeFont, Image
         Tuple of (large_font, medium_font, small_font) for use in annotations
     """
     font_paths = [
-        "/System/Library/Fonts/Helvetica.ttc",  # macOS
+        "/System/Library/Fonts/SFCamera.ttf",  # macOS
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",  # Linux
         "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",  # Alternative Linux
     ]
@@ -40,15 +40,18 @@ def _load_fonts() -> Tuple[ImageFont.FreeTypeFont, ImageFont.FreeTypeFont, Image
     for font_path in font_paths:
         try:
             large_font = ImageFont.truetype(font_path, large_size)
+            large_font.set_variation_by_name('Bold')
             medium_font = ImageFont.truetype(font_path, medium_size)
+            medium_font.set_variation_by_name('Bold')
             small_font = ImageFont.truetype(font_path, small_size)
+            # small_font.set_variation_by_name('Bold')
             logger.debug(f"Loaded fonts from {font_path}")
             return large_font, medium_font, small_font
         except (OSError, IOError):
             continue
     
     # Fall back to default font
-    logger.debug("Using default font (no TrueType fonts found)")
+    logger.warning("Using default font (no TrueType fonts found)")
     default_font = ImageFont.load_default()
     return default_font, default_font, default_font
 
@@ -150,6 +153,121 @@ def draw_leg(
         logger.warning(f"Failed to draw leg overlay on image: {e}")
 
 
+def annotate_leg(
+    draw: ImageDraw.ImageDraw,
+    overlay_image: Image.Image,
+    origin: FlightPlanTurnPoint,
+    destination: FlightPlanTurnPoint,
+    time_at_origin: int,
+    leg_data: LegData,
+    coord_to_pixel: Callable[[float, float], Tuple[float, float]],
+    image_width: int,
+    image_height: int
+) -> None:
+    """
+    Annotate a leg with the tick marks for time and distance.
+    """
+    try:
+        # Convert lat/lon coordinates to pixel coordinates using the provided converter function
+        origin_x_px, origin_y_px = coord_to_pixel(origin.lat, origin.lon)
+        dest_x_px, dest_y_px = coord_to_pixel(destination.lat, destination.lon)
+
+        dx = dest_x_px - origin_x_px
+        dy = dest_y_px - origin_y_px
+        leg_length_px = math.sqrt(dx**2 + dy**2)
+        
+        if leg_length_px == 0:
+            logger.warning("Leg has zero length, cannot annotate")
+            return
+
+        logger.debug(f"Leg endpoints on image: O=({origin_x_px:.1f}, {origin_y_px:.1f}), D=({dest_x_px:.1f}, {dest_y_px:.1f})")
+
+        # Draw a tick every minute
+        first_minute_s = (time_at_origin // 60 + 1) * 60
+        last_minute_s = (time_at_origin + leg_data.eteSec) // 60 * 60
+        for minute_s in range(first_minute_s, last_minute_s + 1, 60):
+            # Position in pixels along the leg
+            dx_per_min = dx / (leg_data.eteSec / 60)
+            dy_per_min = dy / (leg_data.eteSec / 60)
+            sec_from_beginning = minute_s - time_at_origin
+            x = origin_x_px + dx_per_min * sec_from_beginning / 60
+            y = origin_y_px + dy_per_min * sec_from_beginning / 60
+            logger.debug(f"Minute {minute_s} at {x:.1f} {y:.1f}")
+            
+            # Calculate perpendicular vector to the leg for tick orientation
+            # Perpendicular to (dx, dy) is (-dy, dx) or (dy, -dx)
+            # Normalize and scale to tick length (5 pixels)
+            perp_dx = -dy / leg_length_px * 5
+            perp_dy = dx / leg_length_px * 5
+            
+            draw.line([(x - perp_dx, y - perp_dy), (x + perp_dx, y + perp_dy)], fill=BLUE_COLOR_RGBA, width=3)
+            
+            distance_from_origin_px = math.sqrt((x - origin_x_px)**2 + (y - origin_y_px)**2)
+            distance_from_dest_px = math.sqrt((x - dest_x_px)**2 + (y - dest_y_px)**2)
+
+            NO_LABEL_ZONE_PX = 60
+            if distance_from_origin_px > NO_LABEL_ZONE_PX and distance_from_dest_px > NO_LABEL_ZONE_PX:
+                # Draw minute number rotated perpendicular to the leg, slightly to the right of the tick
+                label_txt = f"{minute_s // 3600:02d}:{minute_s % 3600 // 60:02d}"
+                
+                # Calculate leg angle for text rotation (perpendicular = leg_angle + 90)
+                leg_angle_rad = math.atan2(dx, dy)
+                leg_angle_deg = math.degrees(leg_angle_rad)
+                # Text should be perpendicular to leg
+                text_rotation_angle = leg_angle_deg + 180
+                
+                # Position text slightly to the right of the tick (perpendicular to the leg)
+                text_offset_distance = 10
+                text_offset_x = perp_dx * text_offset_distance
+                text_offset_y = perp_dy * text_offset_distance
+                text_x = x + text_offset_x
+                text_y = y + text_offset_y
+                
+                # Create temporary image for rotated text
+                # Estimate text size (small font) - use a temporary image to measure
+                temp_measure = Image.new('RGBA', (100, 100), (0, 0, 0, 0))
+                temp_measure_draw = ImageDraw.Draw(temp_measure)
+                text_bbox = temp_measure_draw.textbbox((0, 0), label_txt, font=SMALL_FONT)
+                text_width = text_bbox[2] - text_bbox[0]
+                text_height = text_bbox[3] - text_bbox[1]
+                
+                # Create temp image with padding for rotation
+                temp_size = int(math.sqrt(text_width**2 + text_height**2)) + 20
+                temp_image = Image.new('RGBA', (temp_size, temp_size), (0, 0, 0, 0))
+                temp_draw = ImageDraw.Draw(temp_image, mode='RGBA')
+                
+                # Draw text centered in temp image
+                # Account for bbox offsets to properly center the text
+                temp_text_x = (temp_size - text_width) / 2 - text_bbox[0]
+                temp_text_y = (temp_size - text_height) / 2 - text_bbox[1]
+                text_color = (0, 102, 204, 255)  # Solid blue for text
+                temp_draw.text((temp_text_x, temp_text_y), label_txt, fill=text_color, font=SMALL_FONT)
+                
+                # Rotate the temporary image
+                rotated_temp = temp_image.rotate(
+                    text_rotation_angle,
+                    center=(temp_size / 2, temp_size / 2),
+                    expand=True,
+                    resample=Image.Resampling.BILINEAR
+                )
+                
+                # Calculate paste position (center of rotated text at text_x, text_y)
+                rotated_center_x = rotated_temp.width / 2
+                rotated_center_y = rotated_temp.height / 2
+                paste_x = int(text_x - rotated_center_x)
+                paste_y = int(text_y - rotated_center_y)
+                
+                # Create temporary overlay and paste rotated text
+                temp_overlay = Image.new('RGBA', overlay_image.size, (0, 0, 0, 0))
+                temp_overlay.paste(rotated_temp, (paste_x, paste_y))
+                
+                # Alpha composite onto main overlay
+                overlay_image.paste(Image.alpha_composite(overlay_image, temp_overlay))
+
+    except Exception as e:
+        logger.warning(f"Failed to annotate leg: {e}")
+
+
 def annotate_turnpoint(
     draw: ImageDraw.ImageDraw,
     point: FlightPlanTurnPoint,
@@ -211,8 +329,8 @@ def annotate_turnpoint(
         text_x_right = text_x_left + 30  # Offset further right for name/ETA
         
         # Get text bounding boxes for name and ETA to center the stack vertically
-        bbox_name = draw.textbbox((0, 0), turnpoint_name, font=SMALL_FONT)
-        bbox_eta = draw.textbbox((0, 0), eta_str, font=SMALL_FONT)
+        bbox_name = draw.textbbox((0, 0), turnpoint_name, font=MEDIUM_FONT)
+        bbox_eta = draw.textbbox((0, 0), eta_str, font=MEDIUM_FONT)
         text_height_name = bbox_name[3] - bbox_name[1]
         text_height_eta = bbox_eta[3] - bbox_eta[1]
         
@@ -226,8 +344,8 @@ def annotate_turnpoint(
         text_y_right_eta = y - total_height // 2 + text_height_name + spacing
         
         # Calculate bounding box for name and ETA only (exclude the number)
-        bbox_name_actual = draw.textbbox((text_x_right, text_y_right_name), turnpoint_name, font=SMALL_FONT)
-        bbox_eta_actual = draw.textbbox((text_x_right, text_y_right_eta), eta_str, font=SMALL_FONT)
+        bbox_name_actual = draw.textbbox((text_x_right, text_y_right_name), turnpoint_name, font=MEDIUM_FONT)
+        bbox_eta_actual = draw.textbbox((text_x_right, text_y_right_eta), eta_str, font=MEDIUM_FONT)
         
         # Find the overall bounding box for name and ETA
         annotation_left = min(bbox_name_actual[0], bbox_eta_actual[0])
@@ -253,8 +371,8 @@ def annotate_turnpoint(
         draw.text((text_x_left, text_y_left), turnpoint_number, fill=text_color, font=LARGE_FONT)
         
         # Draw name and ETA (right, stacked, smaller font)
-        draw.text((text_x_right, text_y_right_name), turnpoint_name, fill=text_color, font=SMALL_FONT)
-        draw.text((text_x_right, text_y_right_eta), eta_str, fill=text_color, font=SMALL_FONT)
+        draw.text((text_x_right, text_y_right_name), turnpoint_name, fill=text_color, font=MEDIUM_FONT)
+        draw.text((text_x_right, text_y_right_eta), eta_str, fill=text_color, font=MEDIUM_FONT)
         
         logger.debug(f"Annotated turnpoint {index + 1} at ({x_px:.1f}, {y_px:.1f}) with ETA {eta_str}")
     except Exception as e:
@@ -385,14 +503,20 @@ def _draw_doghouse_roof(
     draw.line([roof_points[2], roof_points[0]], fill=outline_color, width=line_width)
     
     # Draw turnpoint number in the roof
-    bbox_roof = draw.textbbox((0, 0), str(int(turnpoint_number)+1), font=font)
+    turnpoint_str = str(int(turnpoint_number)+1)
+    bbox_roof = draw.textbbox((0, 0), turnpoint_str, font=font)
     text_width_roof = bbox_roof[2] - bbox_roof[0]
     text_height_roof = bbox_roof[3] - bbox_roof[1]
-    text_x_roof = roof_center_x - text_width_roof / 2
+    # Center horizontally
+    text_x_roof = roof_center_x - text_width_roof / 2 - bbox_roof[0]
     # Center vertically in roof
+    # The y coordinate in text() is the baseline, so we need to account for that
     roof_center_y = (roof_top_y + roof_bottom_y) / 2
-    text_y_roof = roof_center_y - text_height_roof / 2
-    draw.text((text_x_roof, text_y_roof), str(int(turnpoint_number)+1), fill=text_color, font=font)
+    # Calculate the offset from baseline to center of text
+    # bbox_roof[1] is the top (may be negative), bbox_roof[3] is the bottom
+    text_center_offset_from_baseline = (bbox_roof[1] + bbox_roof[3]) / 2
+    text_y_roof = roof_center_y - text_center_offset_from_baseline
+    draw.text((text_x_roof, text_y_roof), turnpoint_str, fill=text_color, font=font)
 
 
 def _draw_doghouse_boxes(
@@ -439,14 +563,19 @@ def _draw_doghouse_boxes(
         draw.line([(box_right, box_top), (box_right, box_bottom)], fill=outline_color, width=line_width)
         
         # Draw value centered in the box
+        # Get text bounding box to calculate dimensions
         bbox_value = draw.textbbox((0, 0), value, font=font)
         value_width = bbox_value[2] - bbox_value[0]
         value_height = bbox_value[3] - bbox_value[1]
         # Center horizontally
-        value_x = box_left_x + (box_width - value_width) / 2
+        value_x = box_left_x + (box_width - value_width) / 2 - bbox_value[0]
         # Center vertically
+        # The y coordinate in text() is the baseline, so we need to account for that
         box_center_y = box_top + box_height / 2
-        value_y = box_center_y - value_height / 2
+        # Calculate the offset from baseline to center of text
+        # bbox_value[1] is the top (may be negative), bbox_value[3] is the bottom
+        text_center_offset_from_baseline = (bbox_value[1] + bbox_value[3]) / 2
+        value_y = box_center_y - text_center_offset_from_baseline
         draw.text((value_x, value_y), value, fill=text_color, font=font)
 
 
@@ -732,7 +861,7 @@ def draw_mini_doghouse(
         turnpoint_number = str(destination_turnpoint_index + 1)  # 1-based for display
         _draw_doghouse_roof(
             temp_draw, temp_roof_left_x, temp_roof_right_x, temp_roof_top_y, temp_roof_bottom_y,
-            roof_height, turnpoint_number, SMALL_FONT, text_color, outline_color, line_width
+            roof_height, turnpoint_number, MEDIUM_FONT, text_color, outline_color, line_width
         )
         
         # Format heading from leg data
@@ -748,7 +877,7 @@ def draw_mini_doghouse(
         # Draw boxes on temp image
         _draw_doghouse_boxes(
             temp_draw, temp_box_left_x, temp_box_start_y, box_width, box_height,
-            box_values, SMALL_FONT, text_color, outline_color, line_width
+            box_values, MEDIUM_FONT, text_color, outline_color, line_width
         )
         
         # Rotate the temporary image around its center
@@ -819,7 +948,8 @@ def annotate_map(
                 origin = flight_plan.points[i-1]
                 destination = flight_plan.points[i]
                 draw_leg(overlay_draw, origin, destination, coord_to_pixel, image.width, image.height)
-        
+                annotate_leg(overlay_draw, overlay, origin, destination, flight_plan_data.turnpointData[i-1].etaSec, flight_plan_data.legData[i-1], coord_to_pixel, image.width, image.height)
+
         # Draw all turnpoints on the overlay
         for i, point in enumerate(flight_plan.points):
             draw_turnpoint(overlay_draw, point, coord_to_pixel, image.width, image.height)
