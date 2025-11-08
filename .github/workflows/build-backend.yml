@@ -61,6 +61,7 @@ jobs:
         with:
           context: ./packages/backend
           file: ./packages/backend/Dockerfile
+          platforms: linux/arm64
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
