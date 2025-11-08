@@ -17,8 +17,6 @@ on:
       - '.github/workflows/build-frontend.yml'
       - 'pnpm-lock.yaml'
       - 'pnpm-workspace.yaml'
-  tags:
-    - 'v*'
 
 env:
   REGISTRY: ghcr.io
@@ -36,10 +34,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Podman
-        uses: containers/podman-action@v1
-        with:
-          podman-version: latest
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
