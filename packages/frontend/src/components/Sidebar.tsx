@@ -27,7 +27,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onStopDrawing
 }) => {
   return (
-    <div className="w-[400px] bg-white border-r border-gray-300 flex flex-col h-full">
+    <div className="w-[400px] bg-white border-r border-gray-300 flex flex-col h-full overflow-y-auto">
       {/* Title Zone */}
       <TitleZone 
         mapName="Syria Theater"

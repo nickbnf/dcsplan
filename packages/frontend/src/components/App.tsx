@@ -28,7 +28,7 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="flex h-screen w-screen">
+    <div className="flex h-screen w-screen overflow-hidden">
       <Sidebar 
         mouseCoordinate={mouseCoordinate}
         flightPlan={flightPlan}
@@ -45,7 +45,7 @@ const App: React.FC = () => {
         onStartDrawing={startDrawing}
         onStopDrawing={stopDrawing}
       />
-      <div className="flex-grow">
+      <div className="flex-grow h-full overflow-hidden">
         <MapComponent 
           onCoordinateChange={handleCoordinateChange}
           flightPlan={flightPlan}

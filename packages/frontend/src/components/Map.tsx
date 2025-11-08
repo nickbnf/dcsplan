@@ -16,6 +16,7 @@ import type { DrawingState } from '../hooks/useDrawing';
 import VectorLayer from 'ol/layer/Vector';
 import VectorSource from 'ol/source/Vector';
 import { getApiUrl, getTilesBaseUrl } from '../config/api';
+import { DisplayButton } from './map/DisplayButton';
 
 interface MapComponentProps {
   onCoordinateChange?: (coord: { raw_x: number; raw_y: number; lat: number; lon: number } | null) => void;
@@ -43,9 +44,12 @@ const MapComponent: React.FC<MapComponentProps> = ({
   const modifyInteractionRef = useRef<Modify | null>(null);
   const snapInteractionRef = useRef<Snap | null>(null);
   const isUpdatingFromModifyRef = useRef<boolean>(false);
+  const gridLayerRef = useRef<VectorLayer | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tileInfo, setTileInfo] = useState<TileInfo | null>(null);
+  const [gridEnabled, setGridEnabled] = useState(false);
+  const [measureEnabled, setMeasureEnabled] = useState(false);
 
   // Safe function to fetch and parse tile info JSON
   const fetchTileInfo = async (): Promise<TileInfo | null> => {
@@ -137,6 +141,10 @@ const MapComponent: React.FC<MapComponentProps> = ({
     // Create tile layer and grid layer
     const tileLayer = createTileLayer(tileInfo, regionBounds, transverseMercatorProjection, getTilesBaseUrl());
     const gridLayer = createGridLayer(regionBounds, transverseMercatorProjection);
+    gridLayer.set('name', 'grid');
+    gridLayerRef.current = gridLayer;
+    // Start with grid hidden
+    gridLayer.setVisible(false);
     const flightPlanLayer = createFlightPlanLayer(flightPlan, transverseMercatorProjection);
     flightPlanLayer.set('name', 'flightplan');
     
@@ -405,6 +413,13 @@ const MapComponent: React.FC<MapComponentProps> = ({
     }
   }, [drawingState.isDrawing]);
 
+  // Toggle grid layer visibility when gridEnabled changes
+  useEffect(() => {
+    if (gridLayerRef.current) {
+      gridLayerRef.current.setVisible(gridEnabled);
+    }
+  }, [gridEnabled]);
+
   // Show loading state
   if (isLoading) {
     return (
@@ -439,6 +454,12 @@ const MapComponent: React.FC<MapComponentProps> = ({
   return (
     <div className="w-full h-full relative">
       <div ref={mapRef} className="w-full h-full" />
+      <DisplayButton
+        gridEnabled={gridEnabled}
+        measureEnabled={measureEnabled}
+        onGridChange={setGridEnabled}
+        onMeasureChange={setMeasureEnabled}
+      />
     </div>
   );
 };

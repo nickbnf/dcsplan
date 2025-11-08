@@ -1,5 +1,4 @@
-import React, { useState } from 'react';
-import * as Switch from '@radix-ui/react-switch';
+import React from 'react';
 import * as Separator from '@radix-ui/react-separator';
 import type { FlightPlan } from '../../types/flightPlan';
 import type { DrawingState } from '../../hooks/useDrawing';
@@ -24,9 +23,6 @@ export const ButtonZone: React.FC<ButtonZoneProps> = ({
   onStopDrawing,
   onFlightPlanUpdate,
 }) => {
-  const [gridEnabled, setGridEnabled] = useState(false);
-  const [measureEnabled, setMeasureEnabled] = useState(false);
-
   const declination = flightPlan.declination
 
   const handleAddWPTsClick = () => {
@@ -77,35 +73,6 @@ export const ButtonZone: React.FC<ButtonZoneProps> = ({
 
       <Separator.Root className="my-4 bg-gray-300 h-px" />
       */}
-
-      {/* Toggle Controls */}
-      <div className="mb-4">
-        <h3 className="text-sm font-aero-label text-gray-700 uppercase mb-3">Display</h3>
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <label className="text-sm font-aero-label text-gray-600">Geographic Grid</label>
-            <Switch.Root
-              checked={gridEnabled}
-              onCheckedChange={setGridEnabled}
-              className="w-9 h-5 bg-gray-300 rounded-full relative data-[state=checked]:bg-gray-600 transition-colors"
-            >
-              <Switch.Thumb className="block w-4 h-4 bg-white rounded-full shadow-sm transition-transform data-[state=checked]:translate-x-4" />
-            </Switch.Root>
-          </div>
-          <div className="flex items-center justify-between">
-            <label className="text-sm font-aero-label text-gray-600">Measure</label>
-            <Switch.Root
-              checked={measureEnabled}
-              onCheckedChange={setMeasureEnabled}
-              className="w-9 h-5 bg-gray-300 rounded-full relative data-[state=checked]:bg-gray-600 transition-colors"
-            >
-              <Switch.Thumb className="block w-4 h-4 bg-white rounded-full shadow-sm transition-transform data-[state=checked]:translate-x-4" />
-            </Switch.Root>
-          </div>
-        </div>
-      </div>
-
-      <Separator.Root className="my-4 bg-gray-300 h-px" />
 
       {/* Settings */}
       <div className="mb-4">
