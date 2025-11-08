@@ -1,9 +1,5 @@
 name: Build and Push All Images
 
-permissions:
-  contents: read
-  packages: write
-
 on:
   push:
     branches:
@@ -12,6 +8,10 @@ on:
     branches:
       - master
   workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
 
 env:
   REGISTRY: ghcr.io
@@ -37,6 +37,13 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Diagnostic test GHCR push
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker pull alpine:3.18
+          docker tag alpine:3.18 ghcr.io/${{ github.repository }}/ci-test-backend:ci
+          docker push ghcr.io/${{ github.repository }}/ci-test-backend:ci
 
       - name: Extract metadata (tags, labels) for Docker
         id: meta-backend
