@@ -3,6 +3,7 @@ import * as Separator from '@radix-ui/react-separator';
 import type { FlightPlan } from '../../types/flightPlan';
 import type { DrawingState } from '../../hooks/useDrawing';
 import { flightPlanUtils } from '../../utils/flightPlanUtils';
+import { ClearFlightPlanDialog } from './ClearFlightPlanDialog';
 
 interface ButtonZoneProps {
   drawingState: DrawingState;
@@ -42,37 +43,6 @@ export const ButtonZone: React.FC<ButtonZoneProps> = ({
 
   return (
     <div className="p-4 bg-white">
-      {/*
-      Mode Controls
-      <div className="mb-4">
-        <h3 className="text-sm font-aero-label text-gray-700 mb-2">Drawing Mode</h3>
-        <div className="flex space-x-2">
-          <Toggle.Root
-            pressed={activeMode === 'pan'}
-            onPressedChange={() => handleModeChange('pan')}
-            className="px-3 py-2 text-xs font-medium rounded border border-gray-300 bg-white hover:bg-gray-50 data-[state=on]:bg-gray-200 data-[state=on]:text-gray-900"
-          >
-            Pan
-          </Toggle.Root>
-          <Toggle.Root
-            pressed={activeMode === 'draw'}
-            onPressedChange={() => handleModeChange('draw')}
-            className="px-3 py-2 text-xs font-medium rounded border border-gray-300 bg-white hover:bg-gray-50 data-[state=on]:bg-gray-200 data-[state=on]:text-gray-900"
-          >
-            Draw
-          </Toggle.Root>
-          <Toggle.Root
-            pressed={activeMode === 'edit'}
-            onPressedChange={() => handleModeChange('edit')}
-            className="px-3 py-2 text-xs font-medium rounded border border-gray-300 bg-white hover:bg-gray-50 data-[state=on]:bg-gray-200 data-[state=on]:text-gray-900"
-          >
-            Edit
-          </Toggle.Root>
-        </div>
-      </div>
-
-      <Separator.Root className="my-4 bg-gray-300 h-px" />
-      */}
 
       {/* Settings */}
       <div className="mb-4">
@@ -110,7 +80,7 @@ export const ButtonZone: React.FC<ButtonZoneProps> = ({
       {/* Action Buttons */}
       <div className="mb-4">
         <h3 className="text-sm font-aero-label text-gray-700 uppercase mb-3">Actions</h3>
-        <div className="flex space-x-2">
+        <div className="flex space-x-2 flex-wrap gap-2">
           <button
             onClick={onUndo}
             className="px-3 py-2 text-xs font-aero-label rounded border border-gray-300 bg-white hover:bg-gray-50 text-gray-700">
@@ -131,6 +101,12 @@ export const ButtonZone: React.FC<ButtonZoneProps> = ({
           >
             Add WPTs
           </button>
+          <ClearFlightPlanDialog 
+            onConfirm={() => {
+              const newFlightPlan = flightPlanUtils.newFlightPlan();
+              onFlightPlanUpdate(newFlightPlan);
+            }}
+          />
         </div>
       </div>
     </div>

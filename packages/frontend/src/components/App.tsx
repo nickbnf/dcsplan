@@ -4,16 +4,13 @@ import { Sidebar } from './Sidebar';
 import type { FlightPlan } from '../types/flightPlan';
 import { flightPlanUtils } from '../utils/flightPlanUtils';
 import { useDrawing } from '../hooks/useDrawing';
+import { usePersistedFlightPlan } from '../hooks/usePersistedFlightPlan';
 
 const App: React.FC = () => {
   const [mouseCoordinate, setMouseCoordinate] = useState<{ lat: number; lon: number; raw_x: number; raw_y: number } | null>(null);
-  // Start with sample waypoints for testing waypoint editing
-  const [flightPlan, setFlightPlan] = useState<FlightPlan>(() => {
+  // Start with sample waypoints for testing waypoint editing (used when no saved data exists)
+  const [flightPlan, setFlightPlan] = usePersistedFlightPlan(() => {
     let plan = flightPlanUtils.newFlightPlan();
-    // Add some sample waypoints in the Syria region
-    plan = flightPlanUtils.addTurnPoint(plan, 33.5, 36.0); // Damascus area
-    plan = flightPlanUtils.addTurnPoint(plan, 34.0, 36.5); // North of Damascus
-    plan = flightPlanUtils.addTurnPoint(plan, 34.5, 37.0); // Further north
     return plan;
   });
   const { drawingState, startDrawing, stopDrawing, startDragging, stopDragging, addPoint, updatePreviewLine } = useDrawing();
