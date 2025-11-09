@@ -77,7 +77,7 @@ def generate_kneeboard_zip(flight_plan: FlightPlan) -> bytes:
     
     # Create ZIP file
     zip_data = io.BytesIO()
-    with zipfile.ZipFile(zip_data, 'w') as zipf:
+    with zipfile.ZipFile(zip_data, 'w', compression=zipfile.ZIP_STORED) as zipf:
         for i, leg_map in enumerate(leg_maps):
             zipf.writestr(f"leg_{i+1}.png", leg_map)
     return zip_data.getvalue()

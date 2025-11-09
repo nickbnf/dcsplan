@@ -54,16 +54,24 @@ export const GenerateDialog: React.FC<GenerateDialogProps> = ({ flightPlan }) =>
       // Get the blob (PNG or ZIP)
       const blob = await response.blob();
       
-      // Create a download link
       const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      const fileExtension = output === 'zip' ? 'zip' : 'png';
-      a.download = `flight_plan.${fileExtension}`;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
+      
+      if (output === 'zip') {
+        // For ZIP files, download to disk
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'flight_plan.zip';
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+      } else {
+        // For PNG files, open in a new browser tab
+        window.open(url, '_blank');
+        // Revoke the URL after a delay to allow the new tab to load the image
+        // The browser will keep the blob URL valid as long as the tab is open
+        setTimeout(() => window.URL.revokeObjectURL(url), 1000);
+      }
       
       setIsGenerating(false);
       setIsOpen(false);
