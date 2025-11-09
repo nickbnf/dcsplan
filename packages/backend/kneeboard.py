@@ -68,10 +68,8 @@ def generate_kneeboard_zip(flight_plan: FlightPlan) -> bytes:
     leg_maps = []
     for i in range(len(flightPlanData.legData)):
         logger.info(f"Processing leg {i+1}/{len(flightPlanData.legData)}")
-        origin = flight_plan.points[i]
-        destination = flight_plan.points[i + 1]
         
-        leg_map = generate_leg_map(origin, destination)
+        leg_map = generate_leg_map(flight_plan, flightPlanData, i)
         leg_maps.append(leg_map)
         logger.info(f"Leg {i+1}/{len(flightPlanData.legData)} completed: {len(leg_map)} bytes")
 

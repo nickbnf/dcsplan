@@ -8,10 +8,10 @@ interface GenerateDialogProps {
 }
 
 export const GenerateDialog: React.FC<GenerateDialogProps> = ({ flightPlan }) => {
-  const [missionName, setMissionName] = useState("");
-  const [aircraftType, setAircraftType] = useState("");
-  const [includeApproachPlate, setIncludeApproachPlate] = useState(false);
-  const [includeRadioFreqs, setIncludeRadioFreqs] = useState(true);
+  const [output, setOutput] = useState<'zip' | number>('zip');
+  // const [outputType, setOutputType] = useState<'zip' | 'png'>('zip');
+  // const [legNumber, setLegNumber] = useState(1);
+  const [includeFuelCalculations, setIncludeFuelCalculations] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isOpen, setIsOpen] = useState(false);
@@ -31,7 +31,14 @@ export const GenerateDialog: React.FC<GenerateDialogProps> = ({ flightPlan }) =>
     setError(null);
 
     try {
-      const response = await fetch(getApiUrl('kneeboard'), {
+      // Build query parameters
+      const params = new URLSearchParams();
+      params.append('output', output.toString());
+      if (includeFuelCalculations) {
+        params.append('include_fuel', 'true');
+      }
+
+      const response = await fetch(`${getApiUrl('kneeboard')}?${params.toString()}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -44,14 +51,15 @@ export const GenerateDialog: React.FC<GenerateDialogProps> = ({ flightPlan }) =>
         throw new Error(errorData.detail || `Server error: ${response.status}`);
       }
 
-      // Get the PNG blob
+      // Get the blob (PNG or ZIP)
       const blob = await response.blob();
       
       // Create a download link
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${missionName || 'flight_plan'}.png`;
+      const fileExtension = output === 'zip' ? 'zip' : 'png';
+      a.download = `flight_plan.${fileExtension}`;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
@@ -79,49 +87,64 @@ export const GenerateDialog: React.FC<GenerateDialogProps> = ({ flightPlan }) =>
           <Dialog.Title className="text-lg font-semibold mb-4">Generate Hardcopy Flight Plan</Dialog.Title>
           
           <div className="space-y-4">
-            {/* Editable fields */}
-            <div>
-              <label className="block text-sm font-medium mb-1">Mission Name</label>
-              <input
-                type="text"
-                value={missionName}
-                onChange={(e) => setMissionName(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-avio-accent"
-                placeholder="Enter mission name"
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium mb-1">Aircraft Type</label>
-              <input
-                type="text"
-                value={aircraftType}
-                onChange={(e) => setAircraftType(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-avio-accent"
-                placeholder="e.g., F/A-18C, F-16C"
-              />
-            </div>
-            
-            {/* Checkboxes */}
+            {/* Radio buttons */}
             <div className="space-y-2">
               <label className="flex items-center">
                 <input
-                  type="checkbox"
-                  checked={includeApproachPlate}
-                  onChange={(e) => setIncludeApproachPlate(e.target.checked)}
+                  type="radio"
+                  name="outputType"
+                  value="zip"
+                  checked={output === 'zip'}
+                  onChange={() => setOutput('zip')}
                   className="mr-2"
                 />
-                <span className="text-sm">Include approach plate</span>
+                <span className="text-sm">Full Kneeboard (ZIP)</span>
               </label>
               
               <label className="flex items-center">
                 <input
-                  type="checkbox"
-                  checked={includeRadioFreqs}
-                  onChange={(e) => setIncludeRadioFreqs(e.target.checked)}
+                  type="radio"
+                  name="outputType"
+                  value="png"
+                  checked={output !== 'zip'}
+                  onChange={() => setOutput(1 as number)}
                   className="mr-2"
                 />
-                <span className="text-sm">Include radio frequencies</span>
+                <span className="text-sm">Single Leg (PNG)</span>
+              </label>
+            </div>
+            
+            {/* Leg number field (only shown when Single Leg is selected) */}
+            {output !== 'zip' && flightPlan && (
+              <div>
+                <label className="block text-sm font-medium mb-1">Leg #</label>
+                <input
+                  type="number"
+                  min="1"
+                  max={flightPlan.points.length > 0 ? flightPlan.points.length - 1 : 1}
+                  value={output}
+                  onChange={(e) => {
+                    const value = parseInt(e.target.value) || 1;
+                    const maxLegs = flightPlan && flightPlan.points.length > 0 ? flightPlan.points.length - 1 : 1;
+                    //setLegNumber(Math.min(Math.max(1, value), maxLegs));
+                    setOutput(Math.min(Math.max(1, value), maxLegs));
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-avio-accent"
+                  placeholder="Enter leg number"
+                />
+              </div>
+            )}
+            
+            {/* Checkbox */}
+            <div className="space-y-2">
+              <label className="flex items-center">
+                <input
+                  type="checkbox"
+                  checked={includeFuelCalculations}
+                  onChange={(e) => setIncludeFuelCalculations(e.target.checked)}
+                  className="mr-2"
+                />
+                <span className="text-sm">Include fuel calculations</span>
               </label>
             </div>
           </div>
@@ -146,7 +169,7 @@ export const GenerateDialog: React.FC<GenerateDialogProps> = ({ flightPlan }) =>
               onClick={handleGenerateKneeboard}
               disabled={isGenerating}
             >
-              {isGenerating ? 'Generating...' : 'Generate kneeboard'}
+              {isGenerating ? 'Generating...' : `Generate ${output === 'zip' ? 'ZIP' : 'PNG'}`}
             </button>
           </div>
         </Dialog.Content>

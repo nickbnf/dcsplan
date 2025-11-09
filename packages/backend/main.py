@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -6,6 +6,7 @@ from flight_plan import FlightPlan
 from kneeboard import generate_kneeboard_single_png, generate_kneeboard_zip
 import os
 import logging
+from typing import Optional
 
 # Set up logger
 logger = logging.getLogger(__name__)
@@ -39,35 +40,51 @@ BLANK_TILE_PATH = os.path.join(os.path.dirname(__file__), "tiles", "blank.png")
 
 
 @app.post("/kneeboard")
-async def generate_kneeboard(flight_plan: FlightPlan):
-    """Generate a kneeboard PNG from a flight plan (first leg map)."""
+async def generate_kneeboard(
+    flight_plan: FlightPlan,
+    output: str = Query(default="zip", description="Output type: 'zip' or leg number"),
+    include_fuel: bool = Query(default=False, description="Include fuel calculations")
+):
+    """Generate a kneeboard PNG or ZIP from a flight plan."""
     logger.info(f"=== /kneeboard endpoint called ===")
     logger.info(f"Flight plan has {len(flight_plan.points)} waypoint(s)")
+    logger.info(f"Output output: {output}, Include fuel: {include_fuel}")
     try:
         # Validate that we have at least 2 points
         if len(flight_plan.points) < 2:
             logger.error("Flight plan has fewer than 2 waypoints")
             raise HTTPException(status_code=400, detail="Flight plan must have at least 2 waypoints")
         
-        # Generate PNG (first leg map)
-        logger.info("Generating kneeboard PNG (single leg map)...")
-        png_data = generate_kneeboard_single_png(flight_plan, 1)
-        logger.info(f"Kneeboard PNG generated: {len(png_data)} bytes")
-        
-        # Return as PNG
-        return Response(content=png_data, media_type="image/png")
-    
-        # Generate all legs maps (ZIP)
-        logger.info("Generating all legs maps (ZIP)...")
-        zip_data = generate_kneeboard_zip(flight_plan)
-        logger.info(f"All legs maps (ZIP) generated: {len(zip_data)} bytes")
-        
-        # Return as ZIP
-        return Response(content=zip_data, media_type="application/zip")
+        if output != "zip":
+            # Validate leg number
+            max_legs = len(flight_plan.points) - 1
+            if int(output) < 1 or int(output) > max_legs:
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"Leg number must be between 1 and {max_legs} (flight plan has {max_legs} leg(s))"
+                )
+            
+            # Generate PNG (single leg map)
+            logger.info(f"Generating kneeboard PNG (leg {output} map)...")
+            png_data = generate_kneeboard_single_png(flight_plan, int(output) - 1)
+            logger.info(f"Kneeboard PNG generated: {len(png_data)} bytes")
+            
+            # Return as PNG
+            return Response(content=png_data, media_type="image/png")
+        else:
+            # Generate all legs maps (ZIP)
+            logger.info("Generating all legs maps (ZIP)...")
+            zip_data = generate_kneeboard_zip(flight_plan)
+            logger.info(f"All legs maps (ZIP) generated: {len(zip_data)} bytes")
+            
+            # Return as ZIP
+            return Response(content=zip_data, media_type="application/zip")
         
     except ValueError as e:
         logger.error(f"ValueError: {e}")
         raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception(f"Unexpected error generating kneeboard: {e}")
         raise HTTPException(status_code=500, detail=f"Error generating kneeboard: {str(e)}")
