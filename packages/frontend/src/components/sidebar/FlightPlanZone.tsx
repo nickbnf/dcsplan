@@ -3,6 +3,7 @@ import * as Separator from '@radix-ui/react-separator';
 import type { FlightPlan } from '../../types/flightPlan';
 import { flightPlanUtils } from '../../utils/flightPlanUtils';
 import { GenerateDialog } from './GenerateDialog';
+import { DeleteWaypointDialog } from './DeleteWaypointDialog';
 
 interface FlightPlanZoneProps {
   flightPlan: FlightPlan;
@@ -245,7 +246,7 @@ const displaySecondsInMinutes = (totalSeconds: number) => {
   return minutes+"+"+seconds
 }
 
-const WaypointCard: React.FC<{ flightPlan: FlightPlan, index: number, onFlightPlanUpdate: (flightPlan: FlightPlan) => void }> = ({ flightPlan, index, onFlightPlanUpdate: _onFlightPlanUpdate }) => {
+const WaypointCard: React.FC<{ flightPlan: FlightPlan, index: number, onFlightPlanUpdate: (flightPlan: FlightPlan) => void }> = ({ flightPlan, index, onFlightPlanUpdate }) => {
   const waypoint = flightPlan.points[index];
   
   // Calculate ETA and EFR for this waypoint
@@ -257,8 +258,13 @@ const WaypointCard: React.FC<{ flightPlan: FlightPlan, index: number, onFlightPl
     efr = prevLegData.efr;
   }
 
+  const handleDelete = () => {
+    const updatedFlightPlan = flightPlanUtils.deleteTurnPoint(flightPlan, index);
+    onFlightPlanUpdate(updatedFlightPlan);
+  };
+
   return (
-    <div className="bg-white border border-gray-200 rounded p-3">
+    <div className="group bg-white border border-gray-200 rounded p-3">
       <div className="flex items-center justify-between">
         <span className="text-sm font-aero-label text-gray-900">
           {index + 1}. <EditableField
@@ -267,19 +273,27 @@ const WaypointCard: React.FC<{ flightPlan: FlightPlan, index: number, onFlightPl
             className="font-aero-label text-gray-900"
           />
         </span>
-        <div className="flex flex-col items-end text-right">
-          <span className="text-xs font-aero-mono text-gray-500">
-            {waypoint.lat?.toFixed(4)}, {waypoint.lon?.toFixed(4)}
-          </span>
-          <div className="flex items-center space-x-3 mt-1">
-            <div className="flex items-center space-x-1">
-              <span className="font-aero-label text-gray-600 text-xs">ETA:</span>
-              <span className="font-aero-mono text-gray-900 text-xs">{secondsToTimeString(eta)}</span>
+        <div className="flex items-center gap-1">
+          <div className="flex flex-col items-end text-right">
+            <span className="text-xs font-aero-mono text-gray-500">
+              {waypoint.lat?.toFixed(4)}, {waypoint.lon?.toFixed(4)}
+            </span>
+            <div className="flex items-center space-x-3 mt-1">
+              <div className="flex items-center space-x-1">
+                <span className="font-aero-label text-gray-600 text-xs">ETA</span>
+                <span className="font-aero-mono text-gray-900 text-xs">{secondsToTimeString(eta)}</span>
+              </div>
+              <div className="flex items-center space-x-1">
+                <span className="font-aero-label text-gray-600 text-xs">EFR</span>
+                <span className="font-aero-mono text-gray-900 text-xs">{efr.toFixed(0)}lbs</span>
+              </div>
             </div>
-            <div className="flex items-center space-x-1">
-              <span className="font-aero-label text-gray-600 text-xs">EFR:</span>
-              <span className="font-aero-mono text-gray-900 text-xs">{efr.toFixed(0)}lbs</span>
-            </div>
+          </div>
+          <div className="-mr-2">
+            <DeleteWaypointDialog 
+              waypointNumber={index + 1}
+              onConfirm={handleDelete}
+            />
           </div>
         </div>
       </div>
@@ -287,10 +301,20 @@ const WaypointCard: React.FC<{ flightPlan: FlightPlan, index: number, onFlightPl
   );
 }
 
-const RouteCard: React.FC<{ flightPlan: FlightPlan, index: number, onFlightPlanUpdate: (flightPlan: FlightPlan) => void }> = ({ flightPlan, index, onFlightPlanUpdate }) => {
+const RouteCard: React.FC<{ 
+  flightPlan: FlightPlan, 
+  index: number, 
+  onFlightPlanUpdate: (flightPlan: FlightPlan) => void
+}> = ({ flightPlan, index, onFlightPlanUpdate }) => {
   const legData = flightPlanUtils.calculateLegData(flightPlan, index);
+  
+  const handleInsertClick = () => {
+    const updatedFlightPlan = flightPlanUtils.insertTurnPointAtMidpoint(flightPlan, index);
+    onFlightPlanUpdate(updatedFlightPlan);
+  };
+
   return (
-    <div className="ml-4 bg-gray-100 border border-gray-200 rounded p-3">
+    <div className="group ml-4 bg-gray-100 border border-gray-200 rounded p-3">
       <div className="space-y-2 text-xs">
         {/* Line 1: CRS, DIST, ETE */}
         <div className="flex justify-between items-center">
@@ -392,24 +416,33 @@ const RouteCard: React.FC<{ flightPlan: FlightPlan, index: number, onFlightPlanU
           </div>
         </div>
 
-        {/* Line 3: HDG, Leg Fuel */}
+        {/* Line 3: HDG, Leg Fuel, Insert button */}
         <div className="flex justify-between items-center">
           <div className="flex items-center space-x-1">
-            <span className="font-aero-label text-gray-600 text-xs">HDG:</span>
+            <span className="font-aero-label text-gray-600 text-xs">HDG</span>
             <span className="font-aero-mono text-gray-900 text-xs">{legData.heading.toFixed(0)}°</span>
           </div>
           <div className="flex items-center space-x-1">
-            <span className="font-aero-label text-gray-600 text-xs">Leg Fuel:</span>
+            <span className="font-aero-label text-gray-600 text-xs">Leg Fuel</span>
             <span className="font-aero-mono text-gray-900 text-xs">{legData.legFuel.toFixed(0)}lbs</span>
           </div>
+          <button
+            onClick={handleInsertClick}
+            className="opacity-40 group-hover:opacity-100 transition-opacity px-2 py-1 text-xs font-aero-label rounded border border-gray-300 bg-white hover:bg-gray-50 text-gray-700"
+            title="Insert waypoint at midpoint"
+          >
+            + Insert
+          </button>
         </div>
       </div>
     </div>
   );
 }
 
-// Minimalistic Card-Based Design with Inline Editable Fields
-export const FlightPlanZone: React.FC<FlightPlanZoneProps> = ({ flightPlan, onFlightPlanUpdate }) => {
+export const FlightPlanZone: React.FC<FlightPlanZoneProps> = ({ 
+  flightPlan, 
+  onFlightPlanUpdate
+}) => {
   const [planName, setPlanName] = useState("Flight Plan Alpha");
 
   const fligthPlanZoneContent = useMemo(() => {
@@ -476,7 +509,11 @@ export const FlightPlanZone: React.FC<FlightPlanZoneProps> = ({ flightPlan, onFl
 
                 {/* Route Card (indented) */}
                 {index < flightPlan.points.length - 1 && (
-                  <RouteCard flightPlan={flightPlan} index={index} onFlightPlanUpdate={onFlightPlanUpdate} />
+                  <RouteCard 
+                    flightPlan={flightPlan} 
+                    index={index} 
+                    onFlightPlanUpdate={onFlightPlanUpdate}
+                  />
                 )}
               </React.Fragment>
             ))

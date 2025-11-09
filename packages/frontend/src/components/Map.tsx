@@ -37,7 +37,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
   onStartDragging,
   onStopDragging,
   addPoint, 
-  updatePreviewLine, 
+  updatePreviewLine,
 }) => {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<Map | null>(null);

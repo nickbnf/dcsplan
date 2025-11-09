@@ -43,6 +43,37 @@ export const flightPlanUtils = {
     deleteTurnPoint: (flightPlan: FlightPlan, index: number): FlightPlan => {
         return { ...flightPlan, points: flightPlan.points.filter((_, i) => i !== index) };
     },
+    insertTurnPointAtMidpoint: (flightPlan: FlightPlan, index: number): FlightPlan => {
+        // Insert a waypoint at the midpoint of the leg between waypoint[index] and waypoint[index + 1]
+        // The new waypoint inherits all properties from the starting waypoint of the leg
+        if (index < 0 || index >= flightPlan.points.length - 1) {
+            // Invalid index or no next waypoint
+            return flightPlan;
+        }
+
+        const originWpt = flightPlan.points[index];
+        const destinationWpt = flightPlan.points[index + 1];
+
+        // Calculate midpoint (simple average for small distances)
+        const lat = (originWpt.lat + destinationWpt.lat) / 2;
+        const lon = (originWpt.lon + destinationWpt.lon) / 2;
+
+        // Inherit all properties from the origin waypoint
+        const newPoint = {
+            lat,
+            lon,
+            tas: originWpt.tas,
+            alt: originWpt.alt,
+            fuelFlow: originWpt.fuelFlow,
+            windSpeed: originWpt.windSpeed,
+            windDir: originWpt.windDir
+        };
+
+        const newPoints = [...flightPlan.points];
+        newPoints.splice(index + 1, 0, newPoint);
+
+        return { ...flightPlan, points: newPoints };
+    },
     calculateLegData: (flightPlan: FlightPlan, indexWptFrom: number): LegData => {
         // Course calculation using simple geographic coordinates
         const originWpt = flightPlan.points[indexWptFrom];
