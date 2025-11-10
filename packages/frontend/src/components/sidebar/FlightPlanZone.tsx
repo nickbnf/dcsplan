@@ -263,6 +263,11 @@ const WaypointCard: React.FC<{ flightPlan: FlightPlan, index: number, onFlightPl
     onFlightPlanUpdate(updatedFlightPlan);
   };
 
+  const lat_deg = Math.trunc(waypoint.lat ?? 0);
+  const lat_minutes = ((waypoint.lat ?? 0) - lat_deg) * 60;
+  const lon_deg = Math.trunc(waypoint.lon ?? 0);
+  const lon_minutes = ((waypoint.lon ?? 0) - lon_deg) * 60;
+
   return (
     <div className="group bg-white border border-gray-200 rounded p-3">
       <div className="flex items-center justify-between">
@@ -276,7 +281,7 @@ const WaypointCard: React.FC<{ flightPlan: FlightPlan, index: number, onFlightPl
         <div className="flex items-center gap-1">
           <div className="flex flex-col items-end text-right">
             <span className="text-xs font-aero-mono text-gray-500">
-              {waypoint.lat?.toFixed(4)}, {waypoint.lon?.toFixed(4)}
+              {lat_deg}°{lat_minutes.toFixed(2)}', {lon_deg}°{lon_minutes.toFixed(2)}'
             </span>
             <div className="flex items-center space-x-3 mt-1">
               <div className="flex items-center space-x-1">
