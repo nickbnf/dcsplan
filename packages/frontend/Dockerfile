@@ -36,7 +36,7 @@ COPY packages/frontend/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=builder /app/packages/frontend/dist /usr/share/nginx/html
 
 # Expose port
-EXPOSE 80
+EXPOSE 5000
 
 # Start nginx
 CMD ["nginx", "-g", "daemon off;"]
