@@ -45,7 +45,8 @@ COPY tiles/blank.png tiles/blank.png
 
 # Create non-root user for security
 RUN useradd -m -u 1000 appuser && \
-    chown -R appuser:appuser /app
+    chown -R appuser:appuser /app && \
+    chown -R appuser:appuser /root/.local
 
 # Switch to non-root user
 USER appuser
