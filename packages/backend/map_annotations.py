@@ -68,7 +68,10 @@ def draw_turnpoint(
     image_height: int
 ) -> None:
     """
-    Draw a turnpoint marker on an image, matching the frontend style.
+    Draw a turnpoint marker on an image for kneeboard maps.
+    
+    Draws only the outer circle outline (no fill, no center dot) so the underlying
+    map graphics are visible inside the circle.
     
     Args:
         draw: The ImageDraw object to draw on (must be RGBA mode for transparency)
@@ -86,19 +89,12 @@ def draw_turnpoint(
         x = _clamp(x_px, 0, image_width - 1)
         y = _clamp(y_px, 0, image_height - 1)
         
-        # Draw outer circle (radius 12, stroke width 3) - matching frontend
+        # Draw outer circle (radius 12, stroke width 3) - outline only, no fill
         radius_outer = 12
         draw.ellipse(
             (x - radius_outer, y - radius_outer, x + radius_outer, y + radius_outer),
             outline=BLUE_COLOR_RGBA,
             width=3
-        )
-        
-        # Draw center dot (radius 1) - matching frontend
-        radius_center = 1
-        draw.ellipse(
-            (x - radius_center, y - radius_center, x + radius_center, y + radius_center),
-            fill=BLUE_COLOR_RGBA
         )
         
         logger.debug(f"Drew turnpoint at ({x_px:.1f}, {y_px:.1f})")
@@ -119,6 +115,7 @@ def draw_leg(
     
     This function converts lat/lon coordinates to pixel coordinates using the provided
     converter function and draws a blue line with transparency, matching the frontend style.
+    The line is shortened at both ends to stop at the circle edge (radius 12 pixels).
     
     Args:
         draw: The ImageDraw object to draw on (must be RGBA mode for transparency)
@@ -144,9 +141,32 @@ def draw_leg(
         dx = _clamp(dest_x_px, 0, image_width - 1)
         dy = _clamp(dest_y_px, 0, image_height - 1)
         
-        # Draw line with blue color (#0066CC), width 3, and transparency - matching frontend
-        line_width = 3  # Medium thickness
-        draw.line([(ox, oy), (dx, dy)], fill=BLUE_COLOR_RGBA, width=line_width)
+        # Calculate direction vector and length
+        leg_dx = dx - ox
+        leg_dy = dy - oy
+        leg_length = math.sqrt(leg_dx**2 + leg_dy**2)
+        
+        # Circle radius in pixels (matching frontend)
+        circle_radius = 12
+        
+        # Shorten the line at both ends by the circle radius
+        if leg_length > 2 * circle_radius:
+            # Normalize direction vector
+            leg_dir_x = leg_dx / leg_length
+            leg_dir_y = leg_dy / leg_length
+            
+            # Calculate shortened endpoints
+            shortened_ox = ox + leg_dir_x * circle_radius
+            shortened_oy = oy + leg_dir_y * circle_radius
+            shortened_dx = dx - leg_dir_x * circle_radius
+            shortened_dy = dy - leg_dir_y * circle_radius
+            
+            # Draw line with blue color (#0066CC), width 3, and transparency
+            line_width = 3  # Medium thickness
+            draw.line([(shortened_ox, shortened_oy), (shortened_dx, shortened_dy)], fill=BLUE_COLOR_RGBA, width=line_width)
+        else:
+            # If the leg is too short, don't draw it
+            logger.debug(f"Leg too short to draw (length: {leg_length:.1f}px, need > {2 * circle_radius}px)")
         
         logger.debug(f"Drew leg overlay on image: O=({origin_x_px:.1f},{origin_y_px:.1f}) D=({dest_x_px:.1f},{dest_y_px:.1f}) | clamped O=({ox:.1f},{oy:.1f}) D=({dx:.1f},{dy:.1f})")
     except Exception as e:
@@ -325,7 +345,7 @@ def annotate_turnpoint(
         text_y_left = y - text_height_large // 2  # Center vertically with turnpoint
         
         # Draw turnpoint name and ETA on the right (superposed/stacked)
-        turnpoint_name = "TurnPoint"
+        turnpoint_name = point.name if point.name else f"WP{index + 1}"
         text_x_right = text_x_left + 30  # Offset further right for name/ETA
         
         # Get text bounding boxes for name and ETA to center the stack vertically

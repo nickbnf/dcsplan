@@ -17,6 +17,7 @@ export type FlightPlanTurnPoint = {
   fuelFlow: number; // Fuel flow going into this WP
   windSpeed: number; // Wind speed at this WP
   windDir: number; // Wind direction (dir the wind is coming from)at this WP
+  name?: string; // Name of the turnpoint
 }
 
 export type FlightPlanPointChange = {
@@ -25,6 +26,7 @@ export type FlightPlanPointChange = {
   fuelFlow?: number;
   windSpeed?: number;
   windDir?: number;
+  name?: string;
 }
 
 // Main type containing the full flight plan

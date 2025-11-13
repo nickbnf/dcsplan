@@ -17,8 +17,10 @@ export const flightPlanUtils = {
         const fuelFlow = flightPlan.points.length > 1 ? flightPlan.points[flightPlan.points.length - 2].fuelFlow : defaultFuelFlow;
         const windSpeed = flightPlan.points.length > 1 ? flightPlan.points[flightPlan.points.length - 2].windSpeed : defaultWindSpeed;
         const windDir = flightPlan.points.length > 1 ? flightPlan.points[flightPlan.points.length - 2].windDir : defaultWindDir;
+        const newIndex = flightPlan.points.length;
+        const name = `WP${newIndex + 1}`;
 
-        const newPoints = [...flightPlan.points, { lat, lon, tas, alt, fuelFlow, windSpeed, windDir }];
+        const newPoints = [...flightPlan.points, { lat, lon, tas, alt, fuelFlow, windSpeed, windDir, name }];
         if (newPoints.length > 1) {
             newPoints[newPoints.length - 2] = { ...newPoints[newPoints.length - 2], tas, alt, fuelFlow, windSpeed, windDir };
         }
@@ -28,7 +30,8 @@ export const flightPlanUtils = {
     moveTurnPoint: (flightPlan: FlightPlan, index: number, lat: number, lon: number): FlightPlan => {
         const newPoints = [...flightPlan.points];
         newPoints[index] = { lat, lon, tas: newPoints[index].tas, alt: newPoints[index].alt,
-            fuelFlow: newPoints[index].fuelFlow, windSpeed: newPoints[index].windSpeed, windDir: newPoints[index].windDir };
+            fuelFlow: newPoints[index].fuelFlow, windSpeed: newPoints[index].windSpeed, windDir: newPoints[index].windDir,
+            name: newPoints[index].name };
 
         return { ...flightPlan, points: newPoints };
     },
@@ -59,6 +62,7 @@ export const flightPlanUtils = {
         const lon = (originWpt.lon + destinationWpt.lon) / 2;
 
         // Inherit all properties from the origin waypoint
+        const newIndex = index + 1;
         const newPoint = {
             lat,
             lon,
@@ -66,7 +70,8 @@ export const flightPlanUtils = {
             alt: originWpt.alt,
             fuelFlow: originWpt.fuelFlow,
             windSpeed: originWpt.windSpeed,
-            windDir: originWpt.windDir
+            windDir: originWpt.windDir,
+            name: `WP${newIndex + 1}`
         };
 
         const newPoints = [...flightPlan.points];

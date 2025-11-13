@@ -9,8 +9,6 @@ interface GenerateDialogProps {
 
 export const GenerateDialog: React.FC<GenerateDialogProps> = ({ flightPlan }) => {
   const [output, setOutput] = useState<'zip' | number>('zip');
-  // const [outputType, setOutputType] = useState<'zip' | 'png'>('zip');
-  // const [legNumber, setLegNumber] = useState(1);
   const [includeFuelCalculations, setIncludeFuelCalculations] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);

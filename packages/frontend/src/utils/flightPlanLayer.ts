@@ -20,7 +20,8 @@ export const createFlightPlanLayer = (flightPlan: FlightPlan, projection: any, e
             const feature = new Feature({
                 geometry: new Point([x, y]),
                 type: 'turnpoint',
-                waypointIndex: index
+                waypointIndex: index,
+                waypointName: point.name || `WP${index + 1}`
             });
             source.addFeature(feature);
         }
@@ -43,7 +44,9 @@ export const createFlightPlanLayer = (flightPlan: FlightPlan, projection: any, e
 
             const feature = new Feature({
                 geometry: new LineString([startCoord, endCoord]),
-                type: 'flightline'
+                type: 'flightline',
+                startIndex: i,
+                endIndex: i + 1
             });
             source.addFeature(feature);
         }
@@ -51,12 +54,14 @@ export const createFlightPlanLayer = (flightPlan: FlightPlan, projection: any, e
 
     return new VectorLayer({
         source,
-        style: (feature) => {
+        style: (feature, resolution) => {
             const featureType = feature.get('type');
             
             if (featureType === 'turnpoint') {
                 const waypointIndex = feature.get('waypointIndex');
+                const waypointName = feature.get('waypointName') || `WP${waypointIndex !== undefined ? waypointIndex + 1 : ''}`;
                 const turnpointNumber = (waypointIndex !== undefined ? waypointIndex + 1 : '').toString();
+                const labelText = `${turnpointNumber}. ${waypointName}`;
                 
                 return [
                     // Outer circle
@@ -73,12 +78,14 @@ export const createFlightPlanLayer = (flightPlan: FlightPlan, projection: any, e
                             fill: new Fill({ color: '#0066CC' })
                         })
                     }),
-                    // Turnpoint number label
+                    // Turnpoint number and name label
                     new Style({
                         text: new Text({
-                            text: turnpointNumber,
+                            text: labelText,
                             offsetX: 20, // Position to the right of the turnpoint
                             offsetY: 0,
+                            textAlign: 'left', // Left-align the text
+                            textBaseline: 'middle', // Vertically center the text
                             fill: new Fill({ color: '#0066CC' }),
                             stroke: new Stroke({ 
                                 color: '#ffffff', 
@@ -89,6 +96,47 @@ export const createFlightPlanLayer = (flightPlan: FlightPlan, projection: any, e
                     })
                 ];
             } else if (featureType === 'flightline') {
+                // Shorten the line so it stops at the circle edge (radius 12 pixels)
+                const geometry = feature.getGeometry();
+                if (geometry instanceof LineString && resolution) {
+                    // Convert 12 pixels to map units
+                    const circleRadiusInMapUnits = 12 * resolution;
+                    
+                    const coordinates = geometry.getCoordinates();
+                    if (coordinates.length >= 2) {
+                        const [startX, startY] = coordinates[0];
+                        const [endX, endY] = coordinates[coordinates.length - 1];
+                        
+                        // Calculate direction vector
+                        const dx = endX - startX;
+                        const dy = endY - startY;
+                        const length = Math.sqrt(dx * dx + dy * dy);
+                        
+                        if (length > 0) {
+                            // Normalize direction vector
+                            const dxNorm = dx / length;
+                            const dyNorm = dy / length;
+                            
+                            // Shorten from both ends by circle radius
+                            const shortenedStartX = startX + dxNorm * circleRadiusInMapUnits;
+                            const shortenedStartY = startY + dyNorm * circleRadiusInMapUnits;
+                            const shortenedEndX = endX - dxNorm * circleRadiusInMapUnits;
+                            const shortenedEndY = endY - dyNorm * circleRadiusInMapUnits;
+                            
+                            // Only shorten if the shortened line would still have positive length
+                            if (length > 2 * circleRadiusInMapUnits) {
+                                return new Style({
+                                    geometry: new LineString([[shortenedStartX, shortenedStartY], [shortenedEndX, shortenedEndY]]),
+                                    stroke: new Stroke({
+                                        color: '#0066CC',
+                                        width: 2
+                                    })
+                                });
+                            }
+                        }
+                    }
+                }
+                
                 return new Style({
                     stroke: new Stroke({
                         color: '#0066CC',

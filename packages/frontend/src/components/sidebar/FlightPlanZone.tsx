@@ -17,6 +17,7 @@ interface EditableFieldProps {
   className?: string;
   maxLength?: number;
   unit?: string;
+  numericOnly?: boolean; // If true, only allows numbers; if false, allows any text
 }
 
 const EditableField: React.FC<EditableFieldProps> = ({ 
@@ -25,7 +26,8 @@ const EditableField: React.FC<EditableFieldProps> = ({
   placeholder = "Click to edit",
   className = "",
   maxLength,
-  unit = ""
+  unit = "",
+  numericOnly = true
 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState(value.replace(unit, '').trim());
@@ -51,8 +53,15 @@ const EditableField: React.FC<EditableFieldProps> = ({
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const inputValue = e.target.value;
-    // Only allow numbers and decimal point
-    if (/^\d*\.?\d*$/.test(inputValue)) {
+    if (numericOnly) {
+      // Only allow numbers and decimal point
+      if (/^\d*\.?\d*$/.test(inputValue)) {
+        if (!maxLength || inputValue.length <= maxLength) {
+          setEditValue(inputValue);
+        }
+      }
+    } else {
+      // Allow any text
       if (!maxLength || inputValue.length <= maxLength) {
         setEditValue(inputValue);
       }
@@ -60,7 +69,9 @@ const EditableField: React.FC<EditableFieldProps> = ({
   };
 
   if (isEditing) {
-    const inputWidth = maxLength === 3 ? 'w-8' : maxLength === 5 ? 'w-12' : 'w-8';
+    const inputWidth = numericOnly 
+      ? (maxLength === 3 ? 'w-8' : maxLength === 5 ? 'w-12' : 'w-8')
+      : 'w-32';
     return (
       <div className="flex items-center">
         <input
@@ -273,9 +284,14 @@ const WaypointCard: React.FC<{ flightPlan: FlightPlan, index: number, onFlightPl
       <div className="flex items-center justify-between">
         <span className="text-sm font-aero-label text-gray-900">
           {index + 1}. <EditableField
-            value={`WP${index + 1}`}
-            onChange={() => {}}
+            value={waypoint.name || `WP${index + 1}`}
+            onChange={(value: string) => {
+              const updatedFlightPlan = flightPlanUtils.updateTurnPoint(flightPlan, index, { name: value });
+              onFlightPlanUpdate(updatedFlightPlan);
+            }}
             className="font-aero-label text-gray-900"
+            numericOnly={false}
+            maxLength={20}
           />
         </span>
         <div className="flex items-center gap-1">

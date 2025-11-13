@@ -18,6 +18,7 @@ class FlightPlanTurnPoint(BaseModel):
     fuelFlow: float = Field(..., ge=0, description="Fuel flow rate into this TP")
     windSpeed: float = Field(..., ge=0, description="Wind speed")
     windDir: float = Field(..., ge=0, le=360, description="Wind direction (0-360)")
+    name: str | None = Field(default=None, description="Name of the turnpoint")
 
 
 class FlightPlan(BaseModel):
