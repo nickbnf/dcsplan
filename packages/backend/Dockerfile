@@ -32,6 +32,8 @@ COPY --from=builder /root/.local /root/.local
 
 # Make sure scripts in .local are usable
 ENV PATH=/root/.local/bin:$PATH
+# Make sure Python can find modules installed in .local
+ENV PYTHONPATH=/root/.local/lib/python3.12/site-packages:$PYTHONPATH
 
 # Set working directory
 WORKDIR /app
