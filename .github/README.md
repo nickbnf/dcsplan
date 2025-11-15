@@ -4,63 +4,47 @@ This directory contains GitHub Actions workflows for building and publishing con
 
 ## Overview
 
-The CI/CD pipeline automatically builds and pushes Docker images to GitHub Container Registry (ghcr.io) whenever code is pushed to the main branch or when version tags are created.
+The CI/CD pipeline automatically builds and pushes Docker images to GitHub Container Registry (ghcr.io) whenever code is pushed to the master branch or when version tags are created.
 
 ## Workflows
 
-### build-backend.yml
+### ci.yml
 
-Builds and pushes the FastAPI backend image.
-
-**Triggers:**
-- Push to `main` branch (when backend files change)
-- Pull requests to `main` (builds only, no push)
-- Version tags (e.g., `v1.0.0`)
-
-**Image Location:** `ghcr.io/<username>/<repo>/backend:<tag>`
-
-### build-frontend.yml
-
-Builds and pushes the React frontend image (Nginx).
+Unified CI/CD workflow that runs tests and builds both backend and frontend images.
 
 **Triggers:**
-- Push to `main` branch (when frontend files change)
-- Pull requests to `main` (builds only, no push)
+- Push to `master` branch
+- Pull requests to `master` (tests run, images built but not pushed)
 - Version tags (e.g., `v1.0.0`)
+- Manual workflow dispatch
 
-**Image Location:** `ghcr.io/<username>/<repo>/frontend:<tag>`
+**What it does:**
+1. **Test Job**: Runs both frontend and backend tests
+2. **Build Jobs**: After tests pass, builds both images in parallel:
+   - Backend image: `ghcr.io/<username>/<repo>/backend:<tag>`
+   - Frontend image: `ghcr.io/<username>/<repo>/frontend:<tag>`
 
 **Configuration:**
 - Uses `VITE_API_URL` repository variable (if set) or defaults to `http://localhost:8000`
 - Can be configured in repository settings under Variables
 
-### build-all.yml (Optional)
-
-Combined workflow that builds both backend and frontend images in parallel. Useful for manual triggers or when you want to rebuild everything.
-
-**Triggers:**
-- Push to `main` branch
-- Pull requests to `main`
-- Version tags
-- Manual workflow dispatch
-
 ## Image Tagging Strategy
 
 Images are tagged with multiple strategies:
 
-1. **Branch name** - For branch pushes (e.g., `main`, `develop`)
+1. **Branch name** - For branch pushes (e.g., `master`, `develop`)
 2. **PR number** - For pull requests (e.g., `pr-123`)
 3. **Semantic version** - For version tags (e.g., `v1.0.0`, `1.0`, `1`)
-4. **Git SHA** - For commit-specific builds (e.g., `main-abc1234`)
-5. **Latest** - Only for the default branch (`main`)
+4. **Git SHA** - For commit-specific builds (e.g., `master-abc1234`)
+5. **Latest** - Only for the default branch (`master`)
 
 ### Example Tags
 
-For a commit `abc1234` on `main` with tag `v1.0.0`:
+For a commit `abc1234` on `master` with tag `v1.0.0`:
 
 - `latest`
-- `main`
-- `main-abc1234`
+- `master`
+- `master-abc1234`
 - `v1.0.0`
 - `1.0.0`
 - `1.0`
