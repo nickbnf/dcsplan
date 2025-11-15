@@ -358,11 +358,11 @@ const RouteCard: React.FC<{
           <div className="flex items-center space-x-1">
             <span className="font-aero-label text-gray-600 text-xs">Alt</span>
             <EditableField
-              value={`${flightPlan.points[index].alt}'`}
+              value={`${flightPlan.points[index+1].alt}'`}
               onChange={(value: string) => {
                 const alt = value.match(/\d+/);
                 if (alt && alt[0]) {
-                  const updatedFlightPlan = flightPlanUtils.updateTurnPoint(flightPlan, index, { alt: parseInt(alt[0]) });
+                  const updatedFlightPlan = flightPlanUtils.updateTurnPoint(flightPlan, index+1, { alt: parseInt(alt[0]) });
                   onFlightPlanUpdate(updatedFlightPlan);
                 }
               }}
@@ -374,11 +374,11 @@ const RouteCard: React.FC<{
           <div className="flex items-center space-x-1">
             <span className="font-aero-label text-gray-600 text-xs">TAS</span>
             <EditableField
-              value={`${flightPlan.points[index].tas}K`}
+              value={`${flightPlan.points[index+1].tas}K`}
               onChange={(value: string) => {
                 const alt = value.match(/\d+/);
                 if (alt && alt[0]) {
-                  const updatedFlightPlan = flightPlanUtils.updateTurnPoint(flightPlan, index, { tas: parseInt(alt[0]) });
+                  const updatedFlightPlan = flightPlanUtils.updateTurnPoint(flightPlan, index+1, { tas: parseInt(alt[0]) });
                   onFlightPlanUpdate(updatedFlightPlan);
                 }
               }}
@@ -390,11 +390,11 @@ const RouteCard: React.FC<{
           <div className="flex items-center space-x-1">
             <span className="font-aero-label text-gray-600 text-xs">FF</span>
             <EditableField
-              value={`${flightPlan.points[index].fuelFlow}pph`}
+              value={`${flightPlan.points[index+1].fuelFlow}pph`}
               onChange={(value: string) => {
                 const alt = value.match(/\d+/);
                 if (alt && alt[0]) {
-                  const updatedFlightPlan = flightPlanUtils.updateTurnPoint(flightPlan, index, { fuelFlow: parseInt(alt[0]) });
+                  const updatedFlightPlan = flightPlanUtils.updateTurnPoint(flightPlan, index+1, { fuelFlow: parseInt(alt[0]) });
                   onFlightPlanUpdate(updatedFlightPlan);
                 }
               }}
@@ -407,11 +407,11 @@ const RouteCard: React.FC<{
             <span className="font-aero-label text-gray-600 text-xs">WND</span>
             <span>
             <EditableField
-              value={`${flightPlan.points[index].windDir}°`}
+              value={`${flightPlan.points[index+1].windDir}°`}
               onChange={(value: string) => {
-                const alt = value.match(/\d+/);
-                if (alt && alt[0]) {
-                  const updatedFlightPlan = flightPlanUtils.updateTurnPoint(flightPlan, index, { windDir: parseInt(alt[0]) });
+                const windDir = value.match(/\d+/);
+                if (windDir && windDir[0]) {
+                  const updatedFlightPlan = flightPlanUtils.updateTurnPoint(flightPlan, index+1, { windDir: parseInt(windDir[0]) });
                   onFlightPlanUpdate(updatedFlightPlan);
                 }
               }}
@@ -421,11 +421,11 @@ const RouteCard: React.FC<{
             />
             /
             <EditableField
-              value={`${flightPlan.points[index].windSpeed}K`}
+              value={`${flightPlan.points[index+1].windSpeed}K`}
               onChange={(value: string) => {
-                const alt = value.match(/\d+/);
-                if (alt && alt[0]) {
-                  const updatedFlightPlan = flightPlanUtils.updateTurnPoint(flightPlan, index, { windSpeed: parseInt(alt[0]) });
+                const windSpeed = value.match(/\d+/);
+                if (windSpeed && windSpeed[0]) {
+                  const updatedFlightPlan = flightPlanUtils.updateTurnPoint(flightPlan, index+1, { windSpeed: parseInt(windSpeed[0]) });
                   onFlightPlanUpdate(updatedFlightPlan);
                 }
               }}

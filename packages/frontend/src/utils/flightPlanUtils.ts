@@ -108,15 +108,15 @@ export const flightPlanUtils = {
         const lengthMeters = R * c;
 
         // Wind calculations
-        const windAngleRad = ((((originWpt.windDir + 180) % 360) - course + 360) % 360) * (Math.PI / 180)
-        const tailComponent = originWpt.windSpeed * Math.cos(windAngleRad)
-        const crossComponent = originWpt.windSpeed * Math.sin(windAngleRad)
-        console.log("tailComponent", tailComponent, "crossComponent", crossComponent, "originWpt.windSpeed", originWpt.windSpeed)
+        const windAngleRad = ((((destinationWpt.windDir + 180) % 360) - course + 360) % 360) * (Math.PI / 180)
+        const tailComponent = destinationWpt.windSpeed * Math.cos(windAngleRad)
+        const crossComponent = destinationWpt.windSpeed * Math.sin(windAngleRad)
+        console.log("tailComponent", tailComponent, "crossComponent", crossComponent, "destinationWpt.windSpeed", destinationWpt.windSpeed)
 
-        const groundSpeed = originWpt.tas + tailComponent
+        const groundSpeed = destinationWpt.tas + tailComponent
         const ete = Math.round(lengthMeters / 1852 / (groundSpeed / 3600))
 
-        const legFuel = ete * (originWpt.fuelFlow / 3600)
+        const legFuel = ete * (destinationWpt.fuelFlow / 3600)
 
         let heading = course - Math.asin(crossComponent / groundSpeed) * 180 / Math.PI;
         if (heading < 0) {

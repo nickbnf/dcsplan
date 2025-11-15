@@ -436,19 +436,21 @@ class TestFlightPlanDataEdgeCases:
         points_data = [
             {"lat": 34.0, "lon": 36.0, "fuelFlow": 5000, "windDir": 270},
             {"lat": 34.0, "lon": 37.0, "fuelFlow": 7000, "windDir": 270},
-            {"lat": 34.0, "lon": 38.0, "fuelFlow": 6000, "windDir": 270}
+            {"lat": 34.0, "lon": 38.0, "fuelFlow": 6000, "windDir": 270},
+            {"lat": 34.0, "lon": 39.0, "fuelFlow": 8000, "windDir": 270}
         ]
         plan = create_flight_plan(points_data, declination=0.0)
         fp_data = FlightPlanData(plan)
         
-        assert len(fp_data.turnpointData) == 3
-        assert len(fp_data.legData) == 2
+        assert len(fp_data.turnpointData) == 4
+        assert len(fp_data.legData) == 3
         
         # Fuel consumption should vary based on fuel flow
         # Each leg uses fuelFlow from the destination point
         # Leg 0 uses fuelFlow from point[1] (7000), leg 1 uses fuelFlow from point[2] (6000)
         # So leg 0 should consume more fuel than leg 1 (assuming similar distances)
         assert fp_data.legData[0].legFuel > fp_data.legData[1].legFuel
+        assert fp_data.legData[0].legFuel < fp_data.legData[2].legFuel
         
         # Fuel should decrease for each waypoint
         for i in range(1, len(fp_data.turnpointData)):
@@ -459,22 +461,27 @@ class TestFlightPlanDataEdgeCases:
         points_data = [
             {"lat": 34.0, "lon": 36.0, "tas": 300, "windDir": 270},
             {"lat": 34.0, "lon": 37.0, "tas": 400, "windDir": 270},
-            {"lat": 34.0, "lon": 38.0, "tas": 500, "windDir": 270}
+            {"lat": 34.0, "lon": 38.0, "tas": 500, "windDir": 270},
+            {"lat": 34.0, "lon": 39.0, "tas": 300, "windDir": 270}
         ]
         plan = create_flight_plan(points_data, declination=0.0)
         fp_data = FlightPlanData(plan)
         
-        assert len(fp_data.turnpointData) == 3
-        assert len(fp_data.legData) == 2
+        assert len(fp_data.turnpointData) == 4
+        assert len(fp_data.legData) == 3
         
         # Ground speed should vary based on TAS
         groundSpeed0 = fp_data.legData[0].distanceNm * 3600 / fp_data.legData[0].eteSec if fp_data.legData[0].eteSec > 0 else 0
         groundSpeed1 = fp_data.legData[1].distanceNm * 3600 / fp_data.legData[1].eteSec if fp_data.legData[1].eteSec > 0 else 0
+        groundSpeed2 = fp_data.legData[2].distanceNm * 3600 / fp_data.legData[2].eteSec if fp_data.legData[2].eteSec > 0 else 0
         assert groundSpeed1 > groundSpeed0
+        assert groundSpeed2 < groundSpeed0
         
         # ETA should still be calculated correctly
         for i in range(1, len(fp_data.turnpointData)):
             assert fp_data.turnpointData[i].etaSec > fp_data.turnpointData[i-1].etaSec
+
+        assert fp_data.turnpointData[3].etaSec == fp_data.turnpointData[0].etaSec + fp_data.legData[0].eteSec + fp_data.legData[1].eteSec + fp_data.legData[2].eteSec
 
 
 class TestFlightPlanDataCombinedScenarios:
