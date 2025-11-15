@@ -5,13 +5,113 @@ Tests cover validation, error conditions, and PNG generation.
 """
 
 import pytest
+import os
+import json
 from pydantic import ValidationError
 from flight_plan import FlightPlan, FlightPlanTurnPoint
-from kneeboard import generate_kneeboard_single_png
+from kneeboard import generate_kneeboard_single_png, TILES_DIR, TILES_INFO_PATH
 
 
 # Test fixtures for valid flight plan data
 # Using coordinates within tile bounds (Middle East region: ~30-42°E, 31-38°N)
+
+@pytest.fixture(scope="session")
+def mock_tiles_info():
+    """
+    Create a minimal tiles_info.json file for testing.
+    This fixture creates the file before tests run and cleans it up after.
+    Only creates the file if it doesn't already exist.
+    """
+    # Create directory if it doesn't exist
+    os.makedirs(TILES_DIR, exist_ok=True)
+    
+    # Check if file already exists (e.g., in local development)
+    file_existed = os.path.exists(TILES_INFO_PATH)
+    
+    if not file_existed:
+        # Create minimal tile info with a few zoom levels
+        # This matches the structure expected by the code
+        mock_tile_info = {
+            "zoom_info": [
+                {
+                    "zoom": 0,
+                    "nb_tiles_w": 1,
+                    "nb_tiles_h": 1,
+                    "width_px": 156,
+                    "height_px": 104
+                },
+                {
+                    "zoom": 1,
+                    "nb_tiles_w": 2,
+                    "nb_tiles_h": 1,
+                    "width_px": 313,
+                    "height_px": 208
+                },
+                {
+                    "zoom": 2,
+                    "nb_tiles_w": 3,
+                    "nb_tiles_h": 2,
+                    "width_px": 627,
+                    "height_px": 416
+                },
+                {
+                    "zoom": 3,
+                    "nb_tiles_w": 5,
+                    "nb_tiles_h": 4,
+                    "width_px": 1255,
+                    "height_px": 832
+                },
+                {
+                    "zoom": 4,
+                    "nb_tiles_w": 10,
+                    "nb_tiles_h": 7,
+                    "width_px": 2511,
+                    "height_px": 1665
+                },
+                {
+                    "zoom": 5,
+                    "nb_tiles_w": 20,
+                    "nb_tiles_h": 14,
+                    "width_px": 5022,
+                    "height_px": 3331
+                },
+                {
+                    "zoom": 6,
+                    "nb_tiles_w": 40,
+                    "nb_tiles_h": 27,
+                    "width_px": 10044,
+                    "height_px": 6662
+                },
+                {
+                    "zoom": 7,
+                    "nb_tiles_w": 79,
+                    "nb_tiles_h": 53,
+                    "width_px": 20089,
+                    "height_px": 13324
+                }
+            ]
+        }
+        
+        # Write the mock file
+        with open(TILES_INFO_PATH, 'w') as f:
+            json.dump(mock_tile_info, f, indent=4)
+    
+    yield TILES_INFO_PATH
+    
+    # Cleanup: only remove the file if we created it
+    if not file_existed and os.path.exists(TILES_INFO_PATH):
+        try:
+            # Double-check it's our mock file before removing
+            with open(TILES_INFO_PATH, 'r') as f:
+                content = json.load(f)
+                # Only remove if it looks like our mock (has exactly 8 zoom levels)
+                if len(content.get('zoom_info', [])) == 8:
+                    os.remove(TILES_INFO_PATH)
+        except (json.JSONDecodeError, IOError):
+            # If we can't read it, leave it alone
+            pass
+
+
 @pytest.fixture
 def valid_turn_point():
     """Create a valid turn point for testing."""
@@ -321,7 +421,7 @@ class TestCalculateTotalDuration:
 class TestGenerateKneeboardPNG:
     """Test suite for PNG generation."""
     
-    def test_generate_png_valid_flight_plan(self, minimal_flight_plan):
+    def test_generate_png_valid_flight_plan(self, minimal_flight_plan, mock_tiles_info):
         """Test PNG generation with a valid flight plan."""
         plan = FlightPlan(**minimal_flight_plan)
         png_data = generate_kneeboard_single_png(plan, 0)  # leg_index is 0-indexed
@@ -332,7 +432,7 @@ class TestGenerateKneeboardPNG:
         # Check that it's valid PNG data (starts with PNG signature)
         assert png_data[:8] == b'\x89PNG\r\n\x1a\n'
     
-    def test_generate_png_multiple_legs(self, valid_flight_plan):
+    def test_generate_png_multiple_legs(self, valid_flight_plan, mock_tiles_info):
         """Test PNG generation with multiple legs (should use first leg)."""
         plan = FlightPlan(**valid_flight_plan)
         png_data = generate_kneeboard_single_png(plan, 0)  # leg_index is 0-indexed
@@ -353,7 +453,7 @@ class TestGenerateKneeboardPNG:
 class TestIntegration:
     """Integration tests for the full workflow."""
     
-    def test_full_workflow(self, minimal_flight_plan):
+    def test_full_workflow(self, minimal_flight_plan, mock_tiles_info):
         """Test the full workflow from flight plan to PNG."""
         # Parse flight plan
         plan = FlightPlan(**minimal_flight_plan)
