@@ -1,12 +1,12 @@
-# CI/CD Pipeline
+# dcsplan: a tactical planner
 
-This directory contains GitHub Actions workflows for building and publishing container images.
+dcsplan is a web app helping plan missions for combat flight simulators such as DCS. Its main advantage is to generate detailed kneeboards allowing mission following and navigation, even in aircrafts with limited onboard systems (such as 60s era jets).
 
-## Overview
+## Main features
 
-The CI/CD pipeline automatically builds and pushes Docker images to GitHub Container Registry (ghcr.io) whenever code is pushed to the master branch or when version tags are created.
+ * Online edition of flight plans
 
-## Workflows
+## CI Workflows
 
 ### ci.yml
 
