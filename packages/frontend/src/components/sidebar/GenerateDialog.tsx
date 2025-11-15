@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import type { FlightPlan } from '../../types/flightPlan';
 import { getApiUrl } from '../../config/api';
@@ -7,12 +7,150 @@ interface GenerateDialogProps {
   flightPlan?: FlightPlan;
 }
 
+interface TaskStatus {
+  task_id: string;
+  status: 'queued' | 'processing' | 'completed' | 'failed';
+  progress_message: string | null;
+  queue_position: number | null;
+  error?: string;
+}
+
 export const GenerateDialog: React.FC<GenerateDialogProps> = ({ flightPlan }) => {
   const [output, setOutput] = useState<'zip' | number>('zip');
   const [includeFuelCalculations, setIncludeFuelCalculations] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isOpen, setIsOpen] = useState(false);
+  const [taskId, setTaskId] = useState<string | null>(null);
+  const [taskStatus, setTaskStatus] = useState<TaskStatus | null>(null);
+  const [taskOutput, setTaskOutput] = useState<'zip' | number>('zip');
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Cleanup polling on unmount or when dialog closes
+  useEffect(() => {
+    if (!isOpen && pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
+      setTaskId(null);
+      setTaskStatus(null);
+      setTaskOutput('zip');
+    }
+    return () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+      }
+    };
+  }, [isOpen]);
+
+  // Poll for task status
+  useEffect(() => {
+    if (!taskId) return;
+
+    const pollStatus = async () => {
+      try {
+        const response = await fetch(`${getApiUrl('kneeboard')}/${taskId}/status`);
+        if (!response.ok) {
+          throw new Error(`Failed to get status: ${response.status}`);
+        }
+        const status: TaskStatus = await response.json();
+        setTaskStatus(status);
+
+        if (status.status === 'completed') {
+          // Stop polling
+          if (pollingIntervalRef.current) {
+            clearInterval(pollingIntervalRef.current);
+            pollingIntervalRef.current = null;
+          }
+          
+          // Download the file
+          await downloadFile(taskId);
+        } else if (status.status === 'failed') {
+          // Stop polling
+          if (pollingIntervalRef.current) {
+            clearInterval(pollingIntervalRef.current);
+            pollingIntervalRef.current = null;
+          }
+          setError(status.error || 'Generation failed');
+          setIsGenerating(false);
+        }
+      } catch (err) {
+        console.error('Error polling status:', err);
+        // Continue polling on error (might be temporary)
+      }
+    };
+
+    // Poll immediately, then every 1.5 seconds
+    pollStatus();
+    pollingIntervalRef.current = setInterval(pollStatus, 1500);
+
+    return () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+      }
+    };
+  }, [taskId]);
+
+  const downloadFile = async (taskIdToDownload: string) => {
+    try {
+      const response = await fetch(`${getApiUrl('kneeboard')}/${taskIdToDownload}/download`);
+      
+      if (response.status === 202) {
+        // Still processing, should not happen if status was completed
+        return;
+      }
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }));
+        throw new Error(errorData.detail || `Server error: ${response.status}`);
+      }
+
+      // Get the blob (PNG or ZIP)
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      
+      if (taskOutput === 'zip') {
+        // For ZIP files, download to disk
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'flight_plan.zip';
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+      } else {
+        // For PNG files, open in a new browser tab
+        window.open(url, '_blank');
+        // Revoke the URL after a delay to allow the new tab to load the image
+        setTimeout(() => window.URL.revokeObjectURL(url), 1000);
+      }
+      
+      setIsGenerating(false);
+      setIsOpen(false);
+      setTaskId(null);
+      setTaskStatus(null);
+      setTaskOutput('zip');
+    } catch (err) {
+      setIsGenerating(false);
+      setError(err instanceof Error ? err.message : 'Failed to download kneeboard');
+    }
+  };
+
+  const handleCancel = () => {
+    // Stop polling
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
+    }
+    
+    // Reset state
+    setIsGenerating(false);
+    setTaskId(null);
+    setTaskStatus(null);
+    setTaskOutput('zip');
+    setError(null);
+    
+    // Note: Backend task continues running, we just stop tracking it
+  };
 
   const handleGenerateKneeboard = async () => {
     if (!flightPlan) {
@@ -27,6 +165,7 @@ export const GenerateDialog: React.FC<GenerateDialogProps> = ({ flightPlan }) =>
 
     setIsGenerating(true);
     setError(null);
+    setTaskStatus(null);
 
     try {
       // Build query parameters
@@ -49,33 +188,13 @@ export const GenerateDialog: React.FC<GenerateDialogProps> = ({ flightPlan }) =>
         throw new Error(errorData.detail || `Server error: ${response.status}`);
       }
 
-      // Get the blob (PNG or ZIP)
-      const blob = await response.blob();
-      
-      const url = window.URL.createObjectURL(blob);
-      
-      if (output === 'zip') {
-        // For ZIP files, download to disk
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'flight_plan.zip';
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
-      } else {
-        // For PNG files, open in a new browser tab
-        window.open(url, '_blank');
-        // Revoke the URL after a delay to allow the new tab to load the image
-        // The browser will keep the blob URL valid as long as the tab is open
-        setTimeout(() => window.URL.revokeObjectURL(url), 1000);
-      }
-      
-      setIsGenerating(false);
-      setIsOpen(false);
+      // Get task ID
+      const data = await response.json();
+      setTaskId(data.task_id);
+      setTaskOutput(output); // Store output type for download
     } catch (err) {
       setIsGenerating(false);
-      setError(err instanceof Error ? err.message : 'Failed to generate kneeboard');
+      setError(err instanceof Error ? err.message : 'Failed to submit kneeboard generation task');
     }
   };
 
@@ -155,6 +274,40 @@ export const GenerateDialog: React.FC<GenerateDialogProps> = ({ flightPlan }) =>
             </div>
           </div>
           
+          {/* Status display */}
+          {isGenerating && taskStatus && (
+            <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded text-sm">
+              <div className="flex items-start gap-2">
+                {taskStatus.status !== 'completed' && (
+                  <div className="flex-shrink-0 mt-0.5">
+                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-blue-600 border-t-transparent"></div>
+                  </div>
+                )}
+                <div className="flex-1">
+                  <div className="font-medium text-blue-900 mb-1">Status:</div>
+                  {taskStatus.status === 'queued' && taskStatus.queue_position && (
+                    <div className="text-blue-700">
+                      In queue position {taskStatus.queue_position}
+                    </div>
+                  )}
+                  {taskStatus.status === 'processing' && (
+                    <div className="text-blue-700">
+                      {taskStatus.progress_message || 'Processing...'}
+                    </div>
+                  )}
+                  {taskStatus.status === 'completed' && (
+                    <div className="text-green-700 flex items-center gap-2">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                      <span>Generation completed! Downloading...</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
           {error && (
             <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded text-sm text-red-600">
               {error}
@@ -162,14 +315,22 @@ export const GenerateDialog: React.FC<GenerateDialogProps> = ({ flightPlan }) =>
           )}
           
           <div className="flex justify-end gap-2 mt-6">
-            <Dialog.Close asChild>
+            {isGenerating ? (
               <button 
-                className="px-4 py-2 text-sm border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50"
-                disabled={isGenerating}
+                className="px-4 py-2 text-sm border border-gray-300 rounded hover:bg-gray-50"
+                onClick={handleCancel}
               >
                 Cancel
               </button>
-            </Dialog.Close>
+            ) : (
+              <Dialog.Close asChild>
+                <button 
+                  className="px-4 py-2 text-sm border border-gray-300 rounded hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+              </Dialog.Close>
+            )}
             <button 
               className="px-4 py-2 text-sm bg-avio-primary text-white rounded hover:bg-avio-primary-hover disabled:opacity-50 disabled:cursor-not-allowed"
               onClick={handleGenerateKneeboard}

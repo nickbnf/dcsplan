@@ -6,7 +6,8 @@ kneeboard PNG images.
 """
 
 import pprint
-from typing import List, Tuple, Optional, Dict, Callable
+import time
+from typing import Tuple, Optional, Dict
 import zipfile
 from PIL import Image
 import math
@@ -20,7 +21,7 @@ from flight_plan import FlightPlan, FlightPlanData
 
 # Set up logger
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 
 def generate_kneeboard_single_png(flight_plan: FlightPlan, leg_index: int) -> bytes:
@@ -69,9 +70,11 @@ def generate_kneeboard_zip(flight_plan: FlightPlan) -> bytes:
     for i in range(len(flightPlanData.legData)):
         logger.info(f"Processing leg {i+1}/{len(flightPlanData.legData)}")
         
+        start_time = time.time()
         leg_map = generate_leg_map(flight_plan, flightPlanData, i)
         leg_maps.append(leg_map)
-        logger.info(f"Leg {i+1}/{len(flightPlanData.legData)} completed: {len(leg_map)} bytes")
+        time_taken = time.time() - start_time
+        logger.info(f"Leg {i+1}/{len(flightPlanData.legData)} completed: {len(leg_map)} bytes (took {time_taken:.2f} seconds)")
 
     logger.info(f"All leg maps generated: {len(leg_maps)} maps")
     
@@ -225,42 +228,6 @@ def _select_zoom_level(tile_info: Dict, leg_distance_meters: float) -> Tuple[int
     
     logger.debug(f"Using zoom {selected_zoom} (leg height {selected_leg_height:.1f}px <= target {target_height_px:.1f}px, will scale up)")
     return selected_zoom, selected_leg_height
-
-
-def _lat_lon_to_tile_coords(lat: float, lon: float, zoom: int, tile_info: Dict) -> Tuple[int, int]:
-    """
-    Convert lat/lon to tile coordinates (x, y) for a given zoom level.
-    
-    Args:
-        lat, lon: Coordinates in degrees
-        zoom: Zoom level
-        tile_info: Tile info dictionary
-        
-    Returns:
-        Tuple of (tile_x, tile_y)
-    """
-    # Convert to Transverse Mercator
-    x_tm, y_tm = _lat_lon_to_transverse_mercator(lat, lon)
-    
-    # Get origin in Transverse Mercator
-    origin_x, origin_y = _lat_lon_to_transverse_mercator(ORIGIN_LAT, ORIGIN_LON)
-    
-    # Calculate offset from origin
-    offset_x = x_tm - origin_x
-    offset_y = origin_y - y_tm  # Flip Y axis (origin is NW, Y increases downward)
-    
-    # Get resolution for this zoom level
-    resolution = _get_resolution_for_zoom(tile_info, zoom)
-    
-    # Convert to pixel coordinates
-    pixel_x = offset_x / resolution
-    pixel_y = offset_y / resolution
-    
-    # Convert to tile coordinates
-    tile_x = int(pixel_x // TILE_SIZE)
-    tile_y = int(pixel_y // TILE_SIZE)
-    
-    return tile_x, tile_y
 
 
 def _fetch_tile(z: int, x: int, y: int) -> Optional[Image.Image]:
@@ -439,13 +406,7 @@ def _assemble_tiles(
             y_pos = (ty - min_tile_y) * TILE_SIZE
             composite.paste(tile_img, (x_pos, y_pos))
             tiles_fetched += 1
-    logger.info(f"Fetched and pasted {tiles_fetched} tiles")
-    
-    # Don't crop before rotation - use the full composite
-    # The bounding box already ensures we have enough tiles, and cropping here
-    # can cause issues when the leg is nearly horizontal due to projection distortions.
-    # We'll crop after rotation when we have the final orientation.
-    logger.info(f"Using full composite (no pre-rotation crop): {composite.width}x{composite.height}")
+    logger.info(f"Fetched and pasted {tiles_fetched} tiles, {composite.width}x{composite.height}")
     
     return composite
 
@@ -590,7 +551,7 @@ def _tm_to_pixel_on_rotated_image(
     effective_resolution = resolution / scale_factor
     
     # Get tile bounds for the original composite
-    min_tile_x, min_tile_y, max_tile_x, max_tile_y = _bbox_tm_to_tile_bounds(bbox_tm, tile_info, zoom)
+    min_tile_x, min_tile_y, _, _ = _bbox_tm_to_tile_bounds(bbox_tm, tile_info, zoom)
     
     # Convert TM to pixel coordinates in the full tile grid
     # Use effective resolution which accounts for scaling
@@ -629,18 +590,9 @@ def _tm_to_pixel_on_rotated_image(
     # So the center (cx, cy) maps to (new_w/2, new_h/2)
     new_w, new_h = rotated_image_size
     
-    # Calculate where the center of the original image ends up
-    # The center point (cx, cy) in the original image maps to the center
-    # of the rotated image after rotation
-    orig_w, orig_h = original_composite_size
-    
     # PIL places the rotated center at the center of the expanded image
     new_cx = new_w / 2
     new_cy = new_h / 2
-    
-    # However, we need to account for the fact that the center might not be
-    # exactly at (orig_w/2, orig_h/2) if we used a custom center point.
-    # Since we're using the composite center, this should be fine.
     
     # Final coordinates in rotated image
     px_x_rot = rotated_rel_x + new_cx
@@ -855,10 +807,7 @@ def generate_leg_map(
             logger.info(f"Resizing cropped image from {cropped.width}x{cropped.height} to {MAP_WIDTH}x{MAP_HEIGHT}")
             cropped = cropped.resize((MAP_WIDTH, MAP_HEIGHT), Image.Resampling.LANCZOS)
     
-    logger.info(f"Final image size: {cropped.width}x{cropped.height}")
-    
     # Save cropped image as PNG
-    logger.info("Saving cropped image with leg overlay to PNG bytes")
     img_byte_arr = io.BytesIO()
     cropped.save(img_byte_arr, format='PNG')
     img_bytes = img_byte_arr.getvalue()

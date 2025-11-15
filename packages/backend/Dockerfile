@@ -42,6 +42,7 @@ WORKDIR /app
 COPY flight_plan.py .
 COPY kneeboard.py .
 COPY map_annotations.py .
+COPY task_queue.py .
 COPY main.py .
 COPY tiles/blank.png tiles/blank.png
 
@@ -57,5 +58,6 @@ USER appuser
 EXPOSE 5001
 
 # Set production uvicorn settings
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "5001", "--workers", "4"]
+# Using 1 worker to enable in-memory task queue with single worker thread
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "5001", "--workers", "1"]
 

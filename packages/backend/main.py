@@ -1,11 +1,12 @@
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Path
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from flight_plan import FlightPlan
-from kneeboard import generate_kneeboard_single_png, generate_kneeboard_zip
+from task_queue import get_task_queue
 import os
 import logging
+import time
 from typing import Optional
 
 # Set up logger
@@ -45,49 +46,67 @@ async def generate_kneeboard(
     output: str = Query(default="zip", description="Output type: 'zip' or leg number"),
     include_fuel: bool = Query(default=False, description="Include fuel calculations")
 ):
-    """Generate a kneeboard PNG or ZIP from a flight plan."""
+    """Submit a kneeboard generation task and return task ID."""
     logger.info(f"=== /kneeboard endpoint called ===")
     logger.info(f"Flight plan has {len(flight_plan.points)} waypoint(s)")
-    logger.info(f"Output output: {output}, Include fuel: {include_fuel}")
-    try:
-        # Validate that we have at least 2 points
-        if len(flight_plan.points) < 2:
-            logger.error("Flight plan has fewer than 2 waypoints")
-            raise HTTPException(status_code=400, detail="Flight plan must have at least 2 waypoints")
-        
-        if output != "zip":
-            # Validate leg number
+    logger.info(f"Output: {output}, Include fuel: {include_fuel}")
+    
+    # Validate that we have at least 2 points
+    if len(flight_plan.points) < 2:
+        logger.error("Flight plan has fewer than 2 waypoints")
+        raise HTTPException(status_code=400, detail="Flight plan must have at least 2 waypoints")
+    
+    if output != "zip":
+        # Validate leg number
+        try:
+            leg_num = int(output)
             max_legs = len(flight_plan.points) - 1
-            if int(output) < 1 or int(output) > max_legs:
+            if leg_num < 1 or leg_num > max_legs:
                 raise HTTPException(
                     status_code=400, 
                     detail=f"Leg number must be between 1 and {max_legs} (flight plan has {max_legs} leg(s))"
                 )
-            
-            # Generate PNG (single leg map)
-            logger.info(f"Generating kneeboard PNG (leg {output} map)...")
-            png_data = generate_kneeboard_single_png(flight_plan, int(output) - 1)
-            logger.info(f"Kneeboard PNG generated: {len(png_data)} bytes")
-            
-            # Return as PNG
-            return Response(content=png_data, media_type="image/png")
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid leg number: {output}")
+    
+    # Submit task to queue
+    task_queue = get_task_queue()
+    task_id = task_queue.submit_task(flight_plan, output, include_fuel)
+    
+    logger.info(f"Task {task_id} submitted to queue")
+    return {"task_id": task_id}
+
+
+@app.get("/kneeboard/{task_id}/status")
+async def get_kneeboard_status(task_id: str = Path(..., description="Task ID")):
+    """Get the status of a kneeboard generation task."""
+    task_queue = get_task_queue()
+    status = task_queue.get_task_status(task_id)
+    
+    if status is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    return status
+
+
+@app.get("/kneeboard/{task_id}/download")
+async def download_kneeboard(task_id: str = Path(..., description="Task ID")):
+    """Download the completed kneeboard file."""
+    task_queue = get_task_queue()
+    result = task_queue.get_task_result(task_id)
+    
+    if result is None:
+        # Check if task exists but isn't completed
+        status = task_queue.get_task_status(task_id)
+        if status is None:
+            raise HTTPException(status_code=404, detail="Task not found")
+        elif status["status"] == "failed":
+            raise HTTPException(status_code=500, detail=status.get("error", "Task failed"))
         else:
-            # Generate all legs maps (ZIP)
-            logger.info("Generating all legs maps (ZIP)...")
-            zip_data = generate_kneeboard_zip(flight_plan)
-            logger.info(f"All legs maps (ZIP) generated: {len(zip_data)} bytes")
-            
-            # Return as ZIP
-            return Response(content=zip_data, media_type="application/zip")
-        
-    except ValueError as e:
-        logger.error(f"ValueError: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.exception(f"Unexpected error generating kneeboard: {e}")
-        raise HTTPException(status_code=500, detail=f"Error generating kneeboard: {str(e)}")
+            raise HTTPException(status_code=202, detail="Task not yet completed")
+    
+    file_data, media_type = result
+    return Response(content=file_data, media_type=media_type)
 
 @app.get("/api")
 def read_root():
