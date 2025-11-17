@@ -18,4 +18,4 @@ yarn-error.log*
 pnpm-debug.log*
 
 # Static assets (generated tiles, etc.)
-packages/backend/static/
+packages/backend/config/

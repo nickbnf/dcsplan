@@ -70,7 +70,7 @@ podman build -t dcsplan-backend:latest .
 podman run -d \
   --name dcsplan-backend \
   -p 8000:8000 \
-  -v /opt/dcsplan/static:/app/static:ro \
+  -v /var/lib/dcsplan/config:/app/config:ro \
   -e CORS_ORIGINS="http://localhost:5173,https://yourdomain.com" \
   --restart=unless-stopped \
   ghcr.io/<username>/<repo>/backend:latest
@@ -81,7 +81,7 @@ podman run -d \
 The `deploy.sh` script automates the build and run process:
 
 ```bash
-export STATIC_DIR=/opt/dcsplan/static
+export CONFIG_DIR=/var/lib/dcsplan/config
 export PORT=8000
 export CORS_ORIGINS="http://localhost:5173,https://yourdomain.com"
 ./packages/backend/deploy.sh

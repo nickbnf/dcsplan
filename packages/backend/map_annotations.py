@@ -5,6 +5,7 @@ This module provides functions for annotating map images with flight plan legs,
 waypoints, and other visual markers.
 """
 
+import os
 from typing import Callable, Tuple, Optional
 from PIL import Image, ImageDraw, ImageFont
 import logging
@@ -15,9 +16,10 @@ from flight_plan import FlightPlan, FlightPlanData, FlightPlanTurnPoint, LegData
 logger = logging.getLogger(__name__)
 
 # Frontend color: #0066CC = RGB(0, 102, 204)
-# Using alpha ~200 (78% opacity) for "a bit of transparency"
+# Using alpha ~200 (78% opacity)
 BLUE_COLOR_RGBA = (0, 102, 204, 200)
 
+FONTS_DIR = os.path.join(os.path.dirname(__file__), "config", "fonts")
 
 def _load_fonts() -> Tuple[ImageFont.FreeTypeFont, ImageFont.FreeTypeFont, ImageFont.FreeTypeFont]:
     """
@@ -27,6 +29,7 @@ def _load_fonts() -> Tuple[ImageFont.FreeTypeFont, ImageFont.FreeTypeFont, Image
         Tuple of (large_font, medium_font, small_font) for use in annotations
     """
     font_paths = [
+        os.path.join(FONTS_DIR, "default.ttf"),
         "/System/Library/Fonts/SFCamera.ttf",  # macOS
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",  # Linux
         "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",  # Alternative Linux
@@ -40,14 +43,14 @@ def _load_fonts() -> Tuple[ImageFont.FreeTypeFont, ImageFont.FreeTypeFont, Image
     for font_path in font_paths:
         try:
             large_font = ImageFont.truetype(font_path, large_size)
-            large_font.set_variation_by_name('Bold')
+            # large_font.set_variation_by_name('Bold')
             medium_font = ImageFont.truetype(font_path, medium_size)
-            medium_font.set_variation_by_name('Bold')
+            # medium_font.set_variation_by_name('Bold')
             small_font = ImageFont.truetype(font_path, small_size)
-            # small_font.set_variation_by_name('Bold')
             logger.debug(f"Loaded fonts from {font_path}")
             return large_font, medium_font, small_font
-        except (OSError, IOError):
+        except (OSError, IOError) as e:
+            logger.warning(f"Failed to load font from {font_path}: {e}")
             continue
     
     # Fall back to default font

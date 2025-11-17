@@ -33,11 +33,11 @@ app.add_middleware(
 )
 
 # Path to the static directory
-STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
+STATIC_DIR = os.path.join(os.path.dirname(__file__), "config", "static")
 TILES_DIR = os.path.join(STATIC_DIR, "tiles")
 
 # Path to the blank tile
-BLANK_TILE_PATH = os.path.join(os.path.dirname(__file__), "tiles", "blank.png")
+BLANK_TILE_PATH = os.path.join(os.path.dirname(__file__), "config", "blank.png")
 
 
 @app.post("/kneeboard")

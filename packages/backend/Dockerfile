@@ -44,7 +44,6 @@ COPY kneeboard.py .
 COPY map_annotations.py .
 COPY task_queue.py .
 COPY main.py .
-COPY tiles/blank.png tiles/blank.png
 
 # Create non-root user for security
 RUN useradd -m -u 1000 appuser && \

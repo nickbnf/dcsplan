@@ -70,11 +70,9 @@ def generate_kneeboard_zip(flight_plan: FlightPlan) -> bytes:
     for i in range(len(flightPlanData.legData)):
         logger.info(f"Processing leg {i+1}/{len(flightPlanData.legData)}")
         
-        start_time = time.time()
         leg_map = generate_leg_map(flight_plan, flightPlanData, i)
         leg_maps.append(leg_map)
-        time_taken = time.time() - start_time
-        logger.info(f"Leg {i+1}/{len(flightPlanData.legData)} completed: {len(leg_map)} bytes (took {time_taken:.2f} seconds)")
+        logger.info(f"Leg {i+1}/{len(flightPlanData.legData)} completed: {len(leg_map)} bytes")
 
     logger.info(f"All leg maps generated: {len(leg_maps)} maps")
     
@@ -86,8 +84,8 @@ def generate_kneeboard_zip(flight_plan: FlightPlan) -> bytes:
     return zip_data.getvalue()
 
 # Constants for leg map generation
-TILES_DIR = os.path.join(os.path.dirname(__file__), "static", "tiles")
-BLANK_TILE_PATH = os.path.join(os.path.dirname(__file__), "tiles", "blank.png")
+TILES_DIR = os.path.join(os.path.dirname(__file__), "config", "static", "tiles")
+BLANK_TILE_PATH = os.path.join(os.path.dirname(__file__), "config", "blank.png")
 TILES_INFO_PATH = os.path.join(TILES_DIR, "tiles_info.json")
 MAP_WIDTH = 768
 MAP_HEIGHT = 1024
@@ -622,6 +620,8 @@ def generate_leg_map(
     Returns:
         PNG image data as bytes (768x1024)
     """
+    start_time = time.time()
+
     tile_info = _get_tile_info()
     
     origin = flight_plan.points[leg_index]
@@ -812,5 +812,6 @@ def generate_leg_map(
     cropped.save(img_byte_arr, format='PNG')
     img_bytes = img_byte_arr.getvalue()
     logger.info(f"Generated cropped PNG: {len(img_bytes)} bytes")
-    logger.info("=== Leg map generation completed ===")
+    time_taken = time.time() - start_time
+    logger.info(f"=== Leg map generation completed in {time_taken:.2f} seconds ===")
     return img_bytes

@@ -5,7 +5,7 @@ set -e
 
 IMAGE_NAME="dcsplan-backend"
 CONTAINER_NAME="dcsplan-backend"
-STATIC_DIR="${STATIC_DIR:-/opt/dcsplan/static}"
+CONFIG_DIR="${CONFIG_DIR:-/var/lib/dcsplan/config}"
 PORT="${PORT:-8000}"
 
 echo "Building container image..."
@@ -19,11 +19,10 @@ echo "Starting new container..."
 podman run -d \
     --name ${CONTAINER_NAME} \
     -p ${PORT}:8000 \
-    -v ${STATIC_DIR}:/app/static:ro \
+    -v ${CONFIG_DIR}:/app/config:ro \
     -e CORS_ORIGINS="${CORS_ORIGINS:-http://localhost:5173}" \
     --restart=unless-stopped \
     ${IMAGE_NAME}:latest
 
 echo "Container ${CONTAINER_NAME} started successfully!"
 echo "View logs with: podman logs -f ${CONTAINER_NAME}"
-
