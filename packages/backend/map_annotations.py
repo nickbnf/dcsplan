@@ -42,6 +42,7 @@ def _load_fonts() -> Tuple[ImageFont.FreeTypeFont, ImageFont.FreeTypeFont, Image
     # Try to load a TrueType font
     for font_path in font_paths:
         try:
+            logger.info(f"Trying to load font {font_path}")
             large_font = ImageFont.truetype(font_path, large_size)
             # large_font.set_variation_by_name('Bold')
             medium_font = ImageFont.truetype(font_path, medium_size)
