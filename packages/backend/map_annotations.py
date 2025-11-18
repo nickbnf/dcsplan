@@ -958,7 +958,7 @@ def annotate_map(
                         Signature: (float, float) -> Tuple[float, float]
     """
     try:
-        if len(flight_plan.points) < 1:
+        if len(flight_plan.points) < 2:
             logger.warning("Flight plan has no points to draw")
             return
         
@@ -967,18 +967,37 @@ def annotate_map(
         overlay_draw = ImageDraw.Draw(overlay)
         
         # Draw all legs on the overlay
-        if len(flight_plan.points) >= 2:
-            for i in range(1, len(flight_plan.points)):
-                origin = flight_plan.points[i-1]
-                destination = flight_plan.points[i]
-                draw_leg(overlay_draw, origin, destination, coord_to_pixel, image.width, image.height)
-                annotate_leg(overlay_draw, overlay, origin, destination, flight_plan_data.turnpointData[i-1].etaSec, flight_plan_data.legData[i-1], coord_to_pixel, image.width, image.height)
+        for i in range(1, len(flight_plan.points)):
+            if i-1 == focus_leg_index:
+                # Skip the focus leg so we can draw it last
+                continue
+            origin = flight_plan.points[i-1]
+            destination = flight_plan.points[i]
+            draw_leg(overlay_draw, origin, destination, coord_to_pixel, image.width, image.height)
+            annotate_leg(overlay_draw, overlay, origin, destination, flight_plan_data.turnpointData[i-1].etaSec, flight_plan_data.legData[i-1], coord_to_pixel, image.width, image.height)
+
+        # Draw the focus leg last
+        origin = flight_plan.points[focus_leg_index]
+        destination = flight_plan.points[focus_leg_index + 1]
+        draw_leg(overlay_draw, origin, destination, coord_to_pixel, image.width, image.height)
+        annotate_leg(overlay_draw, overlay, origin, destination, flight_plan_data.turnpointData[focus_leg_index].etaSec, flight_plan_data.legData[focus_leg_index], coord_to_pixel, image.width, image.height)
 
         # Draw all turnpoints on the overlay
         for i, point in enumerate(flight_plan.points):
+            if i == focus_leg_index or i+1 == focus_leg_index:
+                # Skip the focus leg so we can draw it last
+                continue
             draw_turnpoint(overlay_draw, point, coord_to_pixel, image.width, image.height)
             annotate_turnpoint(overlay_draw, point, i, flight_plan_data, coord_to_pixel, image.width, image.height)
-        
+
+        # Draw the focus turnpoints last
+        point = flight_plan.points[focus_leg_index]
+        draw_turnpoint(overlay_draw, point, coord_to_pixel, image.width, image.height)
+        annotate_turnpoint(overlay_draw, point, focus_leg_index, flight_plan_data, coord_to_pixel, image.width, image.height)
+        point = flight_plan.points[focus_leg_index + 1]
+        draw_turnpoint(overlay_draw, point, coord_to_pixel, image.width, image.height)
+        annotate_turnpoint(overlay_draw, point, focus_leg_index + 1, flight_plan_data, coord_to_pixel, image.width, image.height)
+
         # Add the doghouses for this leg
         if focus_leg_index < len(flight_plan_data.legData):
             draw_doghouse(

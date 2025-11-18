@@ -196,7 +196,7 @@ def _select_zoom_level(tile_info: Dict, leg_distance_meters: float) -> Tuple[int
     logger.debug(f"Target leg height: {target_height_px:.1f} pixels")
     
     # Try each zoom level from highest to lowest
-    zoom_levels = sorted([z_info['zoom'] for z_info in tile_info.get('zoom_info', [])], reverse=True)
+    zoom_levels = sorted([z_info['zoom'] for z_info in tile_info.get('zoom_info', [])], reverse=False)
     logger.debug(f"Available zoom levels: {zoom_levels}")
     
     # Find the zoom level where leg height is just above target (or highest if all are below)
@@ -239,12 +239,12 @@ def _fetch_tile(z: int, x: int, y: int) -> Optional[Image.Image]:
         PIL Image or None if tile doesn't exist
     """
     tile_path = os.path.join(TILES_DIR, str(z), str(x), f"{y}.png")
-    logger.debug(f"Fetching tile z={z}, x={x}, y={y} from {tile_path}")
+    # logger.debug(f"Fetching tile z={z}, x={x}, y={y} from {tile_path}")
     
     if os.path.exists(tile_path):
         try:
             tile_img = Image.open(tile_path).convert('RGB')
-            logger.debug(f"Successfully loaded tile z={z}, x={x}, y={y}")
+            # logger.debug(f"Successfully loaded tile z={z}, x={x}, y={y}")
             return tile_img
         except Exception as e:
             logger.warning(f"Failed to load tile z={z}, x={x}, y={y}: {e}")
@@ -415,7 +415,7 @@ def _create_bbox_around_leg(
     zoom: int,
     tile_info: Dict,
     scale_factor: float = 1.0,
-    margin_factor: float = 1.2
+    margin_factor: float = 1.0
 ) -> Tuple[float, float, float, float]:
     """
     Create a bounding box around a leg with margins.
