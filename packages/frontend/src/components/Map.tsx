@@ -121,16 +121,10 @@ const MapComponent: React.FC<MapComponentProps> = ({
       maxLat: 37.8254    // Northern boundary
     };
 
-    console.log("Using bounds:", regionBounds);
-
-    // Create transverse Mercator projection with 39° central meridian
-    console.log("Using transverse Mercator projection with 39° central meridian");
-    
     const { projection: transverseMercatorProjection } = createTransverseMercatorProjection();
     
     // Transform geographic bounds to transverse Mercator coordinates
     const transverseMercatorExtent = transformBoundsToTransverseMercator(regionBounds, transverseMercatorProjection);
-    console.log("Transverse Mercator extent (meters):", transverseMercatorExtent);
     
     // Set the projection extent
     transverseMercatorProjection.setExtent(transverseMercatorExtent);
@@ -147,8 +141,6 @@ const MapComponent: React.FC<MapComponentProps> = ({
     gridLayer.setVisible(false);
     const flightPlanLayer = createFlightPlanLayer(flightPlan, transverseMercatorProjection);
     flightPlanLayer.set('name', 'flightplan');
-    
-    console.log('Created initial flight plan layer with', flightPlan.points.length, 'points');
     
     // Create drawing layer
     const drawingLayer = new VectorLayer({
@@ -190,8 +182,6 @@ const MapComponent: React.FC<MapComponentProps> = ({
       snapInteractionRef,
       isUpdatingFromModifyRef,
       flightPlan);
-
-    console.log("Flight plan:", flightPlan);
 
     return () => {
       if (mapInstanceRef.current) {
@@ -235,7 +225,6 @@ const MapComponent: React.FC<MapComponentProps> = ({
 
       if (drawingState.isDrawing === 'NEW_POINT') {
         // In drawing mode, add points to the current drawing
-        console.log('Adding point to current drawing', coordinate);
         addPoint(coordinate);
       }
     };
@@ -270,7 +259,6 @@ const MapComponent: React.FC<MapComponentProps> = ({
 
       // Update preview line if in drawing mode
       if (drawingState.isDrawing !== 'NO_DRAWING') {
-        console.log('Updating preview line');
         updatePreviewLine(coordinate);
       }
     };
@@ -317,8 +305,6 @@ const MapComponent: React.FC<MapComponentProps> = ({
     if (drawingState.isDrawing === 'NEW_POINT' && drawingState.currentPoint) {
       const latestPoint = drawingState.currentPoint;
       
-      console.log('Adding to flightplan, latest point:', latestPoint.getCoordinates());
-
       // Only add if this point isn't already in the flight plan
       const pointExists = flightPlan.points.some(p => 
         Math.abs(p.lat - latestPoint.getCoordinates()[1]) < 0.0001 && Math.abs(p.lon - latestPoint.getCoordinates()[0]) < 0.0001
@@ -488,7 +474,6 @@ const installInteractions = (flightPlanLayer: VectorLayer<any>,
     const waypointFeatures = source.getFeatures().filter((feature: any) =>
       feature.get('type') === 'turnpoint'
     );
-    console.log('Creating Modify interaction with', waypointFeatures.length, 'waypoint features');
 
     const modifyInteraction = new Modify({
       features: new Collection(waypointFeatures)
@@ -563,9 +548,6 @@ const installInteractions = (flightPlanLayer: VectorLayer<any>,
             }
           }
         });
-
-        // Clear the dragged waypoint index to restore all lines
-        console.log('Drag ended, restoring all flight lines');
       });
     }
   }

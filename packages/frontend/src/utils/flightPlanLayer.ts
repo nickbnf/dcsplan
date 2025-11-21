@@ -11,8 +11,6 @@ import { transform } from "ol/proj";
 export const createFlightPlanLayer = (flightPlan: FlightPlan, projection: any, excludedWaypointIndex?: number) => {
     const source = new VectorSource();
     
-    console.log('createFlightPlanLayer: excludedWaypointIndex', excludedWaypointIndex);
-
     // Add point features for turn points
     flightPlan.points.forEach((point, index) => {
         if (excludedWaypointIndex === undefined || index !== excludedWaypointIndex) {

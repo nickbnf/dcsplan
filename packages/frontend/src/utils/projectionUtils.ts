@@ -15,7 +15,6 @@ export const createTransverseMercatorProjection = (centralMeridian: number = 39)
   
   // Create PROJ.4 definition string for transverse Mercator
   const proj4Def = `+proj=tmerc +lat_0=0 +lon_0=${centralMeridian} +k=${scaleFactor} +x_0=${falseEasting} +y_0=${falseNorthing} +ellps=WGS84 +datum=WGS84 +units=m +no_defs`;
-  console.log('Transverse Mercator PROJ.4 definition:', proj4Def);
   
   // Register the projection with PROJ.4
   proj4.defs(projectionCode, proj4Def);

@@ -39,8 +39,6 @@ export const flightPlanUtils = {
         const newPoints = [...flightPlan.points];
         newPoints[index] = { ...newPoints[index], ...pointChange };
         
-        console.log("updateTurnPoint", index, newPoints[index]);
-
         return { ...flightPlan, points: newPoints };
     },
     deleteTurnPoint: (flightPlan: FlightPlan, index: number): FlightPlan => {
@@ -111,7 +109,6 @@ export const flightPlanUtils = {
         const windAngleRad = ((((destinationWpt.windDir + 180) % 360) - course + 360) % 360) * (Math.PI / 180)
         const tailComponent = destinationWpt.windSpeed * Math.cos(windAngleRad)
         const crossComponent = destinationWpt.windSpeed * Math.sin(windAngleRad)
-        console.log("tailComponent", tailComponent, "crossComponent", crossComponent, "destinationWpt.windSpeed", destinationWpt.windSpeed)
 
         const groundSpeed = destinationWpt.tas + tailComponent
         const ete = Math.round(lengthMeters / 1852 / (groundSpeed / 3600))
