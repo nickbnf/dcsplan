@@ -16,6 +16,8 @@ env:
   BACKEND_IMAGE_NAME: ${{ github.repository }}/backend
   FRONTEND_IMAGE_NAME: ${{ github.repository }}/frontend
   VITE_API_URL: ${{ vars.VITE_API_URL || 'http://localhost:8000' }}
+  VITE_PLAUSIBLE_DOMAIN: ${{ vars.VITE_PLAUSIBLE_DOMAIN }}
+  VITE_PLAUSIBLE_ENDPOINT: ${{ vars.VITE_PLAUSIBLE_ENDPOINT }}
 
 permissions:
   contents: read
@@ -152,5 +154,7 @@ jobs:
           labels: ${{ steps.meta-frontend.outputs.labels }}
           build-args: |
             VITE_API_URL=${{ env.VITE_API_URL }}
+            VITE_PLAUSIBLE_DOMAIN=${{ env.VITE_PLAUSIBLE_DOMAIN }}
+            VITE_PLAUSIBLE_ENDPOINT=${{ env.VITE_PLAUSIBLE_ENDPOINT }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

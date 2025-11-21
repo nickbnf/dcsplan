@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import type { FlightPlan } from '../../types/flightPlan';
 import { getApiUrl } from '../../config/api';
+import { trackEvent } from '../../utils/plausible';
 
 interface GenerateDialogProps {
   flightPlan?: FlightPlan;
@@ -168,6 +169,8 @@ export const GenerateDialog: React.FC<GenerateDialogProps> = ({ flightPlan }) =>
     setTaskStatus(null);
 
     try {
+      trackEvent('GenerateKneeboard', { props: { output: output.toString() } });
+
       // Build query parameters
       const params = new URLSearchParams();
       params.append('output', output.toString());

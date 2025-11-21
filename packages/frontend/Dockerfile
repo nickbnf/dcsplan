@@ -18,9 +18,13 @@ RUN pnpm install --frozen-lockfile
 # Copy source files
 COPY packages/frontend ./packages/frontend
 
-# Build argument for API URL
+# Build arguments for configuration
 ARG VITE_API_URL
 ENV VITE_API_URL=${VITE_API_URL}
+ARG VITE_PLAUSIBLE_DOMAIN
+ENV VITE_PLAUSIBLE_DOMAIN=${VITE_PLAUSIBLE_DOMAIN}
+ARG VITE_PLAUSIBLE_ENDPOINT
+ENV VITE_PLAUSIBLE_ENDPOINT=${VITE_PLAUSIBLE_ENDPOINT}
 
 # Build the application
 WORKDIR /app/packages/frontend

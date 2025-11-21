@@ -464,7 +464,7 @@ export const FlightPlanZone: React.FC<FlightPlanZoneProps> = ({
   flightPlan, 
   onFlightPlanUpdate
 }) => {
-  const [planName, setPlanName] = useState("Flight Plan Alpha");
+  const [planName, setPlanName] = useState("Flight Plan One");
 
   const fligthPlanZoneContent = useMemo(() => {
     return (
