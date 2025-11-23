@@ -169,7 +169,13 @@ export const GenerateDialog: React.FC<GenerateDialogProps> = ({ flightPlan }) =>
     setTaskStatus(null);
 
     try {
-      trackEvent('GenerateKneeboard', { props: { output: output.toString() } });
+      // Track the event with output type
+      trackEvent('GenerateKneeboard', { 
+        props: { 
+          output: output.toString(),
+          includeFuel: includeFuelCalculations.toString()
+        } 
+      });
 
       // Build query parameters
       const params = new URLSearchParams();
