@@ -1,15 +1,3 @@
-/**
- * DEBUG: PRODUCTION - REMOVE AFTER DEBUGGING
- * 
- * This file contains production debug logging for Plausible Analytics.
- * To remove all debug code:
- * 1. Search for "DEBUG: PRODUCTION" and "END DEBUG" comments
- * 2. Remove all code blocks between these markers
- * 3. Also remove the debug function in main.tsx
- * 
- * All debug logs are prefixed with "[Plausible DEBUG]" for easy filtering.
- */
-
 import { init, track } from '@plausible-analytics/tracker';
 import { PLAUSIBLE_DOMAIN, PLAUSIBLE_ENDPOINT, isPlausibleEnabled } from '../config/plausible';
 
@@ -48,9 +36,6 @@ const sendPageviewManually = (url?: string): void => {
  */
 export const initPlausible = (): void => {
   if (!isPlausibleEnabled()) {
-    if (import.meta.env.DEV) {
-      console.log('[Plausible] Disabled - VITE_PLAUSIBLE_DOMAIN not set');
-    }
     return;
   }
 
@@ -72,55 +57,21 @@ export const initPlausible = (): void => {
     config.endpoint = endpoint;
   }
 
-  if (import.meta.env.DEV) {
-    console.log('[Plausible] Initializing with config:', {
-      domain: config.domain,
-      endpoint: config.endpoint || 'default (plausible.io)',
-      captureOnLocalhost: config.captureOnLocalhost,
-    });
-  }
-
   try {
     init(config);
     
-    // DEBUG: PRODUCTION - REMOVE AFTER DEBUGGING
-    // Log what we passed to init() vs what the package might have received
-    console.log('[Plausible DEBUG] init() called with config:', {
-      domain: config.domain,
-      endpoint: config.endpoint || 'default',
-      captureOnLocalhost: config.captureOnLocalhost,
-      autoCapturePageviews: config.autoCapturePageviews,
-      bindToWindow: config.bindToWindow,
-      logging: config.logging,
-    });
-    
-    // Test if package is actually initialized by trying to call track()
-    // The package will throw if not initialized
+    // Test if package is working by checking if a test event callback fires
+    let testCallbackFired = false;
     try {
-      let testCallbackFired = false;
       track('__test_init__', { 
-        callback: (result) => {
+        callback: () => {
           testCallbackFired = true;
-          console.log('[Plausible DEBUG] 🔔 Test event callback FIRED!', {
-            hasResult: !!result,
-            result: result,
-          });
-          if (result) {
-            console.log('[Plausible DEBUG] ✅ Test event was sent successfully');
-          } else {
-            console.warn('[Plausible DEBUG] ⚠️ Test event was ignored by package (callback called with no result)');
-          }
         }
       });
-      console.log('[Plausible DEBUG] ✅ Package initialization verified - track() call succeeded');
       
       // Check if callback fired (it should fire immediately if event is ignored, or later if sent)
       setTimeout(() => {
         if (!testCallbackFired) {
-          console.error('[Plausible DEBUG] ❌ CRITICAL: Test event callback did NOT fire!');
-          console.error('[Plausible DEBUG] This means the package is silently dropping events without calling callbacks');
-          console.error('[Plausible DEBUG] Using manual fallback for pageviews');
-          
           // Package isn't working - set up manual pageview tracking
           if (typeof window !== 'undefined' && window.history) {
             // Track initial pageview
@@ -147,17 +98,10 @@ export const initPlausible = (): void => {
         }
       }, 1000);
     } catch (error) {
-      console.error('[Plausible DEBUG] ❌ Package initialization FAILED:', error);
-    }
-    // END DEBUG
-
-    if (import.meta.env.DEV) {
-      console.log('[Plausible] Initialized successfully');
+      console.error('[Plausible] Package initialization failed:', error);
     }
   } catch (error) {
-    // DEBUG: PRODUCTION - REMOVE AFTER DEBUGGING
-    console.error('[Plausible DEBUG] ERROR during initialization:', error);
-    // END DEBUG
+    console.error('[Plausible] Error during initialization:', error);
     throw error;
   }
 };
@@ -177,37 +121,22 @@ export const trackEvent = (
   }
 ): void => {
   if (!isPlausibleEnabled()) {
-    if (import.meta.env.DEV) {
-      console.log('[Plausible] Event ignored (disabled):', eventName);
-    }
     return;
-  }
-
-  if (import.meta.env.DEV) {
-    console.log('[Plausible] Tracking event:', eventName, options);
   }
 
   // Try the package's track function first
   let packageWorked = false;
   const trackOptions = {
     ...(options || {}),
-    callback: (result?: { status: number } | { error: unknown } | undefined) => {
+    callback: () => {
       packageWorked = true;
-      if (result && 'status' in result) {
-        if (import.meta.env.DEV) {
-          console.log('[Plausible] Event tracked via package:', eventName);
-        }
-      }
     },
   };
 
   try {
     track(eventName, trackOptions);
   } catch (error) {
-    // Package failed, will use fallback
-    if (import.meta.env.DEV) {
-      console.warn('[Plausible] Package track() failed:', error);
-    }
+    console.error('[Plausible] Package track() failed:', error);
   }
 
   // Fallback: If package didn't work, send manually after a short delay
@@ -232,21 +161,9 @@ export const trackEvent = (
         },
         keepalive: true,
         body: JSON.stringify(eventData),
-      })
-        .then((response) => {
-          if (import.meta.env.DEV) {
-            if (response.ok || response.status === 202) {
-              console.log('[Plausible] Event sent manually:', eventName);
-            } else {
-              console.warn('[Plausible] Manual send failed:', response.status);
-            }
-          }
-        })
-        .catch((error) => {
-          if (import.meta.env.DEV) {
-            console.error('[Plausible] Manual send error:', error);
-          }
-        });
+      }).catch((error) => {
+        console.error('[Plausible] Manual send error:', error);
+      });
     }
   }, 100); // Short delay to check if package callback fired
 };

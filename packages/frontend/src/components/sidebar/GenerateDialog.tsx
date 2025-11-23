@@ -173,7 +173,6 @@ export const GenerateDialog: React.FC<GenerateDialogProps> = ({ flightPlan }) =>
       trackEvent('GenerateKneeboard', { 
         props: { 
           output: output.toString(),
-          includeFuel: includeFuelCalculations.toString()
         } 
       });
 
