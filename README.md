@@ -1,6 +1,12 @@
-# DCSPlan
+# dcsplan: a tactical planner
 
-A flight planning tool for flight simulators.
+dcsplan is a web app helping plan missions for combat flight simulators such as DCS. Its main advantage is to generate detailed kneeboards allowing mission following and navigation, even in aircrafts with limited onboard systems (such as 60s era jets).
+
+An online server is accessible at https://dcsplan.bonnefon.org/
+
+## Main features
+
+ * Online edition of flight plans
 
 ## Project Structure
 
