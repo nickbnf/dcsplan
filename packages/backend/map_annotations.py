@@ -10,7 +10,7 @@ from typing import Callable, Tuple, Optional
 from PIL import Image, ImageDraw, ImageFont
 import logging
 import math
-from flight_plan import FlightPlan, FlightPlanData, FlightPlanTurnPoint, LegData
+from flight_plan import FlightPlan, FlightPlanData, FlightPlanTurnPoint, LegData, Point
 
 # Set up logger
 logger = logging.getLogger(__name__)
@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 # Frontend color: #0066CC = RGB(0, 102, 204)
 # Using alpha ~200 (78% opacity)
 BLUE_COLOR_RGBA = (0, 102, 204, 200)
+RED_COLOR_RGBA = (204, 0, 0, 200)
 
 FONTS_DIR = os.path.join(os.path.dirname(__file__), "config", "fonts")
 
@@ -108,8 +109,7 @@ def draw_turnpoint(
 
 def draw_leg(
     draw: ImageDraw.ImageDraw,
-    origin: FlightPlanTurnPoint,
-    destination: FlightPlanTurnPoint,
+    leg_data: LegData,
     coord_to_pixel: Callable[[float, float], Tuple[float, float]],
     image_width: int,
     image_height: int
@@ -123,8 +123,7 @@ def draw_leg(
     
     Args:
         draw: The ImageDraw object to draw on (must be RGBA mode for transparency)
-        origin: The starting waypoint
-        destination: The ending waypoint
+        leg_data: The leg data containing the course and distance
         coord_to_pixel: Function that converts geographic coordinates (lat, lon) to pixel coordinates (x, y)
                         Signature: (float, float) -> Tuple[float, float]
         image_width: Width of the image (for clamping)
@@ -132,26 +131,65 @@ def draw_leg(
     """
     try:
         # Convert lat/lon coordinates to pixel coordinates using the provided converter function
-        origin_x_px, origin_y_px = coord_to_pixel(origin.lat, origin.lon)
-        dest_x_px, dest_y_px = coord_to_pixel(destination.lat, destination.lon)
+        origin_x_px, origin_y_px = coord_to_pixel(leg_data.origin.lat, leg_data.origin.lon)
+        straightening_x_px, straightening_y_px = coord_to_pixel(leg_data.straigthening_point.lat, leg_data.straigthening_point.lon)
+        dest_x_px, dest_y_px = coord_to_pixel(leg_data.destination.lat, leg_data.destination.lon)
+        center_x_px, center_y_px = coord_to_pixel(leg_data.turn_data.center.lat, leg_data.turn_data.center.lon)
         
-        logger.debug(f"Leg endpoints on image: O=({origin_x_px:.1f}, {origin_y_px:.1f}), D=({dest_x_px:.1f}, {dest_y_px:.1f})")
+        logger.debug(f"Leg endpoints on image: O=({origin_x_px:.1f}, {origin_y_px:.1f}), D=({dest_x_px:.1f}, {dest_y_px:.1f}), S=({straightening_x_px:.1f}, {straightening_y_px:.1f})")
         
         # Clamp to image bounds so line is visible even if slightly outside
         def _clamp(val, lo, hi):
             return max(lo, min(val, hi))
         ox = _clamp(origin_x_px, 0, image_width - 1)
         oy = _clamp(origin_y_px, 0, image_height - 1)
+        sx = _clamp(straightening_x_px, 0, image_width - 1)
+        sy = _clamp(straightening_y_px, 0, image_height - 1)
         dx = _clamp(dest_x_px, 0, image_width - 1)
         dy = _clamp(dest_y_px, 0, image_height - 1)
         
+        # Turnpoint circle radius in pixels
+        circle_radius = 12
+        
+        # Draw the turning arc (only if the straightening point is outside the turnpoint circle)
+        if math.sqrt((sx - ox)**2 + (sy - oy)**2) > circle_radius:
+            turn_radius_px = math.sqrt((straightening_x_px - center_x_px)**2 + (straightening_y_px - center_y_px)**2)
+            
+            # Calculate angles from turn center to intersection point and straightening point
+            # Pillow's draw.arc uses: 0° = 3 o'clock (east), angles increase counterclockwise
+            angle_start = math.degrees(math.atan2(oy - center_y_px, ox - center_x_px)) % 360
+            angle_end = math.degrees(math.atan2(sy - center_y_px, sx - center_x_px)) % 360
+            
+            # Pillow draws arcs counterclockwise. If start > end, it still goes counterclockwise
+            # which means it takes the long way. To get the shorter arc, we need to ensure
+            # the angular difference is <= 180 degrees.
+            # Calculate both possible paths and choose the shorter one
+            diff_forward = (angle_end - angle_start) % 360
+            diff_backward = (angle_start - angle_end) % 360
+            
+            tpcircle_angle = math.degrees(math.asin(circle_radius / turn_radius_px))
+            logger.info(f"Turnpoint circle angle: {tpcircle_angle:.1f}")
+
+            if diff_backward < diff_forward:
+                # The shorter path is going backwards (clockwise), so swap start and end
+                angle_start, angle_end = angle_end, angle_start
+                angle_end -= tpcircle_angle
+            else:
+                angle_start += tpcircle_angle
+            
+            logger.info(f"Angle start: {angle_start:.1f}, Angle end: {angle_end:.1f}")
+            draw.arc(
+                (center_x_px - turn_radius_px, center_y_px - turn_radius_px, center_x_px + turn_radius_px, center_y_px + turn_radius_px),
+                start=angle_start,
+                end=angle_end,
+                fill=BLUE_COLOR_RGBA,
+                width=3
+            )
+
         # Calculate direction vector and length
         leg_dx = dx - ox
         leg_dy = dy - oy
         leg_length = math.sqrt(leg_dx**2 + leg_dy**2)
-        
-        # Circle radius in pixels (matching frontend)
-        circle_radius = 12
         
         # Shorten the line at both ends by the circle radius
         if leg_length > 2 * circle_radius:
@@ -167,7 +205,7 @@ def draw_leg(
             
             # Draw line with blue color (#0066CC), width 3, and transparency
             line_width = 3  # Medium thickness
-            draw.line([(shortened_ox, shortened_oy), (shortened_dx, shortened_dy)], fill=BLUE_COLOR_RGBA, width=line_width)
+            draw.line([(sx, sy), (shortened_dx, shortened_dy)], fill=BLUE_COLOR_RGBA, width=line_width)
         else:
             # If the leg is too short, don't draw it
             logger.debug(f"Leg too short to draw (length: {leg_length:.1f}px, need > {2 * circle_radius}px)")
@@ -180,42 +218,48 @@ def draw_leg(
 def annotate_leg(
     draw: ImageDraw.ImageDraw,
     overlay_image: Image.Image,
-    origin: FlightPlanTurnPoint,
-    destination: FlightPlanTurnPoint,
     time_at_origin: int,
     leg_data: LegData,
     coord_to_pixel: Callable[[float, float], Tuple[float, float]],
-    image_width: int,
-    image_height: int
 ) -> None:
     """
     Annotate a leg with the tick marks for time and distance.
     """
+    origin = leg_data.origin
+    destination = leg_data.destination
+
+    # Convert lat/lon coordinates to pixel coordinates using the provided converter function
+    origin_x_px, origin_y_px = coord_to_pixel(origin.lat, origin.lon)
+    dest_x_px, dest_y_px = coord_to_pixel(destination.lat, destination.lon)
+    straightening_x_px, straightening_y_px = coord_to_pixel(leg_data.straigthening_point.lat, leg_data.straigthening_point.lon)
+
+    dx = dest_x_px - straightening_x_px
+    dy = dest_y_px - straightening_y_px
+    leg_length_px = math.sqrt(dx**2 + dy**2)
+    
+    time_to_straightening_s = leg_data.time_to_straightening_s
+
+    if leg_length_px == 0:
+        logger.warning("Leg has zero length, cannot annotate")
+        return
+
+    logger.debug(f"Leg endpoints on image: O=({origin_x_px:.1f}, {origin_y_px:.1f}), D=({dest_x_px:.1f}, {dest_y_px:.1f})")
+
     try:
-        # Convert lat/lon coordinates to pixel coordinates using the provided converter function
-        origin_x_px, origin_y_px = coord_to_pixel(origin.lat, origin.lon)
-        dest_x_px, dest_y_px = coord_to_pixel(destination.lat, destination.lon)
-
-        dx = dest_x_px - origin_x_px
-        dy = dest_y_px - origin_y_px
-        leg_length_px = math.sqrt(dx**2 + dy**2)
-        
-        if leg_length_px == 0:
-            logger.warning("Leg has zero length, cannot annotate")
-            return
-
-        logger.debug(f"Leg endpoints on image: O=({origin_x_px:.1f}, {origin_y_px:.1f}), D=({dest_x_px:.1f}, {dest_y_px:.1f})")
-
         # Draw a tick every minute
         first_minute_s = (time_at_origin // 60 + 1) * 60
         last_minute_s = (time_at_origin + leg_data.eteSec) // 60 * 60
         for minute_s in range(first_minute_s, last_minute_s + 1, 60):
-            # Position in pixels along the leg
-            dx_per_min = dx / (leg_data.eteSec / 60)
-            dy_per_min = dy / (leg_data.eteSec / 60)
+            # Position in pixels along the straight portion of the leg
+            dx_per_min = dx / ((leg_data.eteSec - time_to_straightening_s) / 60)
+            dy_per_min = dy / ((leg_data.eteSec - time_to_straightening_s) / 60)
             sec_from_beginning = minute_s - time_at_origin
-            x = origin_x_px + dx_per_min * sec_from_beginning / 60
-            y = origin_y_px + dy_per_min * sec_from_beginning / 60
+            sec_from_straightening = sec_from_beginning - time_to_straightening_s
+            if sec_from_straightening < 0:
+                # If the mark lands on the arc, skip it
+                continue
+            x = straightening_x_px + dx_per_min * sec_from_straightening / 60
+            y = straightening_y_px + dy_per_min * sec_from_straightening / 60
             logger.debug(f"Minute {minute_s} at {x:.1f} {y:.1f}")
             
             # Calculate perpendicular vector to the leg for tick orientation
@@ -404,8 +448,8 @@ def annotate_turnpoint(
 
 
 def _calculate_doghouse_position(
-    origin: FlightPlanTurnPoint,
-    destination: FlightPlanTurnPoint,
+    origin: Point,
+    destination: Point,
     coord_to_pixel: Callable[[float, float], Tuple[float, float]],
     image_width: int,
     image_height: int,
@@ -649,8 +693,6 @@ def _draw_doghouse_background(
 
 def draw_doghouse(
     draw: ImageDraw.ImageDraw,
-    origin: FlightPlanTurnPoint,
-    destination: FlightPlanTurnPoint,
     leg_data: LegData,
     destination_turnpoint_index: int,
     coord_to_pixel: Callable[[float, float], Tuple[float, float]],
@@ -666,8 +708,6 @@ def draw_doghouse(
     
     Args:
         draw: The ImageDraw object to draw on (must be RGBA mode for transparency)
-        origin: The origin turnpoint of the leg
-        destination: The destination turnpoint of the leg
         leg_data: The leg data containing heading, distance, ETE
         destination_turnpoint_index: The index of the destination turnpoint (0-based)
         coord_to_pixel: Function that converts geographic coordinates (lat, lon) to pixel coordinates (x, y)
@@ -677,7 +717,7 @@ def draw_doghouse(
     try:
         # Calculate doghouse position
         doghouse_center_x, doghouse_center_y, ref_x, ref_y = _calculate_doghouse_position(
-            origin, destination, coord_to_pixel, image_width, image_height, offset_distance=80
+            leg_data.straigthening_point, leg_data.destination, coord_to_pixel, image_width, image_height, offset_distance=80
         )
         
         if doghouse_center_x is None:
@@ -737,10 +777,10 @@ def draw_doghouse(
         ete_str = f"{ete_minutes:02d}+{ete_seconds:02d}"
         
         # TAS from destination turnpoint
-        tas_str = f"{destination.tas:.0f}K"
+        tas_str = f"{leg_data.tas:.0f}K"
         
         # Altitude from destination turnpoint
-        alt_str = f"{destination.alt:.0f}'"
+        alt_str = f"{leg_data.alt:.0f}'"
         
         # Values for each box (from top to bottom: Heading, Distance, ETE, TAS, Alt)
         box_values = [
@@ -763,10 +803,7 @@ def draw_doghouse(
 
 
 def draw_mini_doghouse(
-    draw: ImageDraw.ImageDraw,
     overlay_image: Image.Image,
-    origin: FlightPlanTurnPoint,
-    destination: FlightPlanTurnPoint,
     leg_data: LegData,
     destination_turnpoint_index: int,
     coord_to_pixel: Callable[[float, float], Tuple[float, float]],
@@ -784,8 +821,6 @@ def draw_mini_doghouse(
     Args:
         draw: The ImageDraw object to draw on (must be RGBA mode for transparency)
         overlay_image: The overlay image to paste the rotated doghouse onto
-        origin: The origin turnpoint of the leg
-        destination: The destination turnpoint of the leg
         leg_data: The leg data containing heading, distance, ETE
         destination_turnpoint_index: The index of the destination turnpoint (0-based)
         coord_to_pixel: Function that converts geographic coordinates (lat, lon) to pixel coordinates (x, y)
@@ -795,20 +830,18 @@ def draw_mini_doghouse(
     """
     try:
         # Calculate doghouse position
+        origin = leg_data.origin
+        destination = leg_data.destination
         doghouse_center_x, doghouse_center_y, ref_x, ref_y = _calculate_doghouse_position(
-            origin, destination, coord_to_pixel, image_width, image_height, 
+            leg_data.straigthening_point, leg_data.destination, coord_to_pixel, image_width, image_height, 
             offset_distance=70, position=position
         )
         
-        logger.info(f"Minidoghouse position: ({doghouse_center_x:.1f}, {doghouse_center_y:.1f})")
-
         if doghouse_center_x is None:
             return
         
-        logger.info(f"Origin: ({origin.lat:.1f}, {origin.lon:.1f}), Destination: ({destination.lat:.1f}, {destination.lon:.1f})")
-
         # Convert leg endpoints to pixel coordinates to calculate leg angle
-        origin_x_px, origin_y_px = coord_to_pixel(origin.lat, origin.lon)
+        origin_x_px, origin_y_px = coord_to_pixel(leg_data.straigthening_point.lat, leg_data.straigthening_point.lon)
         dest_x_px, dest_y_px = coord_to_pixel(destination.lat, destination.lon)
         
         # Clamp to image bounds
@@ -892,8 +925,8 @@ def draw_mini_doghouse(
         heading_str = f"{leg_data.heading:.0f}°M"
         
         # Format Alt and TAS from destination turnpoint
-        tas_str = f"{destination.tas:.0f}K"
-        alt_str = f"{destination.alt:.0f}'"
+        tas_str = f"{leg_data.tas:.0f}K"
+        alt_str = f"{leg_data.alt:.0f}'"
         
         # Values for each box (from top to bottom: Heading, Alt, TAS)
         box_values = [heading_str, alt_str, tas_str]
@@ -971,16 +1004,12 @@ def annotate_map(
             if i-1 == focus_leg_index:
                 # Skip the focus leg so we can draw it last
                 continue
-            origin = flight_plan.points[i-1]
-            destination = flight_plan.points[i]
-            draw_leg(overlay_draw, origin, destination, coord_to_pixel, image.width, image.height)
-            annotate_leg(overlay_draw, overlay, origin, destination, flight_plan_data.turnpointData[i-1].etaSec, flight_plan_data.legData[i-1], coord_to_pixel, image.width, image.height)
+            draw_leg(overlay_draw, flight_plan_data.legData[i-1], coord_to_pixel, image.width, image.height)
+            annotate_leg(overlay_draw, overlay, flight_plan_data.turnpointData[i-1].etaSec, flight_plan_data.legData[i-1], coord_to_pixel)
 
         # Draw the focus leg last
-        origin = flight_plan.points[focus_leg_index]
-        destination = flight_plan.points[focus_leg_index + 1]
-        draw_leg(overlay_draw, origin, destination, coord_to_pixel, image.width, image.height)
-        annotate_leg(overlay_draw, overlay, origin, destination, flight_plan_data.turnpointData[focus_leg_index].etaSec, flight_plan_data.legData[focus_leg_index], coord_to_pixel, image.width, image.height)
+        draw_leg(overlay_draw, flight_plan_data.legData[focus_leg_index], coord_to_pixel, image.width, image.height)
+        annotate_leg(overlay_draw, overlay, flight_plan_data.turnpointData[focus_leg_index].etaSec, flight_plan_data.legData[focus_leg_index], coord_to_pixel)
 
         # Draw all turnpoints on the overlay
         for i, point in enumerate(flight_plan.points):
@@ -998,13 +1027,33 @@ def annotate_map(
         draw_turnpoint(overlay_draw, point, coord_to_pixel, image.width, image.height)
         annotate_turnpoint(overlay_draw, point, focus_leg_index + 1, flight_plan_data, coord_to_pixel, image.width, image.height)
 
+        # Temp: Draw the straigthening point
+        leg_data = flight_plan_data.legData[focus_leg_index]
+        # logger.info(f"Centre point: {leg_data.turn_data.center.lat}, {leg_data.turn_data.center.lon}")
+        # logger.info(f"Straigthening point: {leg_data.straigthening_point.lat}, {leg_data.straigthening_point.lon}")
+        # cx, cy = coord_to_pixel(leg_data.turn_data.center.lat, leg_data.turn_data.center.lon)
+        # x, y = coord_to_pixel(leg_data.straigthening_point.lat, leg_data.straigthening_point.lon)
+        
+        # Temp: Draw turn circle
+        # radius_outer = 4
+        # overlay_draw.ellipse(
+        #     (cx - radius_outer, cy - radius_outer, cx + radius_outer, cy + radius_outer),
+        #     outline=RED_COLOR_RGBA,
+        #     width=3
+        # )
+
+        # Draw the turnpoint circle (radius 12, stroke width 3) - outline only, no fill
+        # overlay_draw.ellipse(
+        #     (x - radius_outer, y - radius_outer, x + radius_outer, y + radius_outer),
+        #     outline=BLUE_COLOR_RGBA,
+        #     width=3
+        # )
+
         # Add the doghouses for this leg
         if focus_leg_index < len(flight_plan_data.legData):
             draw_doghouse(
                 overlay_draw,
-                flight_plan.points[focus_leg_index],
-                flight_plan.points[focus_leg_index + 1],
-                flight_plan_data.legData[focus_leg_index],
+                leg_data,
                 focus_leg_index,  # This leg's index
                 coord_to_pixel,
                 image.width,
@@ -1012,20 +1061,14 @@ def annotate_map(
             )
         if focus_leg_index > 0:
             draw_mini_doghouse(
-                overlay_draw,
                 overlay,
-                flight_plan.points[focus_leg_index - 1],
-                flight_plan.points[focus_leg_index],
                 flight_plan_data.legData[focus_leg_index - 1],
                 focus_leg_index - 1,  # Destination turnpoint index (where it connects to focus leg)
                 coord_to_pixel,
                 image.width, image.height, position="end")
         if focus_leg_index < len(flight_plan_data.legData) - 1:
             draw_mini_doghouse(
-                overlay_draw,
                 overlay,
-                flight_plan.points[focus_leg_index + 1],
-                flight_plan.points[focus_leg_index + 2],
                 flight_plan_data.legData[focus_leg_index + 1],
                 focus_leg_index + 1,  # Destination turnpoint index (0-based)
                 coord_to_pixel,

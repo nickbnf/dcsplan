@@ -606,7 +606,7 @@ def _tm_to_pixel_on_rotated_image(
 
 def generate_leg_map(
     flight_plan: FlightPlan,
-    flightPlanData: FlightPlanData,
+    flight_plan_data: FlightPlanData,
     leg_index: int
 ) -> bytes:
     """
@@ -614,7 +614,7 @@ def generate_leg_map(
     
     Args:
         flight_plan: The flight plan
-        flightPlanData: The flight plan data
+        flight_plan_data: The flight plan data
         leg_index: Index of the leg to generate the map for
         
     Returns:
@@ -624,8 +624,10 @@ def generate_leg_map(
 
     tile_info = _get_tile_info()
     
-    origin = flight_plan.points[leg_index]
-    destination = flight_plan.points[leg_index + 1]
+    leg_data = flight_plan_data.legData[leg_index]
+    origin = leg_data.origin
+    destination = leg_data.destination
+    straigthening_point = leg_data.straigthening_point
 
     logger.info(f"=== Starting leg map generation ===")
     logger.info(f"Leg: {leg_index}")
@@ -666,8 +668,9 @@ def generate_leg_map(
         composite = composite.resize((new_width, new_height), Image.Resampling.LANCZOS)
     
     # Calculate the angle of the leg line in pixel/image coordinates
+    # This is the straight part of the leg, excluding the turn.
     # We need to use the projected coordinates (Transverse Mercator) converted to pixels
-    origin_x_tm, origin_y_tm = _lat_lon_to_transverse_mercator(origin.lat, origin.lon)
+    origin_x_tm, origin_y_tm = _lat_lon_to_transverse_mercator(straigthening_point.lat, straigthening_point.lon)
     dest_x_tm, dest_y_tm = _lat_lon_to_transverse_mercator(destination.lat, destination.lon)
     
     # Convert to pixel coordinates in the scaled composite
@@ -737,7 +740,7 @@ def generate_leg_map(
     annotate_map(
         rotated,
         flight_plan,
-        flightPlanData,
+        flight_plan_data,
         leg_index,
         coord_to_pixel
     )
