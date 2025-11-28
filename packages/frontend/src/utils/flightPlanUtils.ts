@@ -9,7 +9,7 @@ const defaultWindDir = 0;
 // A bunch of functions to manipulate the flight plan
 export const flightPlanUtils = {
     newFlightPlan: (): FlightPlan => {
-        return { points: [], declination: 0, initTimeSec: 12 * 3600, initFob: 12000 };
+        return { points: [], declination: 0, bankAngle: 45, initTimeSec: 12 * 3600, initFob: 12000 };
     },
     addTurnPoint: (flightPlan: FlightPlan, lat: number, lon: number): FlightPlan => {
         const tas = flightPlan.points.length > 1 ? flightPlan.points[flightPlan.points.length - 2].tas : defaultTas;
@@ -147,5 +147,8 @@ export const flightPlanUtils = {
     },
     updateDeclination: (flightPlan: FlightPlan, declination: number): FlightPlan => {
         return { ...flightPlan, declination }
+    },
+    updateBankAngle: (flightPlan: FlightPlan, bankAngle: number): FlightPlan => {
+        return { ...flightPlan, bankAngle }
     }
 }

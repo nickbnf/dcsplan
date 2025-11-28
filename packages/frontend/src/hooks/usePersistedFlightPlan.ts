@@ -13,6 +13,7 @@ function isValidFlightPlan(data: any): data is FlightPlan {
     typeof data === 'object' &&
     Array.isArray(data.points) &&
     typeof data.declination === 'number' &&
+    typeof data.bankAngle === 'number' &&
     typeof data.initTimeSec === 'number' &&
     typeof data.initFob === 'number' &&
     data.points.every((point: any) =>

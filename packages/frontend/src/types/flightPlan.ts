@@ -33,6 +33,7 @@ export type FlightPlanPointChange = {
 export type FlightPlan = {
   points: FlightPlanTurnPoint[];
   declination: number;
+  bankAngle: number; // Bank angle for turns (degrees, 5-85)
   initTimeSec: number; // Initial time in seconds since midnight
   initFob: number;
 }

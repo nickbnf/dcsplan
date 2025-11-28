@@ -111,12 +111,12 @@ class TestStraighteningPoint:
         point2 = create_turnpoint(34.0, 36.1)  # ~10km east
         
         inbound_bearing = 90.0  # Coming from east
-        c_lat, c_lon, s_lat, s_lon = calculate_straigthening_point(
-            inbound_bearing, point1, point2
+        turn_data, s_lat, s_lon = calculate_straigthening_point(
+            inbound_bearing, point1, point2, self.TURN_RADIUS
         )
         
         # Convert to TM coordinates for verification
-        cx, cy = _lat_lon_to_transverse_mercator(c_lat, c_lon)
+        cx, cy = _lat_lon_to_transverse_mercator(turn_data.center.lat, turn_data.center.lon)
         sx, sy = _lat_lon_to_transverse_mercator(s_lat, s_lon)
         p1x, p1y = _lat_lon_to_transverse_mercator(point1.lat, point1.lon)
         p2x, p2y = _lat_lon_to_transverse_mercator(point2.lat, point2.lon)
@@ -138,7 +138,7 @@ class TestStraighteningPoint:
             f"For straight line, straightening point should be close to point1, got {dist_from_point1}m"
         
         # Calculate turn direction (same logic as in calculate_straigthening_point)
-        outbound_bearing = calculate_bearing(point1.lat, point1.lon, point2)
+        outbound_bearing = calculate_bearing(turn_data.center, point2)
         if (outbound_bearing - inbound_bearing + 360) % 360 > 180:
             turn_direction = 1  # Left turn (anti-clockwise)
         else:
@@ -158,12 +158,12 @@ class TestStraighteningPoint:
         # Outbound bearing will be ~0° (north)
         # This is a left turn of 90 degrees
         
-        c_lat, c_lon, s_lat, s_lon = calculate_straigthening_point(
-            inbound_bearing, point1, point2
+        turn_data, s_lat, s_lon = calculate_straigthening_point(
+            inbound_bearing, point1, point2, self.TURN_RADIUS
         )
         
         # Convert to TM coordinates for verification
-        cx, cy = _lat_lon_to_transverse_mercator(c_lat, c_lon)
+        cx, cy = _lat_lon_to_transverse_mercator(turn_data.center.lat, turn_data.center.lon)
         sx, sy = _lat_lon_to_transverse_mercator(s_lat, s_lon)
         p1x, p1y = _lat_lon_to_transverse_mercator(point1.lat, point1.lon)
         p2x, p2y = _lat_lon_to_transverse_mercator(point2.lat, point2.lon)
@@ -191,7 +191,7 @@ class TestStraighteningPoint:
             f"Straightening point should be on radical axis, A*x + B*y = {radical_value:.2f} (expected: C = {C_radical:.2f}, error: {radical_error:.2f})"
         
         # Calculate turn direction (same logic as in calculate_straigthening_point)
-        outbound_bearing = calculate_bearing(point1.lat, point1.lon, point2)
+        outbound_bearing = calculate_bearing(turn_data.center, point2)
         if (outbound_bearing - inbound_bearing + 360) % 360 > 180:
             turn_direction = 1  # Left turn (anti-clockwise)
         else:
@@ -212,12 +212,12 @@ class TestStraighteningPoint:
         # Outbound bearing will be ~180° (south)
         # This is a right turn of 90 degrees
         
-        c_lat, c_lon, s_lat, s_lon = calculate_straigthening_point(
-            inbound_bearing, point1, point2
+        turn_data, s_lat, s_lon = calculate_straigthening_point(
+            inbound_bearing, point1, point2, self.TURN_RADIUS
         )
         
         # Convert to TM coordinates for verification
-        cx, cy = _lat_lon_to_transverse_mercator(c_lat, c_lon)
+        cx, cy = _lat_lon_to_transverse_mercator(turn_data.center.lat, turn_data.center.lon)
         sx, sy = _lat_lon_to_transverse_mercator(s_lat, s_lon)
         p1x, p1y = _lat_lon_to_transverse_mercator(point1.lat, point1.lon)
         p2x, p2y = _lat_lon_to_transverse_mercator(point2.lat, point2.lon)
@@ -241,7 +241,7 @@ class TestStraighteningPoint:
             f"Straightening point should be on radical axis, A*x + B*y = {radical_value:.2f} (expected: C = {C_radical:.2f}, error: {radical_error:.2f})"
         
         # Calculate turn direction (same logic as in calculate_straigthening_point)
-        outbound_bearing = calculate_bearing(point1.lat, point1.lon, point2)
+        outbound_bearing = calculate_bearing(turn_data.center, point2)
         if (outbound_bearing - inbound_bearing + 360) % 360 > 180:
             turn_direction = 1  # Left turn (anti-clockwise)
         else:
@@ -262,12 +262,12 @@ class TestStraighteningPoint:
         # Outbound bearing will be ~270° (west)
         # This is a 180 degree turn
         
-        c_lat, c_lon, s_lat, s_lon = calculate_straigthening_point(
-            inbound_bearing, point1, point2
+        turn_data, s_lat, s_lon = calculate_straigthening_point(
+            inbound_bearing, point1, point2, self.TURN_RADIUS
         )
         
         # Convert to TM coordinates for verification
-        cx, cy = _lat_lon_to_transverse_mercator(c_lat, c_lon)
+        cx, cy = _lat_lon_to_transverse_mercator(turn_data.center.lat, turn_data.center.lon)
         sx, sy = _lat_lon_to_transverse_mercator(s_lat, s_lon)
         p1x, p1y = _lat_lon_to_transverse_mercator(point1.lat, point1.lon)
         p2x, p2y = _lat_lon_to_transverse_mercator(point2.lat, point2.lon)
@@ -291,7 +291,7 @@ class TestStraighteningPoint:
             f"Straightening point should be on radical axis, A*x + B*y = {radical_value:.2f} (expected: C = {C_radical:.2f}, error: {radical_error:.2f})"
         
         # Calculate turn direction (same logic as in calculate_straigthening_point)
-        outbound_bearing = calculate_bearing(point1.lat, point1.lon, point2)
+        outbound_bearing = calculate_bearing(turn_data.center, point2)
         if (outbound_bearing - inbound_bearing + 360) % 360 > 180:
             turn_direction = 1  # Left turn (anti-clockwise)
         else:
@@ -311,12 +311,12 @@ class TestStraighteningPoint:
         # Outbound bearing will be ~45° (northeast)
         # This is a left turn of 45 degrees
         
-        c_lat, c_lon, s_lat, s_lon = calculate_straigthening_point(
-            inbound_bearing, point1, point2
+        turn_data, s_lat, s_lon = calculate_straigthening_point(
+            inbound_bearing, point1, point2, self.TURN_RADIUS
         )
         
         # Convert to TM coordinates for verification
-        cx, cy = _lat_lon_to_transverse_mercator(c_lat, c_lon)
+        cx, cy = _lat_lon_to_transverse_mercator(turn_data.center.lat, turn_data.center.lon)
         sx, sy = _lat_lon_to_transverse_mercator(s_lat, s_lon)
         p1x, p1y = _lat_lon_to_transverse_mercator(point1.lat, point1.lon)
         p2x, p2y = _lat_lon_to_transverse_mercator(point2.lat, point2.lon)
@@ -344,7 +344,7 @@ class TestStraighteningPoint:
         assert s_lon > point1.lon, "This should be North East of the start point"
 
         # Calculate turn direction (same logic as in calculate_straigthening_point)
-        outbound_bearing = calculate_bearing(point1.lat, point1.lon, point2)
+        outbound_bearing = calculate_bearing(turn_data.center, point2)
         if (outbound_bearing - inbound_bearing + 360) % 360 > 180:
             turn_direction = 1  # Left turn (anti-clockwise)
         else:

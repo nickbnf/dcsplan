@@ -25,6 +25,7 @@ export const ButtonZone: React.FC<ButtonZoneProps> = ({
   onFlightPlanUpdate,
 }) => {
   const declination = flightPlan.declination
+  const bankAngle = flightPlan.bankAngle
 
   const handleAddWPTsClick = () => {
     // Get the map instance from the window (we'll need to expose it from Map component)
@@ -69,6 +70,30 @@ export const ButtonZone: React.FC<ButtonZoneProps> = ({
               className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
               style={{
                 background: `linear-gradient(to right, #6b7280 0%, #6b7280 ${((declination + 15) / 30) * 100}%, #e5e7eb ${((declination + 15) / 30) * 100}%, #e5e7eb 100%)`
+              }}
+            />
+          </div>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-aero-label text-gray-600">Bank Angle</label>
+              <span className="text-sm font-aero-label text-gray-700">
+                {bankAngle}°
+              </span>
+            </div>
+            <input
+              type="range"
+              min="5"
+              max="85"
+              step="5"
+              value={bankAngle}
+              onChange={(e) => { 
+                  const updatedFlightPlan = flightPlanUtils.updateBankAngle(flightPlan, parseFloat(e.target.value));
+                  console.log(updatedFlightPlan)
+                  onFlightPlanUpdate(updatedFlightPlan);
+              }}
+              className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+              style={{
+                background: `linear-gradient(to right, #6b7280 0%, #6b7280 ${((bankAngle - 5) / 80) * 100}%, #e5e7eb ${((bankAngle - 5) / 80) * 100}%, #e5e7eb 100%)`
               }}
             />
           </div>

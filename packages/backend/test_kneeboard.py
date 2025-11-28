@@ -160,6 +160,7 @@ def valid_flight_plan():
             }
         ],
         "declination": 12.5,
+        "bankAngle": 30.0,
         "initTimeSec": 43200,  # 12:00:00 = 12 * 3600
         "initFob": 12000
     }
@@ -174,6 +175,7 @@ def minimal_flight_plan():
             {"lat": 35.0, "lon": 37.0, "tas": 400, "alt": 3000, "fuelFlow": 6000, "windSpeed": 20, "windDir": 270}
         ],
         "declination": 12.5,
+        "bankAngle": 30.0,
         "initTimeSec": 43200,  # 12:00:00 = 12 * 3600
         "initFob": 12000
     }

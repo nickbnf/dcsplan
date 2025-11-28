@@ -33,7 +33,8 @@ class FlightPlanTurnPoint(BaseModel):
 class FlightPlan(BaseModel):
     """Represents a complete flight plan with waypoints and initial conditions."""
     points: List[FlightPlanTurnPoint]
-    declination: float
+    declination: float = Field(..., ge=-25, le=25, description="Magnetic declination")
+    bankAngle: float = Field(..., ge=5, le=85, description="Bank angle for turns (degrees)")
     initTimeSec: int = Field(..., ge=0, le=86399, description="Initial time seconds (0-86399)")
     initFob: float = Field(..., ge=0, description="Initial fuel on board")
 
@@ -131,7 +132,7 @@ def _transverse_mercator_to_lat_lon(x: float, y: float) -> Tuple[float, float]:
     lon, lat = transformer.transform(x, y)
     return lat, lon
 
-def calculate_straigthening_point(inbound_bearing: float, point1: Point, point2: Point, turn_radius: float) -> Tuple[TurnData, float, float]:
+def calculate_straigthening_point(inbound_bearing: float, point1: Point, point2: Point, turn_radius_m: float) -> Tuple[TurnData, float, float]:
     """Calculate the straigthening point (point where the turn is finished)."""
     aprox_outbound_bearing = calculate_bearing(point1, point2)
     sx, sy = _lat_lon_to_transverse_mercator(point1.lat, point1.lon)
@@ -146,8 +147,8 @@ def calculate_straigthening_point(inbound_bearing: float, point1: Point, point2:
         # Right turn (reverse)
         turn_direction = -1
 
-    cx = sx - turn_direction * math.cos(math.radians(inbound_bearing)) * turn_radius
-    cy = sy + turn_direction * math.sin(math.radians(inbound_bearing)) * turn_radius
+    cx = sx - turn_direction * math.cos(math.radians(inbound_bearing)) * turn_radius_m
+    cy = sy + turn_direction * math.sin(math.radians(inbound_bearing)) * turn_radius_m
     c_lat, c_lon = _transverse_mercator_to_lat_lon(cx, cy)
     turn_data = TurnData(c_lat, c_lon)
 
@@ -163,7 +164,7 @@ def calculate_straigthening_point(inbound_bearing: float, point1: Point, point2:
     A = cx - dx
     B = cy - dy
     # C = (x₂² + y₂² - r²) - (x₁x₂ + y₁y₂)
-    C = (cx**2 + cy**2 - turn_radius**2) - (dx * cx + dy * cy)
+    C = (cx**2 + cy**2 - turn_radius_m**2) - (dx * cx + dy * cy)
     
     logger.info(f"Radical axis line: A={A:.2f}, B={B:.2f}, C={C:.2f}")
     
@@ -174,7 +175,7 @@ def calculate_straigthening_point(inbound_bearing: float, point1: Point, point2:
         if abs(A) < 1e-10:
             raise ValueError("Line is degenerate (both A and B are zero)")
         x_line = C / A
-        discriminant = turn_radius**2 - (x_line - cx)**2
+        discriminant = turn_radius_m**2 - (x_line - cx)**2
         if discriminant < 0:
             raise ValueError(f"No intersection: line too far from circle (discriminant={discriminant})")
         sqrt_disc = math.sqrt(discriminant)
@@ -189,7 +190,7 @@ def calculate_straigthening_point(inbound_bearing: float, point1: Point, point2:
         # According to formulas (using circle center cx, cy):
         a = A**2 + B**2
         b = -2 * B**2 * cx + 2 * A * (B * cy - C)
-        c = B**2 * cx**2 + (C - B * cy)**2 - turn_radius**2 * B**2
+        c = B**2 * cx**2 + (C - B * cy)**2 - turn_radius_m**2 * B**2
 
         logger.info(f"Quadratic coefficients: a={a:.2f}, b={b:.2f}, c={c:.2f}")
 
@@ -267,7 +268,8 @@ class LegData:
         self.origin = Point(flightPlan.points[indexWptFrom].lat, flightPlan.points[indexWptFrom].lon)
         self.destination = Point(flightPlan.points[indexWptTo].lat, flightPlan.points[indexWptTo].lon)
 
-        turn_radius = 2500
+        turn_radius_m = (flightPlan.points[indexWptTo].tas * 0.514)**2 / (9.80665 * math.tan(math.radians(flightPlan.bankAngle)))
+        logger.info(f"Turn radius: {turn_radius_m:.2f} meters")
 
         # Calculate the straigthening point (point where the turn is finished).
         if indexWptFrom == 0:
@@ -279,7 +281,7 @@ class LegData:
             inbound_bearing = calculate_bearing(
                 Point(flightPlan.points[indexWptFrom-1].lat, flightPlan.points[indexWptFrom-1].lon),
                 Point(flightPlan.points[indexWptFrom].lat, flightPlan.points[indexWptFrom].lon))
-            turn_data, s_lat, s_lon = calculate_straigthening_point(inbound_bearing, flightPlan.points[indexWptFrom], flightPlan.points[indexWptTo], turn_radius)
+            turn_data, s_lat, s_lon = calculate_straigthening_point(inbound_bearing, flightPlan.points[indexWptFrom], flightPlan.points[indexWptTo], turn_radius_m)
         self.straigthening_point = Point(s_lat, s_lon)
         logger.info(f"Straigthening point: {self.straigthening_point}")
         self.turn_data = turn_data
@@ -297,7 +299,7 @@ class LegData:
             math.cos(math.radians(inbound_bearing)) * math.cos(math.radians(bearing))
         turn_angle_rd = math.acos(dot_product)
         logger.info(f"Turn angle: {math.degrees(turn_angle_rd):.2f} degrees")
-        arc_distance = turn_radius * turn_angle_rd
+        arc_distance = turn_radius_m * turn_angle_rd
         distance = arc_distance + calculate_distance(self.straigthening_point, self.destination)
         self.distanceNm = distance / 1852
         
