@@ -7,7 +7,6 @@ This module defines the Pydantic models for flight plan validation and data stru
 import math
 import pprint
 import logging
-from tokenize import Pointfloat
 from pydantic import BaseModel, Field
 from typing import List, Tuple
 from pyproj import Transformer
@@ -142,9 +141,11 @@ def calculate_straigthening_point(inbound_bearing: float, point1: Point, point2:
     # Calculate the turning circle
     if (aprox_outbound_bearing - inbound_bearing + 360) % 360 > 180:
         # Left turn (direct)
+        logger.info(f"Left turn")
         turn_direction = 1
     else:
         # Right turn (reverse)
+        logger.info(f"Right turn")
         turn_direction = -1
 
     cx = sx - turn_direction * math.cos(math.radians(inbound_bearing)) * turn_radius_m
@@ -226,17 +227,24 @@ def calculate_straigthening_point(inbound_bearing: float, point1: Point, point2:
             angle_entry -= 2 * math.pi
         
         # Turning in the correct direction, determine which angle we reach first
+        logger.debug(f"Angle entry: {math.degrees(angle_entry):.2f} degrees")
+        logger.debug(f"Angle1: {math.degrees(angle1):.2f} degrees")
+        logger.debug(f"Angle2: {math.degrees(angle2):.2f} degrees")
+        logger.debug(f"Angle1 - angle_entry: {math.degrees(angle1 - angle_entry):.2f} degrees")
+        logger.debug(f"Angle2 - angle_entry: {math.degrees(angle2 - angle_entry):.2f} degrees")
+        angle1_diff = min(abs(angle1 - angle_entry), 2 * math.pi - abs(angle1 - angle_entry))
+        angle2_diff = min(abs(angle2 - angle_entry), 2 * math.pi - abs(angle2 - angle_entry))
+        logger.debug(f"Corrected Angle1 - angle_entry: {math.degrees(angle1_diff):.2f} degrees")
+        logger.debug(f"Corrected Angle2 - angle_entry: {math.degrees(angle2_diff):.2f} degrees")
         if turn_direction == -1:
-            logger.info(f"Right turn")
-            if angle1 - angle_entry < angle2 - angle_entry:
+            if angle1_diff < angle2_diff:
                 sx_result = x1_intersect
                 sy_result = y1_intersect
             else:
                 sx_result = x2_intersect
                 sy_result = y2_intersect
         else:
-            logger.info(f"Left turn")
-            if angle1 - angle_entry > angle2 - angle_entry:
+            if angle1_diff > angle2_diff:
                 sx_result = x1_intersect
                 sy_result = y1_intersect
             else:
@@ -261,10 +269,10 @@ class LegData:
     alt: float                  # Altitude after any climb / descend
     time_to_straightening_s: int # Time to the straigthening point in seconds
 
-    def __init__(self, flightPlan: FlightPlan, indexWptFrom: int, indexWptTo: int):
+    def __init__(self, flightPlan: FlightPlan, indexWptFrom: int, indexWptTo: int, inbound_bearing: float):
         """Initialize a new leg from indexWptFrom to indexWptTo."""
         
-        logger.info(f"Calculating leg from {indexWptFrom} to {indexWptTo}")
+        logger.info(f"== Calculating leg from {indexWptFrom} to {indexWptTo} ==")
         self.origin = Point(flightPlan.points[indexWptFrom].lat, flightPlan.points[indexWptFrom].lon)
         self.destination = Point(flightPlan.points[indexWptTo].lat, flightPlan.points[indexWptTo].lon)
 
@@ -278,9 +286,6 @@ class LegData:
             s_lat, s_lon = self.origin.lat, self.origin.lon
             turn_data = TurnData(0, 0)
         else:
-            inbound_bearing = calculate_bearing(
-                Point(flightPlan.points[indexWptFrom-1].lat, flightPlan.points[indexWptFrom-1].lon),
-                Point(flightPlan.points[indexWptFrom].lat, flightPlan.points[indexWptFrom].lon))
             turn_data, s_lat, s_lon = calculate_straigthening_point(inbound_bearing, flightPlan.points[indexWptFrom], flightPlan.points[indexWptTo], turn_radius_m)
         self.straigthening_point = Point(s_lat, s_lon)
         logger.info(f"Straigthening point: {self.straigthening_point}")
@@ -349,7 +354,8 @@ class FlightPlanData:
                 self.turnpointData.append(tp)
             else:
                 if i < len(flightPlan.points):
-                    leg = LegData(flightPlan, i-1, i)
+                    inbound_bearing = self.legData[-1].heading if len(self.legData) > 0 else 0
+                    leg = LegData(flightPlan, i-1, i, inbound_bearing)
                     self.legData.append(leg)
                 tp = TurnpointData()
                 tp.etaSec = self.turnpointData[-1].etaSec + leg.eteSec

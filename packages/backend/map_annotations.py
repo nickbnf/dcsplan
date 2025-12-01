@@ -1013,9 +1013,10 @@ def annotate_map(
 
         # Draw all turnpoints on the overlay
         for i, point in enumerate(flight_plan.points):
-            if i == focus_leg_index or i+1 == focus_leg_index:
+            if i == focus_leg_index or i == focus_leg_index + 1:
                 # Skip the focus leg so we can draw it last
                 continue
+            logger.debug(f"Drawing turnpoint {i}")
             draw_turnpoint(overlay_draw, point, coord_to_pixel, image.width, image.height)
             annotate_turnpoint(overlay_draw, point, i, flight_plan_data, coord_to_pixel, image.width, image.height)
 
