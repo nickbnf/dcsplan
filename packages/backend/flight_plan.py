@@ -210,46 +210,66 @@ def calculate_straigthening_point(inbound_bearing: float, point1: Point, point2:
         x2_intersect = (-b - sqrt_disc) / (2 * a)
         y2_intersect = (C - A * x2_intersect) / B
         
-        # Calculate angles from intersection points to destination point
-        angle1 = math.atan2(dy - y1_intersect, dx - x1_intersect)
-        angle2 = math.atan2(dy - y2_intersect, dx - x2_intersect)
+        # Select the correct intersection point based on smooth transition criterion:
+        # The tangent vector of the arc at the intersection point must be parallel
+        # to the direction vector from the intersection point to the destination.
+        # This ensures C1 continuity (smooth transition, no sharp angle).
         
-        # Convert inbound_bearing (compass bearing: 0°=north, 90°=east, clockwise) 
-        # to math angle (0°=east, counter-clockwise)
-        # Compass 0° (north) = math 90° (π/2)
-        # Compass 90° (east) = math 0° (0)
-        # Formula: math_angle = 90° - compass_bearing
-        angle_entry = math.radians(90 - inbound_bearing)
-        # Normalize to [0, 2π)
-        while angle_entry < 0:
-            angle_entry += 2 * math.pi
-        while angle_entry >= 2 * math.pi:
-            angle_entry -= 2 * math.pi
-        
-        # Turning in the correct direction, determine which angle we reach first
-        logger.debug(f"Angle entry: {math.degrees(angle_entry):.2f} degrees")
-        logger.debug(f"Angle1: {math.degrees(angle1):.2f} degrees")
-        logger.debug(f"Angle2: {math.degrees(angle2):.2f} degrees")
-        logger.debug(f"Angle1 - angle_entry: {math.degrees(angle1 - angle_entry):.2f} degrees")
-        logger.debug(f"Angle2 - angle_entry: {math.degrees(angle2 - angle_entry):.2f} degrees")
-        angle1_diff = min(abs(angle1 - angle_entry), 2 * math.pi - abs(angle1 - angle_entry))
-        angle2_diff = min(abs(angle2 - angle_entry), 2 * math.pi - abs(angle2 - angle_entry))
-        logger.debug(f"Corrected Angle1 - angle_entry: {math.degrees(angle1_diff):.2f} degrees")
-        logger.debug(f"Corrected Angle2 - angle_entry: {math.degrees(angle2_diff):.2f} degrees")
-        if turn_direction == -1:
-            if angle1_diff < angle2_diff:
-                sx_result = x1_intersect
-                sy_result = y1_intersect
-            else:
-                sx_result = x2_intersect
-                sy_result = y2_intersect
+        # For intersection point 1:
+        # Radius vector from circle center to intersection point
+        radius1_x = x1_intersect - cx
+        radius1_y = y1_intersect - cy
+        # Tangent vector (perpendicular to radius)
+        # For counter-clockwise (turn_direction=1): rotate radius 90° CCW: (-y, x)
+        # For clockwise (turn_direction=-1): rotate radius 90° CW: (y, -x)
+        if turn_direction == 1:
+            tangent1_x = -radius1_y
+            tangent1_y = radius1_x
         else:
-            if angle1_diff > angle2_diff:
+            tangent1_x = radius1_y
+            tangent1_y = -radius1_x
+        # Direction vector from intersection point to destination
+        dir1_x = dx - x1_intersect
+        dir1_y = dy - y1_intersect
+        # Dot product: positive means tangent and direction are aligned
+        dot1 = tangent1_x * dir1_x + tangent1_y * dir1_y
+        
+        # For intersection point 2:
+        radius2_x = x2_intersect - cx
+        radius2_y = y2_intersect - cy
+        if turn_direction == 1:
+            tangent2_x = -radius2_y
+            tangent2_y = radius2_x
+        else:
+            tangent2_x = radius2_y
+            tangent2_y = -radius2_x
+        dir2_x = dx - x2_intersect
+        dir2_y = dy - y2_intersect
+        dot2 = tangent2_x * dir2_x + tangent2_y * dir2_y
+        
+        logger.debug(f"Intersection point 1: ({x1_intersect:.2f}, {y1_intersect:.2f}), dot product: {dot1:.2f}")
+        logger.debug(f"Intersection point 2: ({x2_intersect:.2f}, {y2_intersect:.2f}), dot product: {dot2:.2f}")
+        
+        # Select the point where tangent and direction are aligned (positive dot product)
+        if dot1 > 0:
+            sx_result = x1_intersect
+            sy_result = y1_intersect
+            logger.debug(f"Selected intersection point 1 (dot={dot1:.2f})")
+        elif dot2 > 0:
+            sx_result = x2_intersect
+            sy_result = y2_intersect
+            logger.debug(f"Selected intersection point 2 (dot={dot2:.2f})")
+        else:
+            # Fallback: if neither has positive dot product, choose the one with larger dot product
+            # (less negative, closer to alignment)
+            if dot1 > dot2:
                 sx_result = x1_intersect
                 sy_result = y1_intersect
+                logger.warning(f"Both dot products negative, selected point 1 (dot={dot1:.2f} vs {dot2:.2f})")
             else:
                 sx_result = x2_intersect
                 sy_result = y2_intersect
+                logger.warning(f"Both dot products negative, selected point 2 (dot={dot2:.2f} vs {dot1:.2f})")
 
     s_lat, s_lon = _transverse_mercator_to_lat_lon(sx_result, sy_result)
     return turn_data, s_lat, s_lon

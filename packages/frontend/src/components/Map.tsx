@@ -313,14 +313,6 @@ const MapComponent: React.FC<MapComponentProps> = ({
       if (!pointExists) {
         let updatedPlan = flightPlanUtils.addTurnPoint(flightPlan, latestPoint.getCoordinates()[1], latestPoint.getCoordinates()[0]);
         console.log('Updated flightplan:', updatedPlan.points.length, 'points');
-
-        /*
-        // Add line to previous point if there are at least 2 points in current drawing
-        if (drawingState.currentPoints.length > 1) {
-          const previousPoint = drawingState.currentPoints[drawingState.currentPoints.length - 2];
-          updatedPlan = flightPlanUtils.addLine(updatedPlan, previousPoint, latestPoint);
-        }
-        */
         
         onFlightPlanUpdate(updatedPlan);
       }

@@ -128,6 +128,7 @@ export const useDrawing = () => {
     }));
   }, []);
 
+  // Add a new turnpoint to the drawing
   const addPoint = useCallback((coordinate: [number, number]) => {
     if (!mapProjectionRef.current) return;
 
