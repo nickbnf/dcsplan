@@ -288,6 +288,8 @@ class LegData:
     tas: float                  # True air speed
     alt: float                  # Altitude after any climb / descend
     time_to_straightening_s: int # Time to the straigthening point in seconds
+    turn_angle_rad: float       # Turn angle in radians (along the arc)
+    turn_direction: int         # Turn direction: 1 for counter-clockwise, -1 for clockwise
 
     def __init__(self, flightPlan: FlightPlan, indexWptFrom: int, indexWptTo: int, inbound_bearing: float):
         """Initialize a new leg from indexWptFrom to indexWptTo."""
@@ -305,6 +307,7 @@ class LegData:
             inbound_bearing = 0
             s_lat, s_lon = self.origin.lat, self.origin.lon
             turn_data = TurnData(0, 0)
+            turn_direction = 1  # Default, not used for first leg
         else:
             turn_data, s_lat, s_lon = calculate_straigthening_point(inbound_bearing, flightPlan.points[indexWptFrom], flightPlan.points[indexWptTo], turn_radius_m)
         self.straigthening_point = Point(s_lat, s_lon)
@@ -317,13 +320,62 @@ class LegData:
         logger.info(f"Course: {self.course}")
 
         # Calculate the distance of the leg.
-        # How many degrees are we turning? (this is the angle difference between two vectors)
-        # inbound vector: (sin inbound_bearing, cos inbound_bearing)
-        # outbound vector: (sin outbound_bearing, cos outbound_bearing)
-        dot_product = math.sin(math.radians(inbound_bearing)) * math.sin(math.radians(bearing)) +\
-            math.cos(math.radians(inbound_bearing)) * math.cos(math.radians(bearing))
-        turn_angle_rd = math.acos(dot_product)
+        # Calculate the actual turn angle along the arc from entry to exit point.
+        # This correctly handles turns >180° by calculating the arc distance along the circle.
+        if indexWptFrom == 0:
+            # First leg has no turn
+            turn_angle_rd = 0
+            arc_distance = 0
+        else:
+            # Get circle center and calculate angles from center to entry and exit points
+            cx, cy = _lat_lon_to_transverse_mercator(turn_data.center.lat, turn_data.center.lon)
+            sx_entry, sy_entry = _lat_lon_to_transverse_mercator(self.origin.lat, self.origin.lon)
+            sx_exit, sy_exit = _lat_lon_to_transverse_mercator(self.straigthening_point.lat, self.straigthening_point.lon)
+            
+            # Calculate angles from circle center to entry and exit points
+            angle_entry = math.atan2(sy_entry - cy, sx_entry - cx)
+            angle_exit = math.atan2(sy_exit - cy, sx_exit - cx)
+            
+            # Determine turn direction (same logic as in calculate_straigthening_point)
+            aprox_outbound_bearing = calculate_bearing(self.origin, self.destination)
+            if (aprox_outbound_bearing - inbound_bearing + 360) % 360 > 180:
+                turn_direction = 1  # Counter-clockwise
+            else:
+                turn_direction = -1  # Clockwise
+            
+            # Calculate angular distance along the arc in the turn direction
+            # Normalize angles to [0, 2π) for easier calculation
+            def normalize_angle(angle):
+                """Normalize angle to [0, 2π)"""
+                while angle < 0:
+                    angle += 2 * math.pi
+                while angle >= 2 * math.pi:
+                    angle -= 2 * math.pi
+                return angle
+            
+            angle_entry_norm = normalize_angle(angle_entry)
+            angle_exit_norm = normalize_angle(angle_exit)
+            
+            if turn_direction == 1:  # Counter-clockwise: increasing angle direction
+                # Calculate forward distance
+                if angle_exit_norm >= angle_entry_norm:
+                    turn_angle_rd = angle_exit_norm - angle_entry_norm
+                else:
+                    # Wrap around: go forward past 2π
+                    turn_angle_rd = (2 * math.pi - angle_entry_norm) + angle_exit_norm
+            else:  # Clockwise: decreasing angle direction
+                # Calculate backward distance
+                if angle_exit_norm <= angle_entry_norm:
+                    turn_angle_rd = angle_entry_norm - angle_exit_norm
+                else:
+                    # Wrap around: go backward past 0
+                    turn_angle_rd = angle_entry_norm + (2 * math.pi - angle_exit_norm)
+            
         logger.info(f"Turn angle: {math.degrees(turn_angle_rd):.2f} degrees")
+        # Store turn angle and direction for use in drawing
+        self.turn_angle_rad = turn_angle_rd
+        self.turn_direction = turn_direction if indexWptFrom > 0 else 1  # Default to 1 for first leg (no turn)
+        
         arc_distance = turn_radius_m * turn_angle_rd
         distance = arc_distance + calculate_distance(self.straigthening_point, self.destination)
         self.distanceNm = distance / 1852

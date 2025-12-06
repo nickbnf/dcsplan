@@ -170,12 +170,26 @@ def draw_leg(
             tpcircle_angle = math.degrees(math.asin(circle_radius / turn_radius_px))
             logger.info(f"Turnpoint circle angle: {tpcircle_angle:.1f}")
 
-            if diff_backward < diff_forward:
-                # The shorter path is going backwards (clockwise), so swap start and end
-                angle_start, angle_end = angle_end, angle_start
-                angle_end -= tpcircle_angle
+            logger.info(f"Diff forward: {diff_forward:.1f}, Diff backward: {diff_backward:.1f}")
+            logger.info(f"Turn angle: {math.degrees(leg_data.turn_angle_rad):.1f}")
+
+            if leg_data.turn_angle_rad < math.pi:
+                if diff_backward < diff_forward:
+                    # The shorter path is going backwards (clockwise), so swap start and end
+                    angle_start, angle_end = angle_end, angle_start
+                    angle_end -= tpcircle_angle
+                else:
+                    angle_start += tpcircle_angle
             else:
-                angle_start += tpcircle_angle
+                # Long turn, use the longer path
+                if diff_forward < diff_backward:
+                    angle_start, angle_end = angle_end, angle_start
+                    if leg_data.turn_direction == 1:
+                        angle_end -= tpcircle_angle
+                    else:
+                        angle_start -= tpcircle_angle
+                else:
+                    angle_start += tpcircle_angle
             
             logger.info(f"Angle start: {angle_start:.1f}, Angle end: {angle_end:.1f}")
             draw.arc(
@@ -501,8 +515,6 @@ def _calculate_doghouse_position(
     perp_x = -leg_dir_y
     perp_y = leg_dir_x
     
-    logger.info(f"perp_x: {perp_x:.1f}, perp_y: {perp_y:.1f}")
-
     # Hardcoded pixel offset for beginning/end positioning
     POSITION_OFFSET_PIXELS = 60
     

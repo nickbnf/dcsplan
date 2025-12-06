@@ -71,6 +71,7 @@ export const createFlightPlanLayer = (flightPlan: FlightPlan, projection: any, e
                     leg.originLon,
                     leg.straighteningLat,
                     leg.straighteningLon,
+                    leg.turnDirection,
                     30
                 );
 

@@ -78,7 +78,7 @@ export function calculateStraighteningPoint(
   point2Lat: number,
   point2Lon: number,
   turnRadiusM: number
-): [number, number, number, number] {
+): [number, number, number, number, number] {
   const aproxOutboundBearing = calculateBearing(
     point1Lat,
     point1Lon,
@@ -203,7 +203,7 @@ export function calculateStraighteningPoint(
   }
 
   const [sLat, sLon] = transverseMercatorToLatLon(sxResult, syResult);
-  return [cLat, cLon, sLat, sLon];
+  return [cLat, cLon, sLat, sLon, turnDirection];
 }
 
 /**
@@ -219,7 +219,8 @@ export function generateArcPoints(
   startLon: number,
   endLat: number,
   endLon: number,
-  numPoints: number = 30
+  turnDirection: number,
+  numPoints: number = 6
 ): Array<[number, number]> {
   const [cx, cy] = latLonToTransverseMercator(centerLat, centerLon);
   const [sx, sy] = latLonToTransverseMercator(startLat, startLon);
@@ -228,16 +229,22 @@ export function generateArcPoints(
 
   // Calculate angles in transverse Mercator coordinates (math angles: 0° = east, counter-clockwise)
   // atan2(y, x) gives: 0° = east, 90° = north, -90° = south, 180° = west
-  const startAngleRad = Math.atan2(sy - cy, sx - cx);
-  const endAngleRad = Math.atan2(ey - cy, ex - cx);
+  let startAngleRad = Math.atan2(sy - cy, sx - cx);
+  let endAngleRad = Math.atan2(ey - cy, ex - cx);
+  if (startAngleRad < 0) {
+    startAngleRad += 2 * Math.PI;
+  }
+  if (endAngleRad < 0) {
+    endAngleRad += 2 * Math.PI;
+  }
 
   // Calculate angular difference, taking the shorter path
   let angleDiff = endAngleRad - startAngleRad;
-  // Normalize to [-π, π]
-  if (angleDiff > Math.PI) {
-    angleDiff -= 2 * Math.PI;
-  } else if (angleDiff < -Math.PI) {
+  if (turnDirection === 1 && angleDiff < 0) {
     angleDiff += 2 * Math.PI;
+  }
+  if (turnDirection === -1 && angleDiff > 0) {
+    angleDiff -= 2 * Math.PI;
   }
 
   for (let i = 0; i <= numPoints; i++) {
@@ -245,8 +252,15 @@ export function generateArcPoints(
     const angle = startAngleRad + angleDiff * t;
 
     // Calculate point on circle in transverse Mercator
-    const px = cx + radiusM * Math.cos(angle);
-    const py = cy + radiusM * Math.sin(angle);
+    var px: number;
+    var py: number;
+    if (turnDirection === 1) {
+      px = cx + radiusM * Math.cos(angle);
+      py = cy + radiusM * Math.sin(angle);
+    } else {
+      px = cx + radiusM * Math.cos(angle);
+      py = cy + radiusM * Math.sin(angle);
+    }
 
     // Convert back to lat/lon
     const [lat, lon] = transverseMercatorToLatLon(px, py);
@@ -295,6 +309,7 @@ export interface LegCalculationResult {
   inboundBearing: number;
   outboundBearing: number;
   heading: number; // For next leg's inbound bearing
+  turnDirection: number;
 }
 
 /**
@@ -322,6 +337,7 @@ export function calculateAllLegData(
     let turnCenterLon: number;
     let straighteningLat: number;
     let straighteningLon: number;
+    let turnDirection: number;
 
     if (i === 0) {
       // First leg: no turning arc, use origin as straightening point
@@ -330,9 +346,10 @@ export function calculateAllLegData(
       straighteningLat = origin.lat;
       straighteningLon = origin.lon;
       inboundBearing = 0;
+      turnDirection = 1;
     } else {
       try {
-        [turnCenterLat, turnCenterLon, straighteningLat, straighteningLon] =
+        [turnCenterLat, turnCenterLon, straighteningLat, straighteningLon, turnDirection] =
           calculateStraighteningPoint(
             inboundBearing,
             origin.lat,
@@ -351,6 +368,7 @@ export function calculateAllLegData(
         turnCenterLon = 0;
         straighteningLat = origin.lat;
         straighteningLon = origin.lon;
+        turnDirection = 1;
       }
     }
 
@@ -386,6 +404,7 @@ export function calculateAllLegData(
       inboundBearing,
       outboundBearing,
       heading,
+      turnDirection,
     });
 
     // Update inbound bearing for next leg
