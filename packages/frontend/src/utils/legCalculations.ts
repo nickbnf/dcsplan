@@ -1,4 +1,4 @@
-import type { FlightPlan, FlightPlanTurnPoint } from "../types/flightPlan";
+import type { FlightPlan } from "../types/flightPlan";
 import { transform } from "ol/proj";
 import { get } from "ol/proj";
 import proj4 from "proj4";
