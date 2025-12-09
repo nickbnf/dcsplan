@@ -13,9 +13,8 @@ from pyproj import Transformer
 
 CENTRAL_MERIDIAN = 39
 
-# Set up logger
+# Set up logger (logging configuration is handled centrally in main.py)
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 class FlightPlanTurnPoint(BaseModel):
     """Represents a single turn point in a flight plan."""

@@ -7,3 +7,4 @@ pytest-watch
 requests
 pyproj
 numpy
+python-json-logger

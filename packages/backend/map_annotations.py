@@ -191,6 +191,7 @@ def draw_leg(
                 else:
                     angle_start += tpcircle_angle
             
+            angle_start %= 360
             logger.info(f"Angle start: {angle_start:.1f}, Angle end: {angle_end:.1f}")
             draw.arc(
                 (center_x_px - turn_radius_px, center_y_px - turn_radius_px, center_x_px + turn_radius_px, center_y_px + turn_radius_px),

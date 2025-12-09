@@ -44,6 +44,7 @@ COPY kneeboard.py .
 COPY map_annotations.py .
 COPY task_queue.py .
 COPY main.py .
+COPY logging_config.py .
 
 # Create non-root user for security
 RUN useradd -m -u 1000 appuser && \
@@ -55,6 +56,10 @@ USER appuser
 
 # Expose port
 EXPOSE 5001
+
+# Set production environment variables for JSON logging
+ENV LOG_FORMAT=json
+ENV SERVICE_NAME=dcsplan-backend
 
 # Set production uvicorn settings
 # Using 1 worker to enable in-memory task queue with single worker thread
