@@ -191,6 +191,7 @@ def draw_leg(
                 else:
                     angle_start += tpcircle_angle
             
+            logger.info(f"Angle start before: {angle_start}")
             angle_start %= 360
             logger.info(f"Angle start: {angle_start:.1f}, Angle end: {angle_end:.1f}")
             draw.arc(
@@ -1017,10 +1018,12 @@ def annotate_map(
             if i-1 == focus_leg_index:
                 # Skip the focus leg so we can draw it last
                 continue
+            logger.info(f"Drawing leg {i-1}")
             draw_leg(overlay_draw, flight_plan_data.legData[i-1], coord_to_pixel, image.width, image.height)
             annotate_leg(overlay_draw, overlay, flight_plan_data.turnpointData[i-1].etaSec, flight_plan_data.legData[i-1], coord_to_pixel)
 
         # Draw the focus leg last
+        logger.info(f"Drawing focus leg {focus_leg_index}")
         draw_leg(overlay_draw, flight_plan_data.legData[focus_leg_index], coord_to_pixel, image.width, image.height)
         annotate_leg(overlay_draw, overlay, flight_plan_data.turnpointData[focus_leg_index].etaSec, flight_plan_data.legData[focus_leg_index], coord_to_pixel)
 
