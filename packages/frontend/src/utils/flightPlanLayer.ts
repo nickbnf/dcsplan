@@ -5,7 +5,7 @@ import { Point, LineString } from "ol/geom";
 import { Stroke, Style, Circle, Fill, Text } from "ol/style";
 import Feature from "ol/Feature";
 import { transform } from "ol/proj";
-import { calculateAllLegData, generateArcPoints } from "./legCalculations";
+import { calculateAllLegDrawData, generateArcPoints } from "./legCalculations";
 
 // Create a vector layer from the flight plan
 // excludeWaypointIndex is the index of the waypoint to exclude (i.e. because it is being dragged)
@@ -27,7 +27,7 @@ export const createFlightPlanLayer = (flightPlan: FlightPlan, projection: any, e
     });
 
     // Calculate all leg data once (sequential calculation)
-    const legData = calculateAllLegData(flightPlan);
+    const legDrawData = calculateAllLegDrawData(flightPlan);
 
     // Add line features for every pair of points in the flight plan
     // Skip lines that involve the excluded waypoint
@@ -39,23 +39,7 @@ export const createFlightPlanLayer = (flightPlan: FlightPlan, projection: any, e
                 continue;
             }
             
-            const leg = legData[i];
-            if (!leg) {
-                // Fallback to straight line if leg data is missing
-                const start = flightPlan.points[i];
-                const end = flightPlan.points[i + 1];
-                const startCoord = transform([start.lon, start.lat], 'EPSG:4326', projection.getCode());
-                const endCoord = transform([end.lon, end.lat], 'EPSG:4326', projection.getCode());
-
-                const feature = new Feature({
-                    geometry: new LineString([startCoord, endCoord]),
-                    type: 'flightline',
-                    startIndex: i,
-                    endIndex: i + 1
-                });
-                source.addFeature(feature);
-                continue;
-            }
+            const leg = legDrawData[i];
 
             // Build coordinates array: arc from origin to straightening point, then line to destination
             const coordinates: number[][] = [];

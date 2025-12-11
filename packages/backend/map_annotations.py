@@ -216,8 +216,6 @@ def draw_leg(
             leg_dir_y = leg_dy / leg_length
             
             # Calculate shortened endpoints
-            shortened_ox = ox + leg_dir_x * circle_radius
-            shortened_oy = oy + leg_dir_y * circle_radius
             shortened_dx = dx - leg_dir_x * circle_radius
             shortened_dy = dy - leg_dir_y * circle_radius
             

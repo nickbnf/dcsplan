@@ -1,4 +1,4 @@
-import type { FlightPlan } from "../types/flightPlan";
+import type { FlightPlan, LegData } from "../types/flightPlan";
 import { transform } from "ol/proj";
 import { get } from "ol/proj";
 import proj4 from "proj4";
@@ -35,6 +35,22 @@ export function calculateBearing(
   const bearing = (Math.atan2(y, x) * 180) / Math.PI;
   // Normalize to 0-360 degrees
   return (bearing + 360) % 360;
+}
+
+/**
+ * Calculate the distance between two points in meters using the Haversine formula.
+ */
+export function calculateDistanceM(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371000; // Earth's radius in meters
+  const lat1Rad = (lat1 * Math.PI) / 180;
+  const lon1Rad = (lon1 * Math.PI) / 180;
+  const lat2Rad = (lat2 * Math.PI) / 180;
+  const lon2Rad = (lon2 * Math.PI) / 180;
+  const dLon = lon2Rad - lon1Rad;
+  const dLat = lat2Rad - lat1Rad;
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(lat1Rad) * Math.cos(lat2Rad) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
 }
 
 /**
@@ -207,6 +223,29 @@ export function calculateStraighteningPoint(
 }
 
 /**
+ * Calculate the difference between two angles in radians, taking the shorter path.
+ */
+function angleDiff(startAngleRad: number, endAngleRad: number, turnDirection: number): number {
+    if (startAngleRad < 0) {
+        startAngleRad += 2 * Math.PI;
+    }
+    if (endAngleRad < 0) {
+        endAngleRad += 2 * Math.PI;
+    }
+
+    // Calculate angular difference, taking the shorter path
+    let angleDiff = endAngleRad - startAngleRad;
+    if (turnDirection === 1 && angleDiff < 0) {
+        angleDiff += 2 * Math.PI;
+    }
+    if (turnDirection === -1 && angleDiff > 0) {
+        angleDiff -= 2 * Math.PI;
+    }
+
+    return angleDiff;
+}
+
+/**
  * Generate points along an arc from a start point to an end point around a center point.
  * Returns array of [lat, lon] coordinates.
  * All points are specified in lat/lon, and angles are calculated in transverse Mercator coordinates.
@@ -231,25 +270,11 @@ export function generateArcPoints(
   // atan2(y, x) gives: 0° = east, 90° = north, -90° = south, 180° = west
   let startAngleRad = Math.atan2(sy - cy, sx - cx);
   let endAngleRad = Math.atan2(ey - cy, ex - cx);
-  if (startAngleRad < 0) {
-    startAngleRad += 2 * Math.PI;
-  }
-  if (endAngleRad < 0) {
-    endAngleRad += 2 * Math.PI;
-  }
-
-  // Calculate angular difference, taking the shorter path
-  let angleDiff = endAngleRad - startAngleRad;
-  if (turnDirection === 1 && angleDiff < 0) {
-    angleDiff += 2 * Math.PI;
-  }
-  if (turnDirection === -1 && angleDiff > 0) {
-    angleDiff -= 2 * Math.PI;
-  }
-
+  
+  const angleDiffRad = angleDiff(startAngleRad, endAngleRad, turnDirection);
   for (let i = 0; i <= numPoints; i++) {
     const t = i / numPoints;
-    const angle = startAngleRad + angleDiff * t;
+    const angle = startAngleRad + angleDiffRad * t;
 
     // Calculate point on circle in transverse Mercator
     var px: number;
@@ -296,7 +321,7 @@ function calculateHeading(
 /**
  * Leg calculation result for drawing.
  */
-export interface LegCalculationResult {
+export interface LegDrawDataResult {
   originLat: number;
   originLon: number;
   destinationLat: number;
@@ -308,17 +333,17 @@ export interface LegCalculationResult {
   turnRadiusM: number;
   inboundBearing: number;
   outboundBearing: number;
-  heading: number; // For next leg's inbound bearing
+  heading: number;
   turnDirection: number;
 }
 
 /**
  * Calculate all leg data sequentially (each leg depends on previous leg's heading).
  */
-export function calculateAllLegData(
+export function calculateAllLegDrawData(
   flightPlan: FlightPlan
-): LegCalculationResult[] {
-  const results: LegCalculationResult[] = [];
+): LegDrawDataResult[] {
+  const results: LegDrawDataResult[] = [];
 
   if (flightPlan.points.length < 2) {
     return results;
@@ -380,10 +405,10 @@ export function calculateAllLegData(
       destination.lon
     );
 
-    // Calculate course (magnetic)
+    // Calculate course (magnetic) for the straight portion of the leg
     const course = (outboundBearing + flightPlan.declination + 360) % 360;
 
-    // Calculate heading for next leg's inbound bearing
+    // Calculate heading (corrected for wind) for the straight portion of the leg
     const heading = calculateHeading(
       course,
       destination.windSpeed,
@@ -414,3 +439,110 @@ export function calculateAllLegData(
   return results;
 }
 
+export function calculateAllLegData(
+  flightPlan: FlightPlan
+): LegData[] {
+  const results: LegData[] = [];
+
+  if (flightPlan.points.length < 2) {
+    return results;
+  }
+  
+  let inboundBearing = 0; // First leg has no inbound bearing
+  let previousEta = flightPlan.initTimeSec;
+  let previousEfr = flightPlan.initFob;
+
+  for (let i = 0; i < flightPlan.points.length - 1; i++) {
+    const origin = flightPlan.points[i];
+    const destination = flightPlan.points[i + 1];
+
+    // Calculate turn radius based on TAS at destination turnpoint
+    const turnRadiusM = calculateTurnRadius(destination.tas, flightPlan.bankAngle);
+
+    let turnCenterLat: number;
+    let turnCenterLon: number;
+    let straighteningLat: number;
+    let straighteningLon: number;
+    let turnDirection: number;
+
+    if (i === 0) {
+      // First leg: no turning arc, use origin as straightening point
+      turnCenterLat = 0;
+      turnCenterLon = 0;
+      straighteningLat = origin.lat;
+      straighteningLon = origin.lon;
+      inboundBearing = 0;
+      turnDirection = 1;
+    } else {
+      try {
+        [turnCenterLat, turnCenterLon, straighteningLat, straighteningLon, turnDirection] =
+          calculateStraighteningPoint(
+            inboundBearing,
+            origin.lat,
+            origin.lon,
+            destination.lat,
+            destination.lon,
+            turnRadiusM
+          );
+      } catch (error) {
+        // Fallback: use origin as straightening point if calculation fails
+        console.warn(
+          `Failed to calculate straightening point for leg ${i}:`,
+          error
+        );
+        turnCenterLat = 0;
+        turnCenterLon = 0;
+        straighteningLat = origin.lat;
+        straighteningLon = origin.lon;
+        turnDirection = 1;
+      }
+    }
+
+    // Calculate outbound bearing (from straightening point to destination)
+    const outboundBearing = calculateBearing(
+      straighteningLat,
+      straighteningLon,
+      destination.lat,
+      destination.lon
+    );
+
+    // Calculate turn angle
+    const startAngleRad = (90 - inboundBearing) * Math.PI / 180;
+    const endAngleRad = (90 - outboundBearing) * Math.PI / 180;
+    const turnAngleRad = (i === 0 ? 0 : angleDiff(startAngleRad, endAngleRad, turnDirection));
+
+    // Calculate course (magnetic) for the straight portion of the leg
+    const course = (outboundBearing + flightPlan.declination + 360) % 360;
+
+    // Calculate heading (corrected for wind) for the straight portion of the leg
+    const heading = calculateHeading(
+      course,
+      destination.windSpeed,
+      destination.windDir,
+      destination.tas
+    );
+
+    // Calculate distance and time to the destination
+    const turnDistanceM = Math.abs(turnRadiusM * turnAngleRad);
+    const straightDistanceM = calculateDistanceM(straighteningLat, straighteningLon, destination.lat, destination.lon);
+    const distanceNm = (turnDistanceM + straightDistanceM) / 1852;
+    const eteSec = Math.round(distanceNm / (destination.tas + destination.windSpeed * Math.cos(Math.PI / 2 - (destination.windDir - course) * Math.PI / 180)) * 3600);
+    results.push({
+      course,
+      distance: distanceNm,
+      legFuel: eteSec * (destination.fuelFlow / 3600),
+      heading,
+      ete: eteSec,
+      eta: previousEta + eteSec,
+      efr: previousEfr - eteSec * (destination.fuelFlow / 3600),
+    });
+
+    // Update inbound bearing for next leg
+    inboundBearing = heading;
+
+    previousEta += eteSec;
+    previousEfr -= eteSec * (destination.fuelFlow / 3600);
+  }
+
+  return results;
+}

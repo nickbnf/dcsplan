@@ -1,4 +1,5 @@
 import type { FlightPlan, FlightPlanPointChange, LegData } from "../types/flightPlan";
+import { calculateAllLegData } from "./legCalculations";
 
 const defaultTas = 400;
 const defaultAlt = 3000;
@@ -76,6 +77,9 @@ export const flightPlanUtils = {
         newPoints.splice(index + 1, 0, newPoint);
 
         return { ...flightPlan, points: newPoints };
+    },
+    calculateAllLegData: (flightPlan: FlightPlan): LegData[] => {
+        return calculateAllLegData(flightPlan);
     },
     calculateLegData: (flightPlan: FlightPlan, indexWptFrom: number): LegData => {
         // Course calculation using simple geographic coordinates

@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import * as Separator from '@radix-ui/react-separator';
-import type { FlightPlan } from '../../types/flightPlan';
+import type { FlightPlan, LegData } from '../../types/flightPlan';
 import { flightPlanUtils } from '../../utils/flightPlanUtils';
 import { GenerateDialog } from './GenerateDialog';
 import { DeleteWaypointDialog } from './DeleteWaypointDialog';
@@ -257,16 +257,15 @@ const displaySecondsInMinutes = (totalSeconds: number) => {
   return minutes+"+"+seconds
 }
 
-const WaypointCard: React.FC<{ flightPlan: FlightPlan, index: number, onFlightPlanUpdate: (flightPlan: FlightPlan) => void }> = ({ flightPlan, index, onFlightPlanUpdate }) => {
+const WaypointCard: React.FC<{ flightPlan: FlightPlan, legData: LegData | null, index: number, onFlightPlanUpdate: (flightPlan: FlightPlan) => void }> = ({ flightPlan, legData, index, onFlightPlanUpdate }) => {
   const waypoint = flightPlan.points[index];
   
   // Calculate ETA and EFR for this waypoint
   let eta = flightPlan.initTimeSec;
   let efr = flightPlan.initFob;
-  if (index > 0) {
-    const prevLegData = flightPlanUtils.calculateLegData(flightPlan, index - 1);
-    eta = prevLegData.eta;
-    efr = prevLegData.efr;
+  if (legData) {
+    eta = legData.eta;
+    efr = legData.efr;
   }
 
   const handleDelete = () => {
@@ -324,11 +323,10 @@ const WaypointCard: React.FC<{ flightPlan: FlightPlan, index: number, onFlightPl
 
 const RouteCard: React.FC<{ 
   flightPlan: FlightPlan, 
+  legData: LegData,
   index: number, 
   onFlightPlanUpdate: (flightPlan: FlightPlan) => void
-}> = ({ flightPlan, index, onFlightPlanUpdate }) => {
-  const legData = flightPlanUtils.calculateLegData(flightPlan, index);
-  
+}> = ({ flightPlan, legData, index, onFlightPlanUpdate }) => {
   const handleInsertClick = () => {
     const updatedFlightPlan = flightPlanUtils.insertTurnPointAtMidpoint(flightPlan, index);
     onFlightPlanUpdate(updatedFlightPlan);
@@ -467,6 +465,8 @@ export const FlightPlanZone: React.FC<FlightPlanZoneProps> = ({
   const [planName, setPlanName] = useState("Flight Plan One");
 
   const fligthPlanZoneContent = useMemo(() => {
+    const legData = flightPlanUtils.calculateAllLegData(flightPlan);
+
     return (
     <div className="flex-1 p-4 bg-gray-50 flex flex-col">
       {/* Scrollable content area */}
@@ -526,12 +526,19 @@ export const FlightPlanZone: React.FC<FlightPlanZoneProps> = ({
             flightPlan.points.map((_waypoint, index) => (
               <React.Fragment key={index}>
                 {/* Waypoint Card */}
-                <WaypointCard flightPlan={flightPlan} index={index} onFlightPlanUpdate={onFlightPlanUpdate} />
+                <WaypointCard
+                  key={index}
+                  flightPlan={flightPlan} 
+                  legData={index > 0 ? legData[index-1] : null}
+                  index={index} 
+                  onFlightPlanUpdate={onFlightPlanUpdate} 
+                />
 
                 {/* Route Card (indented) */}
                 {index < flightPlan.points.length - 1 && (
                   <RouteCard 
-                    flightPlan={flightPlan} 
+                    flightPlan={flightPlan}
+                    legData={legData[index]}
                     index={index} 
                     onFlightPlanUpdate={onFlightPlanUpdate}
                   />
