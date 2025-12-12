@@ -459,23 +459,19 @@ export function calculateAllLegData(
     // Calculate turn radius based on TAS at destination turnpoint
     const turnRadiusM = calculateTurnRadius(destination.tas, flightPlan.bankAngle);
 
-    let turnCenterLat: number;
-    let turnCenterLon: number;
     let straighteningLat: number;
     let straighteningLon: number;
     let turnDirection: number;
 
     if (i === 0) {
       // First leg: no turning arc, use origin as straightening point
-      turnCenterLat = 0;
-      turnCenterLon = 0;
       straighteningLat = origin.lat;
       straighteningLon = origin.lon;
       inboundBearing = 0;
       turnDirection = 1;
     } else {
       try {
-        [turnCenterLat, turnCenterLon, straighteningLat, straighteningLon, turnDirection] =
+        [, , straighteningLat, straighteningLon, turnDirection] =
           calculateStraighteningPoint(
             inboundBearing,
             origin.lat,
@@ -490,8 +486,6 @@ export function calculateAllLegData(
           `Failed to calculate straightening point for leg ${i}:`,
           error
         );
-        turnCenterLat = 0;
-        turnCenterLon = 0;
         straighteningLat = origin.lat;
         straighteningLon = origin.lon;
         turnDirection = 1;
