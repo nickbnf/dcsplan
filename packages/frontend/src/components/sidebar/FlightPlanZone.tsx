@@ -4,6 +4,7 @@ import type { FlightPlan, LegData } from '../../types/flightPlan';
 import { flightPlanUtils } from '../../utils/flightPlanUtils';
 import { GenerateDialog } from './GenerateDialog';
 import { DeleteWaypointDialog } from './DeleteWaypointDialog';
+import { ImportFlightPlanDialog } from './ImportFlightPlanDialog';
 
 interface FlightPlanZoneProps {
   flightPlan: FlightPlan;
@@ -69,9 +70,26 @@ const EditableField: React.FC<EditableFieldProps> = ({
   };
 
   if (isEditing) {
-    const inputWidth = numericOnly 
-      ? (maxLength === 3 ? 'w-8' : maxLength === 5 ? 'w-12' : 'w-8')
-      : 'w-32';
+    // Calculate input width based on maxLength
+    const getInputWidth = () => {
+      if (numericOnly) {
+        // For numeric fields, use fixed widths based on common patterns
+        return maxLength === 3 ? 'w-8' : maxLength === 5 ? 'w-12' : 'w-8';
+      } else {
+        // For text fields, calculate width based on maxLength
+        // Approximate: each character needs ~0.6rem, add some padding
+        if (maxLength) {
+          if (maxLength <= 10) return 'w-24';
+          if (maxLength <= 15) return 'w-40';
+          if (maxLength <= 20) return 'w-52';
+          if (maxLength <= 25) return 'w-64';
+          if (maxLength <= 30) return 'w-72';
+          return 'w-80';
+        }
+        return 'w-32'; // Default fallback
+      }
+    };
+    const inputWidth = getInputWidth();
     return (
       <div className="flex items-center">
         <input
@@ -290,7 +308,7 @@ const WaypointCard: React.FC<{ flightPlan: FlightPlan, legData: LegData | null, 
             }}
             className="font-aero-label text-gray-900"
             numericOnly={false}
-            maxLength={20}
+            maxLength={15}
           />
         </span>
         <div className="flex items-center gap-1">
@@ -462,16 +480,44 @@ export const FlightPlanZone: React.FC<FlightPlanZoneProps> = ({
   flightPlan, 
   onFlightPlanUpdate
 }) => {
-  const [planName, setPlanName] = useState("Flight Plan One");
-
   const fligthPlanZoneContent = useMemo(() => {
     const legData = flightPlanUtils.calculateAllLegData(flightPlan);
+    const planName = flightPlan.name
 
     return (
     <div className="flex-1 p-4 bg-gray-50 flex flex-col">
       {/* Scrollable content area */}
       <div className="flex-1 overflow-y-auto mb-4">
-        <h3 className="text-sm font-aero-label text-gray-700 uppercase mb-3">Flight Plan</h3>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-aero-label text-gray-700 uppercase">Flight Plan</h3>
+          <div className="flex items-center gap-1">
+            {/* Download icon */}
+            <button
+              onClick={() => flightPlanUtils.downloadFlightPlan(flightPlan)}
+              className="opacity-40 hover:opacity-100 transition-opacity p-1 hover:bg-gray-100 rounded text-gray-600 hover:text-gray-700"
+              title="Download flight plan"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="h-4 w-4"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+            </button>
+            {/* Upload icon */}
+            <ImportFlightPlanDialog
+              onImport={(importedFlightPlan) => onFlightPlanUpdate(importedFlightPlan)}
+            />
+          </div>
+        </div>
         
         {/* Flight Plan Header */}
         <div className="space-y-3 mb-2">
@@ -479,8 +525,13 @@ export const FlightPlanZone: React.FC<FlightPlanZoneProps> = ({
             <span className="text-xs font-aero-label text-gray-600">Name:</span>
             <EditableField
               value={planName}
-              onChange={setPlanName}
+              onChange={(value: string) => {
+                const updatedFlightPlan = { ...flightPlan, name: value };
+                onFlightPlanUpdate(updatedFlightPlan);
+              }}
               className="text-gray-900 font-aero-label"
+              maxLength={25}
+              numericOnly={false}
             />
           </div>
         </div>
@@ -553,7 +604,7 @@ export const FlightPlanZone: React.FC<FlightPlanZoneProps> = ({
       <GenerateDialog flightPlan={flightPlan} />
     </div>
   );
-}, [flightPlan, planName]);
+}, [flightPlan, onFlightPlanUpdate]);
 
 return fligthPlanZoneContent
 };

@@ -10,7 +10,7 @@ const defaultWindDir = 0;
 // A bunch of functions to manipulate the flight plan
 export const flightPlanUtils = {
     newFlightPlan: (): FlightPlan => {
-        return { points: [], declination: 0, bankAngle: 45, initTimeSec: 12 * 3600, initFob: 12000 };
+        return { points: [], declination: 0, bankAngle: 45, initTimeSec: 12 * 3600, initFob: 12000, name: "Flight Plan One" };
     },
     addTurnPoint: (flightPlan: FlightPlan, lat: number, lon: number): FlightPlan => {
         const tas = flightPlan.points.length > 1 ? flightPlan.points[flightPlan.points.length - 2].tas : defaultTas;
@@ -154,5 +154,43 @@ export const flightPlanUtils = {
     },
     updateBankAngle: (flightPlan: FlightPlan, bankAngle: number): FlightPlan => {
         return { ...flightPlan, bankAngle }
+    },
+    downloadFlightPlan: (flightPlan: FlightPlan): void => {
+        // Create the wrapped format with version
+        // Ensure the flight plan includes its name
+        const exportData = {
+            version: "1.0",
+            flightPlan: flightPlan
+        };
+        
+        // Convert to JSON string
+        const jsonString = JSON.stringify(exportData, null, 2);
+        
+        // Create a blob and download
+        const blob = new Blob([jsonString], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        
+        // Generate filename from plan name or use default
+        let filename = 'flightplan.json';
+        const planName = flightPlan.name;
+        if (planName) {
+            // Sanitize plan name for filename
+            const sanitized = planName
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, '-')
+                .replace(/^-+|-+$/g, '');
+            if (sanitized) {
+                filename = `${sanitized}.json`;
+            }
+        }
+        
+        // Trigger download
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
     }
 }

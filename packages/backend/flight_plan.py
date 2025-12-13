@@ -35,6 +35,13 @@ class FlightPlan(BaseModel):
     bankAngle: float = Field(..., ge=5, le=85, description="Bank angle for turns (degrees)")
     initTimeSec: int = Field(..., ge=0, le=86399, description="Initial time seconds (0-86399)")
     initFob: float = Field(..., ge=0, description="Initial fuel on board")
+    name: str | None = Field(default=None, description="Name of the flight plan")
+
+
+class ImportFlightPlanRequest(BaseModel):
+    """Request model for importing a flight plan with version."""
+    version: str
+    flightPlan: FlightPlan
 
 class TurnpointData:
     """Represent a turnpoint with all the data to display."""

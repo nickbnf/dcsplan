@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException, Query, Path
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-from flight_plan import FlightPlan
+from flight_plan import FlightPlan, ImportFlightPlanRequest
 from task_queue import get_task_queue
 import os
 import logging
@@ -136,3 +136,25 @@ async def get_tiles_info():
     else:
         # Fall back to blank tile if the tiles info doesn't exist
         return FileResponse(BLANK_TILE_PATH)
+
+
+@app.post("/flightplan/import")
+async def import_flight_plan(request: ImportFlightPlanRequest):
+    """Import and validate a flight plan from JSON."""
+    logger.info(f"=== /flightplan/import endpoint called ===")
+    logger.info(f"Version: {request.version}")
+    logger.info(f"Flight plan has {len(request.flightPlan.points)} waypoint(s)")
+    
+    # Validate version
+    SUPPORTED_VERSIONS = ["1.0"]
+    if request.version not in SUPPORTED_VERSIONS:
+        logger.error(f"Unsupported version: {request.version}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported version: {request.version}. Supported versions: {', '.join(SUPPORTED_VERSIONS)}"
+        )
+    
+    # Pydantic validation is automatic via FastAPI - if we get here, the flight plan is valid
+    # Return the validated flight plan
+    logger.info("Flight plan validated successfully")
+    return {"flightPlan": request.flightPlan}

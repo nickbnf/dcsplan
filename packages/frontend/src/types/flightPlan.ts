@@ -36,4 +36,5 @@ export type FlightPlan = {
   bankAngle: number; // Bank angle for turns (degrees, 5-85)
   initTimeSec: number; // Initial time in seconds since midnight
   initFob: number;
+  name: string; // Name of the flight plan
 }
