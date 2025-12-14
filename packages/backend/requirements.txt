@@ -8,3 +8,4 @@ requests
 pyproj
 numpy
 python-json-logger
+httpx
