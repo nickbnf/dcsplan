@@ -1,4 +1,5 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 import * as Separator from '@radix-ui/react-separator';
 
 interface TitleZoneProps {
@@ -17,9 +18,18 @@ export const TitleZone: React.FC<TitleZoneProps> = ({
 
   return (
     <div className="p-4 bg-gray-50">
-      <h1 className="text-lg font-aero-label text-gray-900 mb-2">
-        DCS Tactical Planner
-      </h1>
+      <div className="flex items-center justify-between mb-2">
+        <h1 className="text-lg font-aero-label text-gray-900">
+          DCS Tactical Planner
+        </h1>
+        <Link
+          to="/about"
+          className="text-xs text-gray-600 hover:text-gray-900 underline font-aero-label"
+          title="About DCSPlan"
+        >
+          About
+        </Link>
+      </div>
       
       {/* Map Name */}
       <div className="space-y-1 text-sm text-gray-600">

@@ -19,3 +19,6 @@ pnpm-debug.log*
 
 # Static assets (generated tiles, etc.)
 packages/backend/config/
+
+# We use pnpm, not npm
+package-lock.json
