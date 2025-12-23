@@ -8,7 +8,8 @@ import Snap from 'ol/interaction/Snap';
 import Collection from 'ol/Collection';
 import { createTransverseMercatorProjection, transformBoundsToTransverseMercator, calculateTransverseMercatorCenter } from '../utils/projectionUtils';
 import { createGridLayer } from '../utils/latLonGrid';
-import { createTileLayer, type TileInfo } from '../utils/tileLayer';
+import { createTileLayer } from '../utils/tileLayer';
+import type { MapInfo } from '../utils/tileLayer';
 import type { FlightPlan } from '../types/flightPlan';
 import { flightPlanUtils } from '../utils/flightPlanUtils';
 import { createFlightPlanLayer } from '../utils/flightPlanLayer';
@@ -47,12 +48,12 @@ const MapComponent: React.FC<MapComponentProps> = ({
   const gridLayerRef = useRef<VectorLayer | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [tileInfo, setTileInfo] = useState<TileInfo | null>(null);
+  const [mapInfo, setMapInfo] = useState<MapInfo | null>(null);
   const [gridEnabled, setGridEnabled] = useState(false);
   const [measureEnabled, setMeasureEnabled] = useState(false);
 
   // Safe function to fetch and parse tile info JSON
-  const fetchTileInfo = async (): Promise<TileInfo | null> => {
+  const fetchMapInfo = async (): Promise<MapInfo | null> => {
     try {
       setIsLoading(true);
       setError(null);
@@ -83,8 +84,8 @@ const MapComponent: React.FC<MapComponentProps> = ({
         throw new Error('Invalid JSON structure');
       }
 
-      console.log('Successfully fetched tile info:', data);
-      return data as TileInfo;
+      console.log('Successfully fetched map info:', data);
+      return data as MapInfo;
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
       console.error('Failed to fetch tile info:', errorMessage);
@@ -95,33 +96,25 @@ const MapComponent: React.FC<MapComponentProps> = ({
     }
   };
 
-  // Fetch tile info on component mount
+  // Fetch map info on component mount
   useEffect(() => {
-    const loadTileInfo = async () => {
-      const info = await fetchTileInfo();
-      setTileInfo(info);
+    const loadMapInfo = async () => {
+      const info = await fetchMapInfo();
+      setMapInfo(info);
     };
-    loadTileInfo();
+    loadMapInfo();
   }, []);
 
-  // Initialize map when tile info is loaded and ref is available
+  // Initialize map when map info is loaded and ref is available
   useEffect(() => {
-    if (!tileInfo || !mapRef.current || isLoading) {
+    if (!mapInfo || !mapRef.current || isLoading) {
       return;
     }
 
     console.log('Map initialization starting, mapRef.current:', mapRef.current);
     
-    // Use fetched bounds or fallback to default bounds
-    const regionBounds = tileInfo?.bounds || {
-      minLon: 29.9266,   // Western boundary
-      minLat: 31.3642,   // Southern boundary
-      maxLon: 41.695,  // Eastern boundary (South-East point) 
-      // maxLon: 41.4985, // Eastern boundary (North-East point)
-      maxLat: 37.8254    // Northern boundary
-    };
-
-    const { projection: transverseMercatorProjection } = createTransverseMercatorProjection();
+    const regionBounds = mapInfo?.bounds;
+    const { projection: transverseMercatorProjection } = createTransverseMercatorProjection(mapInfo?.central_meridian);
     
     // Transform geographic bounds to transverse Mercator coordinates
     const transverseMercatorExtent = transformBoundsToTransverseMercator(regionBounds, transverseMercatorProjection);
@@ -133,7 +126,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
     const transverseMercatorCenter = calculateTransverseMercatorCenter(regionBounds, transverseMercatorProjection);
 
     // Create tile layer and grid layer
-    const tileLayer = createTileLayer(tileInfo, regionBounds, transverseMercatorProjection, getTilesBaseUrl());
+    const tileLayer = createTileLayer(mapInfo, transverseMercatorProjection, getTilesBaseUrl());
     const gridLayer = createGridLayer(regionBounds, transverseMercatorProjection);
     gridLayer.set('name', 'grid');
     gridLayerRef.current = gridLayer;
@@ -160,7 +153,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
         projection: transverseMercatorProjection,
         center: transverseMercatorCenter,
         zoom: 2,
-        maxZoom: (tileInfo?.zoom_info?.length || 1) - 1,
+        maxZoom: (mapInfo?.zoom_info?.length || 1) - 1,
         minZoom: 1,
         // extent: transverseMercatorExtent, // Constraint the view to the map only
         constrainResolution: true,  // Snap to zoom levels
@@ -206,7 +199,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
         mapInstanceRef.current = null;
       }
     };
-  }, [tileInfo, isLoading]); // This effect runs when tileInfo or isLoading changes
+  }, [mapInfo, isLoading]); // This effect runs when mapInfo or isLoading changes
 
   // Update click handler when drawing state changes
   useEffect(() => {
@@ -265,7 +258,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
     
     mapInstanceRef.current.on('pointermove', moveHandler);
     (mapInstanceRef.current as any).__moveHandler = moveHandler;
-  }, [onCoordinateChange, drawingState.isDrawing, updatePreviewLine, tileInfo]);
+  }, [onCoordinateChange, drawingState.isDrawing, updatePreviewLine, mapInfo]);
 
   // Manage Modify and Snap interactions based on drawing state
   useEffect(() => {

@@ -5,8 +5,8 @@ Tests cover valid imports, version validation, structure validation,
 field validation, turn point validation, and edge cases.
 """
 
-import pytest
-from fastapi.testclient import TestClient
+import pytest  # type: ignore
+from fastapi.testclient import TestClient  # type: ignore
 from main import app
 
 client = TestClient(app)

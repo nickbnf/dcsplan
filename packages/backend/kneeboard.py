@@ -7,7 +7,7 @@ kneeboard PNG images.
 
 import pprint
 import time
-from typing import Tuple, Optional, Dict
+from typing import Tuple, Optional, Dict, List
 import zipfile
 from PIL import Image
 import math
@@ -15,12 +15,44 @@ import io
 import os
 import json
 import logging
+from pydantic import BaseModel, Field
 from pyproj import Transformer
 from map_annotations import annotate_map
 from flight_plan import FlightPlan, FlightPlanData
 
 # Set up logger (logging configuration is handled centrally in main.py)
 logger = logging.getLogger(__name__)
+
+
+class ZoomLevelInfo(BaseModel):
+    """Information about a specific zoom level in the tile grid."""
+    zoom: int
+    nb_tiles_w: int
+    nb_tiles_h: int
+    width_px: int
+    height_px: int
+
+
+class MapBounds(BaseModel):
+    """Bounding box for the map in geographic coordinates."""
+    minLon: float
+    minLat: float
+    maxLon: float
+    maxLat: float
+
+
+class MapInfo(BaseModel):
+    """Complete map information including zoom levels and bounds."""
+    zoom_info: List[ZoomLevelInfo]
+    central_meridian: float = Field(..., description="Central meridian for Transverse Mercator projection")
+    origin_lat: float = Field(..., description="Origin latitude (NW corner) for tile grid")
+    origin_lon: float = Field(..., description="Origin longitude (NW corner) for tile grid")
+    ref_corner_ne_lat: float = Field(..., description="Reference corner latitude (NE) for resolution calculation")
+    ref_corner_ne_lon: float = Field(..., description="Reference corner longitude (NE) for resolution calculation")
+    bounds: Optional[MapBounds] = None
+    minZoom: Optional[int] = None
+    maxZoom: Optional[int] = None
+    tileSize: Optional[int] = 256
 
 
 def generate_kneeboard_single_png(flight_plan: FlightPlan, leg_index: int) -> bytes:
@@ -85,39 +117,35 @@ def generate_kneeboard_zip(flight_plan: FlightPlan) -> bytes:
 # Constants for leg map generation
 TILES_DIR = os.path.join(os.path.dirname(__file__), "config", "static", "tiles")
 BLANK_TILE_PATH = os.path.join(os.path.dirname(__file__), "config", "blank.png")
-TILES_INFO_PATH = os.path.join(TILES_DIR, "tiles_info.json")
+MAP_INFO_PATH = os.path.join(TILES_DIR, "tiles_info.json")
+TILES_INFO_PATH = MAP_INFO_PATH  # Alias for backward compatibility with tests
 MAP_WIDTH = 768
 MAP_HEIGHT = 1024
 LEG_HEIGHT_TARGET = 0.70  # Leg should occupy 70% of height
 TILE_SIZE = 256  # Standard tile size in pixels
-CENTRAL_MERIDIAN = 39  # Central meridian for Transverse Mercator projection
-# Origin corner (NW) for tile grid
-ORIGIN_LAT = 37.50575
-ORIGIN_LON = 29.9266
-# Distance reference for resolution calculation
-REF_CORNER_NE_LAT = 37.8254
-REF_CORNER_NE_LON = 41.695
 
 
-def _get_tile_info() -> Dict:
+def _get_map_info() -> MapInfo:
     """Load and return tile info from JSON file."""
-    logger.info(f"Loading tile info from {TILES_INFO_PATH}")
-    if not os.path.exists(TILES_INFO_PATH):
-        logger.error(f"Tile info file not found at {TILES_INFO_PATH}")
-        raise FileNotFoundError(f"Tile info file not found at {TILES_INFO_PATH}")
-    with open(TILES_INFO_PATH, 'r') as f:
-        tile_info = json.load(f)
-    logger.info(f"Tile info loaded: {len(tile_info.get('zoom_info', []))} zoom levels")
-    return tile_info
+    logger.info(f"Loading map info from {MAP_INFO_PATH}")
+    if not os.path.exists(MAP_INFO_PATH):
+        logger.error(f"Map info file not found at {MAP_INFO_PATH}")
+        raise FileNotFoundError(f"Map info file not found at {MAP_INFO_PATH}")
+    with open(MAP_INFO_PATH, 'r') as f:
+        data = json.load(f)
+    map_info = MapInfo.model_validate(data)
+    logger.info(f"Map info loaded: {len(map_info.zoom_info)} zoom levels")
+    return map_info
 
 
-def _lat_lon_to_transverse_mercator(lat: float, lon: float) -> Tuple[float, float]:
+def _lat_lon_to_transverse_mercator(lat: float, lon: float, central_meridian: float) -> Tuple[float, float]:
     """
     Convert lat/lon to Transverse Mercator coordinates.
     
     Args:
         lat: Latitude in degrees
         lon: Longitude in degrees
+        central_meridian: Central meridian for the projection
         
     Returns:
         Tuple of (x, y) in meters
@@ -125,7 +153,7 @@ def _lat_lon_to_transverse_mercator(lat: float, lon: float) -> Tuple[float, floa
     # Transverse Mercator projection with central meridian at 39°
     transformer = Transformer.from_crs(
         "EPSG:4326",  # WGS84
-        f"+proj=tmerc +lat_0=0 +lon_0={CENTRAL_MERIDIAN} +k=1.0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs",
+        f"+proj=tmerc +lat_0=0 +lon_0={central_meridian} +k=1.0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs",
         always_xy=True
     )
     x, y = transformer.transform(lon, lat)
@@ -149,43 +177,43 @@ def _calculate_distance_meters(lat1: float, lon1: float, lat2: float, lon2: floa
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
     return R * c
 
-def _get_resolution_for_zoom(tile_info: Dict, zoom: int) -> float:
+def _get_resolution_for_zoom(map_info: MapInfo, zoom: int) -> float:
     """
     Calculate resolution (meters per pixel) for a given zoom level.
     
     Args:
-        tile_info: Tile info dictionary
+        map_info: MapInfo object
         zoom: Zoom level
         
     Returns:
         Resolution in meters per pixel
     """
     # Calculate reference distance in Transverse Mercator
-    origin_x, origin_y = _lat_lon_to_transverse_mercator(ORIGIN_LAT, ORIGIN_LON)
-    ref_x, ref_y = _lat_lon_to_transverse_mercator(REF_CORNER_NE_LAT, REF_CORNER_NE_LON)
+    origin_x, origin_y = _lat_lon_to_transverse_mercator(map_info.origin_lat, map_info.origin_lon, map_info.central_meridian)
+    ref_x, ref_y = _lat_lon_to_transverse_mercator(map_info.ref_corner_ne_lat, map_info.ref_corner_ne_lon, map_info.central_meridian)
     x_distance = math.sqrt((ref_x - origin_x)**2 + (ref_y - origin_y)**2)
     
     # Find zoom info for this zoom level
-    zoom_info = None
-    for z_info in tile_info.get('zoom_info', []):
-        if z_info.get('zoom') == zoom:
-            zoom_info = z_info
+    this_zoom = None
+    for z_info in map_info.zoom_info:
+        if z_info.zoom == zoom:
+            this_zoom = z_info
             break
     
-    if zoom_info is None:
+    if this_zoom is None:
         raise ValueError(f"Zoom level {zoom} not found in tile info")
     
     # Resolution = distance / pixels
-    resolution = x_distance / zoom_info['width_px']
+    resolution = x_distance / this_zoom.width_px
     return resolution
 
 
-def _select_zoom_level(tile_info: Dict, leg_distance_meters: float) -> Tuple[int, float]:
+def _select_zoom_level(map_info: MapInfo, leg_distance_meters: float) -> Tuple[int, float]:
     """
     Select the zoom level just above the one giving 70% height.
     
     Args:
-        tile_info: Tile info dictionary
+        map_info: MapInfo object
         leg_distance_meters: Distance of the leg in meters
         
     Returns:
@@ -195,15 +223,15 @@ def _select_zoom_level(tile_info: Dict, leg_distance_meters: float) -> Tuple[int
     logger.debug(f"Target leg height: {target_height_px:.1f} pixels")
     
     # Try each zoom level from highest to lowest
-    zoom_levels = sorted([z_info['zoom'] for z_info in tile_info.get('zoom_info', [])], reverse=False)
-    logger.debug(f"Available zoom levels: {zoom_levels}")
+    zoom_levels = sorted([z_info.zoom for z_info in map_info.zoom_info], reverse=False)
+    logger.info(f"Available zoom levels: {zoom_levels}")
     
     # Find the zoom level where leg height is just above target (or highest if all are below)
     selected_zoom = None
     selected_leg_height = None
     
     for zoom in zoom_levels:
-        resolution = _get_resolution_for_zoom(tile_info, zoom)
+        resolution = _get_resolution_for_zoom(map_info, zoom)
         leg_height_px = leg_distance_meters / resolution
         logger.debug(f"Zoom {zoom}: resolution={resolution:.2f} m/px, leg_height={leg_height_px:.1f} px")
         
@@ -220,7 +248,7 @@ def _select_zoom_level(tile_info: Dict, leg_distance_meters: float) -> Tuple[int
     # If all zoom levels give <= 70%, use the highest one
     if selected_zoom is None:
         selected_zoom = max(zoom_levels)
-        resolution = _get_resolution_for_zoom(tile_info, selected_zoom)
+        resolution = _get_resolution_for_zoom(map_info, selected_zoom)
         selected_leg_height = leg_distance_meters / resolution
     
     logger.debug(f"Using zoom {selected_zoom} (leg height {selected_leg_height:.1f}px <= target {target_height_px:.1f}px, will scale up)")
@@ -263,7 +291,7 @@ def _fetch_tile(z: int, x: int, y: int) -> Optional[Image.Image]:
 
 def _bbox_tm_to_tile_bounds(
     bbox_tm: Tuple[float, float, float, float],
-    tile_info: Dict,
+    map_info: MapInfo,
     zoom: int
 ) -> Tuple[int, int, int, int]:
     """
@@ -284,7 +312,7 @@ def _bbox_tm_to_tile_bounds(
         bbox_tm: Bounding box in Transverse Mercator coordinates 
                  as (min_x, min_y, max_x, max_y) in meters
                  where min_y is the southernmost point and max_y is northernmost
-        tile_info: Tile info dictionary containing zoom level information
+        map_info: MapInfo object
         zoom: Zoom level to use for resolution calculation
         
     Returns:
@@ -295,15 +323,15 @@ def _bbox_tm_to_tile_bounds(
         - Representing the tiles that cover the input bounding box
         
     Raises:
-        ValueError: If the zoom level is not found in tile_info
+        ValueError: If the zoom level is not found in map_info
     """
     min_x_tm, min_y_tm, max_x_tm, max_y_tm = bbox_tm
     
     # Get the tile grid origin (NW corner) in Transverse Mercator
-    origin_x, origin_y = _lat_lon_to_transverse_mercator(ORIGIN_LAT, ORIGIN_LON)
+    origin_x, origin_y = _lat_lon_to_transverse_mercator(map_info.origin_lat, map_info.origin_lon, map_info.central_meridian)
     
     # Get resolution (meters per pixel) for this zoom level
-    resolution = _get_resolution_for_zoom(tile_info, zoom)
+    resolution = _get_resolution_for_zoom(map_info, zoom)
     
     # Convert TM bounding box to pixel coordinates relative to grid origin
     # Note: Y axis is flipped (TM Y increases north, pixel Y increases down)
@@ -319,20 +347,20 @@ def _bbox_tm_to_tile_bounds(
     max_tile_y = int(max_px_y // TILE_SIZE)
     
     # Get zoom info to know the tile grid bounds
-    zoom_info = None
-    for z_info in tile_info.get('zoom_info', []):
-        if z_info.get('zoom') == zoom:
-            zoom_info = z_info
+    this_zoom = None
+    for z_info in map_info.zoom_info:
+        if z_info.zoom == zoom:
+            this_zoom = z_info
             break
     
-    if zoom_info is None:
-        raise ValueError(f"Zoom level {zoom} not found in tile info")
+    if this_zoom is None:
+        raise ValueError(f"Zoom level {zoom} not found in map info")
     
     # Clamp tile coordinates to available tile grid bounds
     min_tile_x = max(0, min_tile_x)
     min_tile_y = max(0, min_tile_y)
-    max_tile_x = min(zoom_info['nb_tiles_w'] - 1, max_tile_x)
-    max_tile_y = min(zoom_info['nb_tiles_h'] - 1, max_tile_y)
+    max_tile_x = min(this_zoom.nb_tiles_w - 1, max_tile_x)
+    max_tile_y = min(this_zoom.nb_tiles_h - 1, max_tile_y)
     
     # Ensure max >= min (swap if needed)
     # This can happen due to coordinate system inversions or edge cases
@@ -345,7 +373,7 @@ def _bbox_tm_to_tile_bounds(
 
 
 def _assemble_tiles(
-    tile_info: Dict,
+    map_info: MapInfo,
     zoom: int,
     bbox_tm: Tuple[float, float, float, float]
 ) -> Image.Image:
@@ -353,7 +381,7 @@ def _assemble_tiles(
     Assemble tiles covering the bounding box into a composite image.
     
     Args:
-        tile_info: Tile info dictionary
+        map_info: MapInfo object
         zoom: Zoom level
         bbox_tm: Bounding box in Transverse Mercator (min_x, min_y, max_x, max_y)
         
@@ -364,16 +392,16 @@ def _assemble_tiles(
     logger.info(f"Assembling tiles for zoom={zoom}, bbox_tm=({min_x_tm:.2f}, {min_y_tm:.2f}, {max_x_tm:.2f}, {max_y_tm:.2f})")
     
     # Convert bounding box to tile grid bounds using utility function
-    min_tile_x, min_tile_y, max_tile_x, max_tile_y = _bbox_tm_to_tile_bounds(bbox_tm, tile_info, zoom)
+    min_tile_x, min_tile_y, max_tile_x, max_tile_y = _bbox_tm_to_tile_bounds(bbox_tm, map_info, zoom)
     
     # Get zoom info for tile grid dimensions (needed for image size calculation)
-    zoom_info = None
-    for z_info in tile_info.get('zoom_info', []):
-        if z_info.get('zoom') == zoom:
-            zoom_info = z_info
+    this_zoom = None
+    for z_info in map_info.zoom_info:
+        if z_info.zoom == zoom:
+            this_zoom = z_info
             break
     
-    if zoom_info is None:
+    if this_zoom is None:
         raise ValueError(f"Zoom level {zoom} not found")
     
     # Calculate image size
@@ -383,7 +411,7 @@ def _assemble_tiles(
     # Safety check: ensure we have valid dimensions
     if num_tiles_x <= 0 or num_tiles_y <= 0:
         logger.error(f"Invalid tile range: x=[{min_tile_x}, {max_tile_x}], y=[{min_tile_y}, {max_tile_y}]")
-        resolution = _get_resolution_for_zoom(tile_info, zoom)
+        resolution = _get_resolution_for_zoom(map_info.zoom_info, zoom)
         logger.error(f"Bounding box TM: {bbox_tm}, zoom: {zoom}, resolution: {resolution}")
         raise ValueError(f"Invalid tile coordinates: cannot create image with {num_tiles_x}x{num_tiles_y} tiles")
     
@@ -412,7 +440,7 @@ def _create_bbox_around_leg(
     lat1: float, lon1: float,
     lat2: float, lon2: float,
     zoom: int,
-    tile_info: Dict,
+    map_info: MapInfo,
     scale_factor: float = 1.0,
     margin_factor: float = 1.0
 ) -> Tuple[float, float, float, float]:
@@ -427,7 +455,7 @@ def _create_bbox_around_leg(
         lat1, lon1: Starting point
         lat2, lon2: Ending point
         zoom: Zoom level
-        tile_info: Tile info dictionary
+        map_info: MapInfo object
         scale_factor: Scale factor that will be applied to the composite
         margin_factor: Factor to add margins (1.2 = 20% margin)
         
@@ -435,11 +463,11 @@ def _create_bbox_around_leg(
         Bounding box in Transverse Mercator (min_x, min_y, max_x, max_y)
     """
     # Convert to Transverse Mercator
-    x1, y1 = _lat_lon_to_transverse_mercator(lat1, lon1)
-    x2, y2 = _lat_lon_to_transverse_mercator(lat2, lon2)
+    x1, y1 = _lat_lon_to_transverse_mercator(lat1, lon1, map_info.central_meridian)
+    x2, y2 = _lat_lon_to_transverse_mercator(lat2, lon2, map_info.central_meridian)
     
     # Get resolution to convert pixels to meters
-    resolution = _get_resolution_for_zoom(tile_info, zoom)
+    resolution = _get_resolution_for_zoom(map_info, zoom)
     
     # Calculate the final image dimensions after scaling
     # The final cropped image will be MAP_WIDTH x MAP_HEIGHT
@@ -510,7 +538,7 @@ def _tm_to_pixel_on_rotated_image(
     x_tm: float,
     y_tm: float,
     bbox_tm: Tuple[float, float, float, float],
-    tile_info: Dict,
+    map_info: MapInfo,
     zoom: int,
     rotation_angle_deg: float,
     rotation_center_orig: Tuple[int, int],
@@ -530,7 +558,7 @@ def _tm_to_pixel_on_rotated_image(
     Args:
         x_tm, y_tm: Transverse Mercator coordinates in meters
         bbox_tm: Bounding box in Transverse Mercator (min_x, min_y, max_x, max_y)
-        tile_info: Tile info dictionary
+        map_info: MapInfo object
         zoom: Zoom level used for the composite
         rotation_angle_deg: Rotation angle in degrees (positive = counterclockwise)
         rotation_center_orig: Rotation center point (x, y) in original composite pixel coordinates
@@ -542,13 +570,13 @@ def _tm_to_pixel_on_rotated_image(
         Tuple of (x, y) pixel coordinates in the rotated image
     """
     # Step 1: Convert TM coordinates to pixel coordinates in the original composite
-    grid_origin_x, grid_origin_y = _lat_lon_to_transverse_mercator(ORIGIN_LAT, ORIGIN_LON)
-    resolution = _get_resolution_for_zoom(tile_info, zoom)
+    grid_origin_x, grid_origin_y = _lat_lon_to_transverse_mercator(map_info.origin_lat, map_info.origin_lon, map_info.central_meridian)
+    resolution = _get_resolution_for_zoom(map_info, zoom)
     # Account for scaling: effective resolution = resolution / scale_factor
     effective_resolution = resolution / scale_factor
     
     # Get tile bounds for the original composite
-    min_tile_x, min_tile_y, _, _ = _bbox_tm_to_tile_bounds(bbox_tm, tile_info, zoom)
+    min_tile_x, min_tile_y, _, _ = _bbox_tm_to_tile_bounds(bbox_tm, map_info, zoom)
     
     # Convert TM to pixel coordinates in the full tile grid
     # Use effective resolution which accounts for scaling
@@ -621,7 +649,7 @@ def generate_leg_map(
     """
     start_time = time.time()
 
-    tile_info = _get_tile_info()
+    map_info = _get_map_info()
     
     leg_data = flight_plan_data.legData[leg_index]
     origin = leg_data.origin
@@ -639,7 +667,7 @@ def generate_leg_map(
     logger.info(f"Leg distance: {leg_distance:.2f} meters ({leg_distance/1852:.2f} NM)")
     
     # Select zoom level (just above 70% height)
-    zoom, leg_height_px = _select_zoom_level(tile_info, leg_distance)
+    zoom, leg_height_px = _select_zoom_level(map_info, leg_distance)
     logger.info(f"Selected zoom level: {zoom}, leg height at this zoom: {leg_height_px:.1f} px")
     
     # Calculate scale factor to make leg exactly 70% of height
@@ -651,13 +679,13 @@ def generate_leg_map(
     bbox_tm = _create_bbox_around_leg(
         origin.lat, origin.lon,
         destination.lat, destination.lon,
-        zoom, tile_info,
+        zoom, map_info,
         scale_factor
     )
     logger.info(f"Bounding box created: {bbox_tm}")
     
     # Assemble tiles
-    composite = _assemble_tiles(tile_info, zoom, bbox_tm)
+    composite = _assemble_tiles(map_info, zoom, bbox_tm)
     
     # Scale the composite before rotation to make leg exactly 70% of height
     if scale_factor != 1.0:
@@ -669,17 +697,17 @@ def generate_leg_map(
     # Calculate the angle of the leg line in pixel/image coordinates
     # This is the straight part of the leg, excluding the turn.
     # We need to use the projected coordinates (Transverse Mercator) converted to pixels
-    origin_x_tm, origin_y_tm = _lat_lon_to_transverse_mercator(straigthening_point.lat, straigthening_point.lon)
-    dest_x_tm, dest_y_tm = _lat_lon_to_transverse_mercator(destination.lat, destination.lon)
+    origin_x_tm, origin_y_tm = _lat_lon_to_transverse_mercator(straigthening_point.lat, straigthening_point.lon, map_info.central_meridian)
+    dest_x_tm, dest_y_tm = _lat_lon_to_transverse_mercator(destination.lat, destination.lon, map_info.central_meridian)
     
     # Convert to pixel coordinates in the scaled composite
-    grid_origin_x, grid_origin_y = _lat_lon_to_transverse_mercator(ORIGIN_LAT, ORIGIN_LON)
-    resolution = _get_resolution_for_zoom(tile_info, zoom)
+    grid_origin_x, grid_origin_y = _lat_lon_to_transverse_mercator(map_info.origin_lat, map_info.origin_lon, map_info.central_meridian)
+    resolution = _get_resolution_for_zoom(map_info, zoom)
     # Account for scaling: effective resolution in scaled composite
     effective_resolution = resolution / scale_factor
     
     # Get tile bounds for the composite
-    min_tile_x, min_tile_y, _, _ = _bbox_tm_to_tile_bounds(bbox_tm, tile_info, zoom)
+    min_tile_x, min_tile_y, _, _ = _bbox_tm_to_tile_bounds(bbox_tm, map_info, zoom)
     
     # Convert TM to pixel coordinates using effective resolution (accounts for scaling)
     origin_px_x = (origin_x_tm - grid_origin_x) / effective_resolution
@@ -726,10 +754,10 @@ def generate_leg_map(
     # Create a converter function that converts lat/lon to pixel coordinates on the rotated image
     def coord_to_pixel(lat: float, lon: float) -> Tuple[float, float]:
         """Convert geographic coordinates to pixel coordinates on the rotated image."""
-        x_tm, y_tm = _lat_lon_to_transverse_mercator(lat, lon)
+        x_tm, y_tm = _lat_lon_to_transverse_mercator(lat, lon, map_info.central_meridian)
         return _tm_to_pixel_on_rotated_image(
             x_tm, y_tm,
-            bbox_tm, tile_info, zoom,
+            bbox_tm, map_info, zoom,
             rotation_angle, (center_x, center_y),
             scaled_composite_size, rotated.size,
             scale_factor
@@ -752,7 +780,7 @@ def generate_leg_map(
     # Convert leg center to pixel coordinates on the rotated image
     leg_center_x_px, leg_center_y_px = _tm_to_pixel_on_rotated_image(
         leg_center_x_tm, leg_center_y_tm,
-        bbox_tm, tile_info, zoom,
+        bbox_tm, map_info, zoom,
         rotation_angle, (center_x, center_y),
         scaled_composite_size, rotated.size,
         scale_factor

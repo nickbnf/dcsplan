@@ -1,6 +1,7 @@
 import { get, transform } from 'ol/proj';
 import { register } from 'ol/proj/proj4';
 import proj4 from 'proj4';
+import type { Bounds } from './latLonGrid';
 
 /**
  * Creates a transverse Mercator projection with the specified central meridian
@@ -38,7 +39,7 @@ export const createTransverseMercatorProjection = (centralMeridian: number = 39)
  * Transforms geographic bounds to transverse Mercator coordinates
  */
 export const transformBoundsToTransverseMercator = (
-  bounds: { minLon: number; minLat: number; maxLon: number; maxLat: number },
+  bounds: Bounds,
   projection: any
 ) => {
   const transformedMin = transform([bounds.minLon, bounds.minLat], 'EPSG:4326', projection.getCode());
