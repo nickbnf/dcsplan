@@ -43,7 +43,8 @@ class MapBounds(BaseModel):
 
 class MapInfo(BaseModel):
     """Complete map information including zoom levels and bounds."""
-    theatre_name: str = Field(..., description="Theatre name")
+    theatre: str = Field(..., description="Theatre code")
+    theatre_name: str = Field(..., description="Theatre full name")
     zoom_info: List[ZoomLevelInfo]
     central_meridian: float = Field(..., description="Central meridian for Transverse Mercator projection")
     origin_lat: float = Field(..., description="Origin latitude (NW corner) for tile grid")
@@ -126,15 +127,16 @@ LEG_HEIGHT_TARGET = 0.70  # Leg should occupy 70% of height
 TILE_SIZE = 256  # Standard tile size in pixels
 
 
-def _get_map_info(theatre_name: str) -> MapInfo:
+def _get_map_info(theatre: str) -> MapInfo:
     """Load and return tile info from JSON file."""
-    map_info_path = os.path.join(THEATRES_DIR, f"{theatre_name}.json")
+    map_info_path = os.path.join(THEATRES_DIR, f"{theatre}.json")
     logger.info(f"Loading map info from {map_info_path}")
     if not os.path.exists(map_info_path):
         logger.error(f"Map info file not found at {map_info_path}")
         raise FileNotFoundError(f"Map info file not found at {map_info_path}")
     with open(map_info_path, 'r') as f:
         data = json.load(f)
+        data['theatre'] = theatre
     map_info = MapInfo.model_validate(data)
     logger.info(f"Map info loaded: {len(map_info.zoom_info)} zoom levels")
     return map_info
@@ -277,11 +279,13 @@ def _fetch_tile(theatre_name: str, z: int, x: int, y: int) -> Optional[Image.Ima
             return tile_img
         except Exception as e:
             logger.warning(f"Failed to load tile z={z}, x={x}, y={y}: {e}")
+    else:
+        logger.error(f"Tile not found at {tile_path}")
     
     # Fallback to blank tile
     if os.path.exists(BLANK_TILE_PATH):
         try:
-            logger.debug(f"Using blank tile for z={z}, x={x}, y={y}")
+            logger.info(f"Using blank tile for z={z}, x={x}, y={y}")
             return Image.open(BLANK_TILE_PATH).convert('RGB')
         except Exception as e:
             logger.warning(f"Failed to load blank tile: {e}")
@@ -428,7 +432,7 @@ def _assemble_tiles(
     tiles_fetched = 0
     for ty in range(min_tile_y, max_tile_y + 1):
         for tx in range(min_tile_x, max_tile_x + 1):
-            tile_img = _fetch_tile(map_info.theatre_name, zoom, tx, ty)
+            tile_img = _fetch_tile(map_info.theatre, zoom, tx, ty)
             x_pos = (tx - min_tile_x) * TILE_SIZE
             y_pos = (ty - min_tile_y) * TILE_SIZE
             composite.paste(tile_img, (x_pos, y_pos))
