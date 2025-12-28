@@ -6,7 +6,6 @@ from flight_plan import FlightPlan, ImportFlightPlanRequest
 from task_queue import get_task_queue
 import os
 import logging
-import time
 from typing import Optional
 
 # Set up centralized logging configuration
@@ -125,6 +124,7 @@ async def get_tile(theatre_name: str, z: int, x: int, y: int):
         return FileResponse(tile_path)
     else:
         # Fall back to blank tile if the specific tile doesn't exist
+        logger.warning(f"Tile not found at {tile_path}")
         return FileResponse(BLANK_TILE_PATH)
 
 @app.get("/theatres/{theatre_name}.json")
@@ -134,6 +134,7 @@ async def get_theatre_info(theatre_name: str):
     if os.path.exists(theatre_info_path):
         return FileResponse(theatre_info_path)
     else:
+        logger.error(f"Theatre info file not found at {theatre_info_path}")
         raise HTTPException(status_code=404, detail="Theatre not found")
 
 @app.post("/flightplan/import")
