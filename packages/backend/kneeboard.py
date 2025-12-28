@@ -43,6 +43,7 @@ class MapBounds(BaseModel):
 
 class MapInfo(BaseModel):
     """Complete map information including zoom levels and bounds."""
+    theatre_name: str = Field(..., description="Theatre name")
     zoom_info: List[ZoomLevelInfo]
     central_meridian: float = Field(..., description="Central meridian for Transverse Mercator projection")
     origin_lat: float = Field(..., description="Origin latitude (NW corner) for tile grid")
@@ -117,21 +118,22 @@ def generate_kneeboard_zip(flight_plan: FlightPlan) -> bytes:
 # Constants for leg map generation
 TILES_DIR = os.path.join(os.path.dirname(__file__), "config", "static", "tiles")
 BLANK_TILE_PATH = os.path.join(os.path.dirname(__file__), "config", "blank.png")
-MAP_INFO_PATH = os.path.join(TILES_DIR, "tiles_info.json")
-TILES_INFO_PATH = MAP_INFO_PATH  # Alias for backward compatibility with tests
+TILES_INFO_PATH = os.path.join(TILES_DIR, "tiles_info.json") # Alias for backward compatibility with tests
+THEATRES_DIR = os.path.join(os.path.dirname(__file__), "theatres")
 MAP_WIDTH = 768
 MAP_HEIGHT = 1024
 LEG_HEIGHT_TARGET = 0.70  # Leg should occupy 70% of height
 TILE_SIZE = 256  # Standard tile size in pixels
 
 
-def _get_map_info() -> MapInfo:
+def _get_map_info(theatre_name: str) -> MapInfo:
     """Load and return tile info from JSON file."""
-    logger.info(f"Loading map info from {MAP_INFO_PATH}")
-    if not os.path.exists(MAP_INFO_PATH):
-        logger.error(f"Map info file not found at {MAP_INFO_PATH}")
-        raise FileNotFoundError(f"Map info file not found at {MAP_INFO_PATH}")
-    with open(MAP_INFO_PATH, 'r') as f:
+    map_info_path = os.path.join(THEATRES_DIR, f"{theatre_name}.json")
+    logger.info(f"Loading map info from {map_info_path}")
+    if not os.path.exists(map_info_path):
+        logger.error(f"Map info file not found at {map_info_path}")
+        raise FileNotFoundError(f"Map info file not found at {map_info_path}")
+    with open(map_info_path, 'r') as f:
         data = json.load(f)
     map_info = MapInfo.model_validate(data)
     logger.info(f"Map info loaded: {len(map_info.zoom_info)} zoom levels")
@@ -255,7 +257,7 @@ def _select_zoom_level(map_info: MapInfo, leg_distance_meters: float) -> Tuple[i
     return selected_zoom, selected_leg_height
 
 
-def _fetch_tile(z: int, x: int, y: int) -> Optional[Image.Image]:
+def _fetch_tile(theatre_name: str, z: int, x: int, y: int) -> Optional[Image.Image]:
     """
     Fetch a tile from the file system.
     
@@ -265,7 +267,7 @@ def _fetch_tile(z: int, x: int, y: int) -> Optional[Image.Image]:
     Returns:
         PIL Image or None if tile doesn't exist
     """
-    tile_path = os.path.join(TILES_DIR, str(z), str(x), f"{y}.png")
+    tile_path = os.path.join(TILES_DIR, theatre_name, str(z), str(x), f"{y}.png")
     # logger.debug(f"Fetching tile z={z}, x={x}, y={y} from {tile_path}")
     
     if os.path.exists(tile_path):
@@ -426,7 +428,7 @@ def _assemble_tiles(
     tiles_fetched = 0
     for ty in range(min_tile_y, max_tile_y + 1):
         for tx in range(min_tile_x, max_tile_x + 1):
-            tile_img = _fetch_tile(zoom, tx, ty)
+            tile_img = _fetch_tile(map_info.theatre_name, zoom, tx, ty)
             x_pos = (tx - min_tile_x) * TILE_SIZE
             y_pos = (ty - min_tile_y) * TILE_SIZE
             composite.paste(tile_img, (x_pos, y_pos))
@@ -649,7 +651,7 @@ def generate_leg_map(
     """
     start_time = time.time()
 
-    map_info = _get_map_info()
+    map_info = _get_map_info(flight_plan.theatre)
     
     leg_data = flight_plan_data.legData[leg_index]
     origin = leg_data.origin

@@ -21,12 +21,13 @@ def create_turnpoint(lat, lon, tas=400, alt=3000, fuelFlow=6000, windSpeed=20, w
     )
 
 
-def create_flight_plan(points_data, declination=0.0, bankAngle=30.0, initTimeSec=43200, initFob=12000):
+def create_flight_plan(points_data, declination=0.0, bankAngle=30.0, initTimeSec=43200, initFob=12000, theatre="syria_old"):
     """Helper function to create a flight plan."""
     points = [
         create_turnpoint(**point) for point in points_data
     ]
     return FlightPlan(
+        theatre=theatre,
         points=points,
         declination=declination,
         bankAngle=bankAngle,

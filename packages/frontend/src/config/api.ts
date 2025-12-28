@@ -16,7 +16,7 @@ export const getApiUrl = (endpoint: string): string => {
 /**
  * Get the tiles base URL
  */
-export const getTilesBaseUrl = (): string => {
-  return `${API_URL}/tiles/{z}/{x}/{y}.png`;
+export const getTilesBaseUrl = (theatre: string): string => {
+  return `${API_URL}/tiles/${theatre}/{z}/{x}/{y}.png`;
 };
 

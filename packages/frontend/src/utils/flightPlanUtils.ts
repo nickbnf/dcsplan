@@ -1,4 +1,5 @@
-import type { FlightPlan, FlightPlanPointChange, LegData } from "../types/flightPlan";
+import type { FlightPlan, FlightPlanPointChange, LegData, VersionedFlightPlan } from "../types/flightPlan";
+import { FLIGHT_PLAN_VERSION } from "../types/flightPlan";
 import { calculateAllLegData } from "./legCalculations";
 
 const defaultTas = 400;
@@ -10,7 +11,7 @@ const defaultWindDir = 0;
 // A bunch of functions to manipulate the flight plan
 export const flightPlanUtils = {
     newFlightPlan: (): FlightPlan => {
-        return { points: [], declination: 0, bankAngle: 45, initTimeSec: 12 * 3600, initFob: 12000, name: "Flight Plan One" };
+        return { theatre: "syria_old", points: [], declination: 0, bankAngle: 45, initTimeSec: 12 * 3600, initFob: 12000, name: "Flight Plan One" };
     },
     addTurnPoint: (flightPlan: FlightPlan, lat: number, lon: number): FlightPlan => {
         const tas = flightPlan.points.length > 1 ? flightPlan.points[flightPlan.points.length - 2].tas : defaultTas;
@@ -158,8 +159,8 @@ export const flightPlanUtils = {
     downloadFlightPlan: (flightPlan: FlightPlan): void => {
         // Create the wrapped format with version
         // Ensure the flight plan includes its name
-        const exportData = {
-            version: "1.0",
+        const exportData: VersionedFlightPlan = {
+            version: FLIGHT_PLAN_VERSION,
             flightPlan: flightPlan
         };
         

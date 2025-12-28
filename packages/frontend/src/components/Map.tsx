@@ -58,7 +58,8 @@ const MapComponent: React.FC<MapComponentProps> = ({
       setIsLoading(true);
       setError(null);
       
-      const response = await fetch(getApiUrl('tiles/tiles_info.json'), {
+      const theatre = flightPlan.theatre || "syria_old";
+      const response = await fetch(getApiUrl(`theatres/${theatre}.json`), {
         method: 'GET',
         headers: {
           'Accept': 'application/json',
@@ -126,7 +127,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
     const transverseMercatorCenter = calculateTransverseMercatorCenter(regionBounds, transverseMercatorProjection);
 
     // Create tile layer and grid layer
-    const tileLayer = createTileLayer(mapInfo, transverseMercatorProjection, getTilesBaseUrl());
+    const tileLayer = createTileLayer(mapInfo, transverseMercatorProjection, getTilesBaseUrl(flightPlan.theatre || "syria_old"));
     const gridLayer = createGridLayer(regionBounds, transverseMercatorProjection);
     gridLayer.set('name', 'grid');
     gridLayerRef.current = gridLayer;

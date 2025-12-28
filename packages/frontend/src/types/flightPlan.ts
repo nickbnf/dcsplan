@@ -31,10 +31,18 @@ export type FlightPlanPointChange = {
 
 // Main type containing the full flight plan
 export type FlightPlan = {
+  theatre: string;
   points: FlightPlanTurnPoint[];
   declination: number;
   bankAngle: number; // Bank angle for turns (degrees, 5-85)
   initTimeSec: number; // Initial time in seconds since midnight
   initFob: number;
   name: string; // Name of the flight plan
+}
+
+export const FLIGHT_PLAN_VERSION = "1.1";
+
+export interface VersionedFlightPlan {
+  version: string;
+  flightPlan: FlightPlan;
 }

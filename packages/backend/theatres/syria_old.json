@@ -1,0 +1,72 @@
+{
+    "theatre_name": "Syria (old)",
+    "central_meridian": 39,
+    "origin_lat": 37.50575,
+    "origin_lon": 29.9266,
+    "ref_corner_ne_lat": 37.8254,
+    "ref_corner_ne_lon": 41.695,
+    "bounds": {
+        "minLon": 29.9266,
+        "minLat": 31.3642,
+        "maxLon": 41.695,
+        "maxLat": 37.8254
+    },
+    "zoom_info": [
+        {
+            "zoom": 0,
+            "nb_tiles_w": 1,
+            "nb_tiles_h": 1,
+            "width_px": 156,
+            "height_px": 104
+        },
+        {
+            "zoom": 1,
+            "nb_tiles_w": 2,
+            "nb_tiles_h": 1,
+            "width_px": 313,
+            "height_px": 208
+        },
+        {
+            "zoom": 2,
+            "nb_tiles_w": 3,
+            "nb_tiles_h": 2,
+            "width_px": 627,
+            "height_px": 416
+        },
+        {
+            "zoom": 3,
+            "nb_tiles_w": 5,
+            "nb_tiles_h": 4,
+            "width_px": 1255,
+            "height_px": 832
+        },
+        {
+            "zoom": 4,
+            "nb_tiles_w": 10,
+            "nb_tiles_h": 7,
+            "width_px": 2511,
+            "height_px": 1665
+        },
+        {
+            "zoom": 5,
+            "nb_tiles_w": 20,
+            "nb_tiles_h": 14,
+            "width_px": 5022,
+            "height_px": 3331
+        },
+        {
+            "zoom": 6,
+            "nb_tiles_w": 40,
+            "nb_tiles_h": 27,
+            "width_px": 10044,
+            "height_px": 6662
+        },
+        {
+            "zoom": 7,
+            "nb_tiles_w": 79,
+            "nb_tiles_h": 53,
+            "width_px": 20089,
+            "height_px": 13324
+        }
+    ]
+}

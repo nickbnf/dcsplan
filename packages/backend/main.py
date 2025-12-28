@@ -38,6 +38,7 @@ app.add_middleware(
 # Path to the static directory
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "config", "static")
 TILES_DIR = os.path.join(STATIC_DIR, "tiles")
+THEATRES_DIR = os.path.join(os.path.dirname(__file__), "theatres")
 
 # Path to the blank tile
 BLANK_TILE_PATH = os.path.join(os.path.dirname(__file__), "config", "blank.png")
@@ -115,10 +116,10 @@ async def download_kneeboard(task_id: str = Path(..., description="Task ID")):
 def read_root():
     return {"message": "Hello from the backend!"}
 
-@app.get("/tiles/{z}/{x}/{y}.png")
-async def get_tile(z: int, x: int, y: int):
+@app.get("/tiles/{theatre_name}/{z}/{x}/{y}.png")
+async def get_tile(theatre_name: str, z: int, x: int, y: int):
     # Try to serve the actual tile from static directory first
-    tile_path = os.path.join(TILES_DIR, str(z), str(x), f"{y}.png")
+    tile_path = os.path.join(TILES_DIR, theatre_name, str(z), str(x), f"{y}.png")
     
     if os.path.exists(tile_path):
         return FileResponse(tile_path)
@@ -126,17 +127,14 @@ async def get_tile(z: int, x: int, y: int):
         # Fall back to blank tile if the specific tile doesn't exist
         return FileResponse(BLANK_TILE_PATH)
 
-@app.get("/tiles/tiles_info.json")
-async def get_tiles_info():
-    # Try to serve the tiles info from static directory first
-    tiles_info_path = os.path.join(TILES_DIR, "tiles_info.json")
+@app.get("/theatres/{theatre_name}.json")
+async def get_theatre_info(theatre_name: str):
+    theatre_info_path = os.path.join(THEATRES_DIR, f"{theatre_name}.json")
     
-    if os.path.exists(tiles_info_path):
-        return FileResponse(tiles_info_path)
+    if os.path.exists(theatre_info_path):
+        return FileResponse(theatre_info_path)
     else:
-        # Fall back to blank tile if the tiles info doesn't exist
-        return FileResponse(BLANK_TILE_PATH)
-
+        raise HTTPException(status_code=404, detail="Theatre not found")
 
 @app.post("/flightplan/import")
 async def import_flight_plan(request: ImportFlightPlanRequest):
@@ -146,7 +144,7 @@ async def import_flight_plan(request: ImportFlightPlanRequest):
     logger.info(f"Flight plan has {len(request.flightPlan.points)} waypoint(s)")
     
     # Validate version
-    SUPPORTED_VERSIONS = ["1.0"]
+    SUPPORTED_VERSIONS = ["1.1"]
     if request.version not in SUPPORTED_VERSIONS:
         logger.error(f"Unsupported version: {request.version}")
         raise HTTPException(

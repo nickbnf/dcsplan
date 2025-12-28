@@ -30,6 +30,7 @@ class FlightPlanTurnPoint(BaseModel):
 
 class FlightPlan(BaseModel):
     """Represents a complete flight plan with waypoints and initial conditions."""
+    theatre: str = Field(..., description="Theatre name")
     points: List[FlightPlanTurnPoint]
     declination: float = Field(..., ge=-25, le=25, description="Magnetic declination")
     bankAngle: float = Field(..., ge=5, le=85, description="Bank angle for turns (degrees)")

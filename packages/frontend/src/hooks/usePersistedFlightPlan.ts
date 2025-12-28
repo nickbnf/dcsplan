@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import type { FlightPlan } from '../types/flightPlan';
+import type { FlightPlan, VersionedFlightPlan } from '../types/flightPlan';
+import { FLIGHT_PLAN_VERSION } from '../types/flightPlan';
 
 const STORAGE_KEY = 'dcsplan-flightplan';
 const DEBOUNCE_MS = 300;
@@ -11,6 +12,7 @@ function isValidFlightPlan(data: any): data is FlightPlan {
   return (
     data &&
     typeof data === 'object' &&
+    typeof data.theatre === 'string' &&
     Array.isArray(data.points) &&
     typeof data.declination === 'number' &&
     typeof data.bankAngle === 'number' &&
@@ -31,7 +33,7 @@ function isValidFlightPlan(data: any): data is FlightPlan {
 }
 
 /**
- * Loads flight plan from localStorage
+ * Loads flight plan from localStorage and migrates if necessary
  */
 function loadFlightPlan(): FlightPlan | null {
   try {
@@ -41,8 +43,34 @@ function loadFlightPlan(): FlightPlan | null {
     }
 
     const parsed = JSON.parse(saved);
-    if (isValidFlightPlan(parsed)) {
-      return parsed;
+    
+    // Check if we have a versioned wrapper
+    let flightPlanData: any;
+    let version: string | undefined;
+
+    if (parsed && typeof parsed === 'object' && parsed.version && parsed.flightPlan) {
+      flightPlanData = parsed.flightPlan;
+      version = parsed.version;
+    } else {
+      // Legacy unversioned data
+      flightPlanData = parsed;
+      version = undefined;
+    }
+
+    // Migration logic
+    if (version !== FLIGHT_PLAN_VERSION) {
+      console.info(`Migrating flight plan from version ${version || 'legacy'} to ${FLIGHT_PLAN_VERSION}`);
+      
+      // Ensure theatre exists (required in 1.1)
+      if (flightPlanData && typeof flightPlanData === 'object' && !flightPlanData.theatre) {
+        flightPlanData.theatre = "syria_old";
+      }
+      
+      // Additional migration steps for future versions would go here
+    }
+
+    if (isValidFlightPlan(flightPlanData)) {
+      return flightPlanData;
     }
 
     // Invalid data structure - clear it
@@ -66,7 +94,11 @@ function loadFlightPlan(): FlightPlan | null {
  */
 function saveFlightPlan(flightPlan: FlightPlan): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(flightPlan));
+    const versionedData: VersionedFlightPlan = {
+      version: FLIGHT_PLAN_VERSION,
+      flightPlan: flightPlan
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(versionedData));
   } catch (error) {
     if (error instanceof DOMException) {
       if (error.name === 'QuotaExceededError') {

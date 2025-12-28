@@ -15,6 +15,7 @@ client = TestClient(app)
 def valid_flight_plan_data():
     """Create a valid flight plan data structure."""
     return {
+        "theatre": "syria_old",
         "points": [
             {
                 "lat": 34.0,
@@ -48,7 +49,7 @@ def valid_flight_plan_data():
 def valid_import_request(valid_flight_plan_data):
     """Create a valid import request."""
     return {
-        "version": "1.0",
+        "version": "1.1",
         "flightPlan": valid_flight_plan_data
     }
 
@@ -56,8 +57,8 @@ def valid_import_request(valid_flight_plan_data):
 class TestValidImports:
     """Test valid import scenarios."""
     
-    def test_valid_import_with_version_1_0(self, valid_import_request):
-        """Test importing a valid flight plan with version 1.0."""
+    def test_valid_import_with_version_1_1(self, valid_import_request):
+        """Test importing a valid flight plan with version 1.1."""
         response = client.post("/flightplan/import", json=valid_import_request)
         assert response.status_code == 200
         data = response.json()
@@ -103,8 +104,9 @@ class TestValidImports:
     def test_valid_import_single_waypoint(self):
         """Test importing a flight plan with a single waypoint (minimal valid case)."""
         request = {
-            "version": "1.0",
+            "version": "1.1",
             "flightPlan": {
+                "theatre": "syria",
                 "points": [
                     {
                         "lat": 34.0,
@@ -130,8 +132,9 @@ class TestValidImports:
     def test_valid_import_many_waypoints(self):
         """Test importing a flight plan with many waypoints."""
         request = {
-            "version": "1.0",
+            "version": "1.1",
             "flightPlan": {
+                "theatre": "syria",
                 "points": [
                     {
                         "lat": 34.0 + i * 0.1,
@@ -165,6 +168,14 @@ class TestVersionValidation:
         response = client.post("/flightplan/import", json=valid_import_request)
         assert response.status_code == 422  # Validation error
     
+    def test_unsupported_version_1_0(self, valid_import_request):
+        """Test that version 1.0 is now rejected."""
+        valid_import_request["version"] = "1.0"
+        response = client.post("/flightplan/import", json=valid_import_request)
+        assert response.status_code == 400
+        assert "Unsupported version" in response.json()["detail"]
+        assert "1.0" in response.json()["detail"]
+
     def test_unsupported_version_2_0(self, valid_import_request):
         """Test that unsupported version 2.0 is rejected."""
         valid_import_request["version"] = "2.0"
@@ -182,7 +193,7 @@ class TestVersionValidation:
     
     def test_invalid_version_type_number(self, valid_import_request):
         """Test that version as number (not string) is rejected."""
-        valid_import_request["version"] = 1.0
+        valid_import_request["version"] = 1.1
         response = client.post("/flightplan/import", json=valid_import_request)
         assert response.status_code == 422  # Validation error
     
