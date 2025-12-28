@@ -45,7 +45,7 @@ COPY map_annotations.py .
 COPY task_queue.py .
 COPY main.py .
 COPY logging_config.py .
-COPY theatres .
+COPY theatres ./theatres
 
 # Create non-root user for security
 RUN useradd -m -u 1000 appuser && \
