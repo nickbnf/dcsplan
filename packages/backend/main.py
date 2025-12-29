@@ -137,6 +137,16 @@ async def get_theatre_info(theatre_name: str):
         logger.error(f"Theatre info file not found at {theatre_info_path}")
         raise HTTPException(status_code=404, detail="Theatre not found")
 
+@app.get("/theatres")
+async def list_theatres():
+    """List all available theatre IDs."""
+    try:
+        theatres = [f[:-5] for f in os.listdir(THEATRES_DIR) if f.endswith(".json")]
+        return {"theatres": theatres}
+    except Exception as e:
+        logger.error(f"Error listing theatres: {e}")
+        raise HTTPException(status_code=500, detail="Could not list theatres")
+
 @app.post("/flightplan/import")
 async def import_flight_plan(request: ImportFlightPlanRequest):
     """Import and validate a flight plan from JSON."""

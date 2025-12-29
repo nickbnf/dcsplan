@@ -1,16 +1,27 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import * as Separator from '@radix-ui/react-separator';
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
+import type { TheatreMetadata } from '../../hooks/useTheatres';
 
 interface TitleZoneProps {
-  mapName: string;
+  currentTheatreId: string;
+  availableTheatres: TheatreMetadata[];
+  isLoadingTheatres: boolean;
+  onTheatreChange: (theatreId: string) => void;
   mouseCoordinates?: { x: number; y: number; lat?: number; lon?: number } | null;
 }
 
 export const TitleZone: React.FC<TitleZoneProps> = ({ 
-  mapName, 
+  currentTheatreId,
+  availableTheatres,
+  isLoadingTheatres,
+  onTheatreChange,
   mouseCoordinates 
 }) => {
+  const currentTheatre = availableTheatres.find(t => t.id === currentTheatreId);
+  const theatreDisplayName = currentTheatre ? currentTheatre.name : "Select Theatre";
+
   const lat_deg = Math.trunc(mouseCoordinates?.lat ?? 0);
   const lat_minutes = ((mouseCoordinates?.lat ?? 0) - lat_deg) * 60;
   const lon_deg = Math.trunc(mouseCoordinates?.lon ?? 0);
@@ -31,11 +42,48 @@ export const TitleZone: React.FC<TitleZoneProps> = ({
         </Link>
       </div>
       
-      {/* Map Name */}
+      {/* Map Name with Dropdown */}
       <div className="space-y-1 text-sm text-gray-600">
-        <div className="flex justify-between">
-          {mapName}
-        </div>
+        <DropdownMenu.Root>
+          <DropdownMenu.Trigger asChild>
+            <button 
+              className="flex justify-between items-center w-full cursor-pointer hover:bg-gray-200 rounded px-2 py-1 -mx-2 transition-colors group outline-none"
+              disabled={isLoadingTheatres}
+            >
+              <span className="font-aero-label">
+                {isLoadingTheatres ? 'Loading...' : `${theatreDisplayName} Theatre`}
+              </span>
+              {!isLoadingTheatres && (
+                <span className="text-[10px] text-gray-400 group-hover:text-gray-600 ml-2 transition-colors">
+                  ▼
+                </span>
+              )}
+            </button>
+          </DropdownMenu.Trigger>
+
+          <DropdownMenu.Portal>
+            <DropdownMenu.Content 
+              className="bg-white rounded-md p-1 shadow-lg border border-gray-200 min-w-[200px] z-50 animate-in fade-in zoom-in duration-75"
+              sideOffset={5}
+              align="start"
+            >
+              {availableTheatres.map((theatre) => (
+                <DropdownMenu.Item
+                  key={theatre.id}
+                  className={`
+                    flex items-center px-3 py-2 text-sm font-aero-label outline-none cursor-pointer rounded transition-colors
+                    ${theatre.id === currentTheatreId 
+                      ? 'bg-avio-panel text-avio-primary font-semibold' 
+                      : 'text-gray-700 hover:bg-gray-100'}
+                  `}
+                  onSelect={() => onTheatreChange(theatre.id)}
+                >
+                  {theatre.name}
+                </DropdownMenu.Item>
+              ))}
+            </DropdownMenu.Content>
+          </DropdownMenu.Portal>
+        </DropdownMenu.Root>
       </div>
       
       {/* Mouse Coordinates */}

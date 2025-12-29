@@ -128,7 +128,7 @@ export const ButtonZone: React.FC<ButtonZoneProps> = ({
           </button>
           <ClearFlightPlanDialog 
             onConfirm={() => {
-              const newFlightPlan = flightPlanUtils.newFlightPlan();
+              const newFlightPlan = flightPlanUtils.newFlightPlan(flightPlan.theatre);
               onFlightPlanUpdate(newFlightPlan);
             }}
           />

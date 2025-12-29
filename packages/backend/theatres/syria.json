@@ -1,5 +1,5 @@
 {
-    "theatre_name": "Syria (old)",
+    "theatre_name": "Syria",
     "projection": "transverse_mercator",
     "central_meridian": 39,
     "origin_lat": 37.50575,
@@ -17,57 +17,57 @@
             "zoom": 0,
             "nb_tiles_w": 1,
             "nb_tiles_h": 1,
-            "width_px": 156,
-            "height_px": 104
+            "width_px": 144,
+            "height_px": 96
         },
         {
             "zoom": 1,
             "nb_tiles_w": 2,
             "nb_tiles_h": 1,
-            "width_px": 313,
-            "height_px": 208
+            "width_px": 289,
+            "height_px": 192
         },
         {
             "zoom": 2,
             "nb_tiles_w": 3,
             "nb_tiles_h": 2,
-            "width_px": 627,
-            "height_px": 416
+            "width_px": 579,
+            "height_px": 384
         },
         {
             "zoom": 3,
             "nb_tiles_w": 5,
             "nb_tiles_h": 4,
-            "width_px": 1255,
-            "height_px": 832
+            "width_px": 1158,
+            "height_px": 768
         },
         {
             "zoom": 4,
             "nb_tiles_w": 10,
             "nb_tiles_h": 7,
-            "width_px": 2511,
-            "height_px": 1665
+            "width_px": 2316,
+            "height_px": 1537
         },
         {
             "zoom": 5,
-            "nb_tiles_w": 20,
-            "nb_tiles_h": 14,
-            "width_px": 5022,
-            "height_px": 3331
+            "nb_tiles_w": 19,
+            "nb_tiles_h": 13,
+            "width_px": 4633,
+            "height_px": 3074
         },
         {
             "zoom": 6,
-            "nb_tiles_w": 40,
-            "nb_tiles_h": 27,
-            "width_px": 10044,
-            "height_px": 6662
+            "nb_tiles_w": 37,
+            "nb_tiles_h": 25,
+            "width_px": 9267,
+            "height_px": 6148
         },
         {
             "zoom": 7,
-            "nb_tiles_w": 79,
-            "nb_tiles_h": 53,
-            "width_px": 20089,
-            "height_px": 13324
+            "nb_tiles_w": 73,
+            "nb_tiles_h": 49,
+            "width_px": 18535,
+            "height_px": 12297
         }
     ]
 }

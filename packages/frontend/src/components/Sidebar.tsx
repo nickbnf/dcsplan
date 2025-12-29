@@ -1,9 +1,12 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { TitleZone } from './sidebar/TitleZone';
 import { ButtonZone } from './sidebar/ButtonZone';
 import { FlightPlanZone } from './sidebar/FlightPlanZone';
+import { ChangeTheatreDialog } from './sidebar/ChangeTheatreDialog';
 import type { FlightPlan } from '../types/flightPlan';
 import type { DrawingState } from '../hooks/useDrawing';
+import { useTheatres } from '../hooks/useTheatres';
+import { flightPlanUtils } from '../utils/flightPlanUtils';
 
 interface SidebarProps {
   mouseCoordinate?: { lat: number; lon: number; raw_x: number; raw_y: number } | null;
@@ -26,11 +29,42 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onStartDrawing,
   onStopDrawing
 }) => {
+  const { theatres, isLoading: isLoadingTheatres } = useTheatres();
+  const [pendingTheatreId, setPendingTheatreId] = useState<string | null>(null);
+  const [isConfirmDialogOpen, setIsConfirmDialogOpen] = useState(false);
+
+  const handleTheatreSelect = (theatreId: string) => {
+    if (theatreId === flightPlan.theatre) return;
+    
+    // If flight plan has points, ask for confirmation
+    if (flightPlan.points.length > 0) {
+      setPendingTheatreId(theatreId);
+      setIsConfirmDialogOpen(true);
+    } else {
+      // Otherwise change immediately
+      const updatedPlan = flightPlanUtils.newFlightPlan(theatreId);
+      onFlightPlanUpdate(updatedPlan);
+    }
+  };
+
+  const handleConfirmTheatreChange = () => {
+    if (pendingTheatreId) {
+      const updatedPlan = flightPlanUtils.newFlightPlan(pendingTheatreId);
+      onFlightPlanUpdate(updatedPlan);
+      setPendingTheatreId(null);
+    }
+  };
+
+  const pendingTheatreName = theatres.find(t => t.id === pendingTheatreId)?.name || "";
+
   return (
     <div className="w-[400px] bg-white border-r border-gray-300 flex flex-col h-full overflow-y-auto">
       {/* Title Zone */}
       <TitleZone 
-        mapName="Syria Theater"
+        currentTheatreId={flightPlan.theatre}
+        availableTheatres={theatres}
+        isLoadingTheatres={isLoadingTheatres}
+        onTheatreChange={handleTheatreSelect}
         mouseCoordinates={mouseCoordinate ? {
           x: mouseCoordinate.raw_x,
           y: mouseCoordinate.raw_y,
@@ -54,6 +88,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <FlightPlanZone 
         flightPlan={flightPlan}
         onFlightPlanUpdate={onFlightPlanUpdate}
+      />
+
+      <ChangeTheatreDialog 
+        isOpen={isConfirmDialogOpen}
+        onOpenChange={setIsConfirmDialogOpen}
+        onConfirm={handleConfirmTheatreChange}
+        theatreName={pendingTheatreName}
       />
     </div>
   );
