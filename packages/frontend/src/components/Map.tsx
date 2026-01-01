@@ -6,7 +6,7 @@ import { transform } from 'ol/proj';
 import Modify from 'ol/interaction/Modify';
 import Snap from 'ol/interaction/Snap';
 import Collection from 'ol/Collection';
-import { createTransverseMercatorProjection, transformBoundsToTransverseMercator, calculateTransverseMercatorCenter } from '../utils/projectionUtils';
+import { createMapProjection, transformBoundsToTransverseMercator, calculateTransverseMercatorCenter } from '../utils/projectionUtils';
 import { createGridLayer } from '../utils/latLonGrid';
 import { createTileLayer } from '../utils/tileLayer';
 import type { MapInfo } from '../utils/tileLayer';
@@ -97,14 +97,14 @@ const MapComponent: React.FC<MapComponentProps> = ({
     }
   };
 
-  // Fetch map info on component mount
+  // Fetch map info when theatre changes
   useEffect(() => {
     const loadMapInfo = async () => {
       const info = await fetchMapInfo();
       setMapInfo(info);
     };
     loadMapInfo();
-  }, []);
+  }, [flightPlan.theatre]);
 
   // Initialize map when map info is loaded and ref is available
   useEffect(() => {
@@ -115,25 +115,25 @@ const MapComponent: React.FC<MapComponentProps> = ({
     console.log('Map initialization starting, mapRef.current:', mapRef.current);
     
     const regionBounds = mapInfo?.bounds;
-    const { projection: transverseMercatorProjection } = createTransverseMercatorProjection(mapInfo?.central_meridian);
+    const { projection: mapProjection } = createMapProjection(mapInfo?.projection, mapInfo?.central_meridian);
     
     // Transform geographic bounds to transverse Mercator coordinates
-    const transverseMercatorExtent = transformBoundsToTransverseMercator(regionBounds, transverseMercatorProjection);
+    const mapProjectionExtent = transformBoundsToTransverseMercator(regionBounds, mapProjection);
     
     // Set the projection extent
-    transverseMercatorProjection.setExtent(transverseMercatorExtent);
+    (mapProjection as any).setExtent(mapProjectionExtent);
 
     // Calculate center in transverse Mercator coordinates
-    const transverseMercatorCenter = calculateTransverseMercatorCenter(regionBounds, transverseMercatorProjection);
+    const mapProjectionCenter = calculateTransverseMercatorCenter(regionBounds, mapProjection);
 
     // Create tile layer and grid layer
-    const tileLayer = createTileLayer(mapInfo, transverseMercatorProjection, getTilesBaseUrl(flightPlan.theatre || "syria_old"));
-    const gridLayer = createGridLayer(regionBounds, transverseMercatorProjection);
+    const tileLayer = createTileLayer(mapInfo, mapProjection, getTilesBaseUrl(flightPlan.theatre || "syria_old"));
+    const gridLayer = createGridLayer(regionBounds, mapProjection);
     gridLayer.set('name', 'grid');
     gridLayerRef.current = gridLayer;
-    // Start with grid hidden
-    gridLayer.setVisible(false);
-    const flightPlanLayer = createFlightPlanLayer(flightPlan, transverseMercatorProjection);
+    // Set initial grid visibility based on state
+    gridLayer.setVisible(gridEnabled);
+    const flightPlanLayer = createFlightPlanLayer(flightPlan, mapProjection);
     flightPlanLayer.set('name', 'flightplan');
     
     // Create drawing layer
@@ -151,8 +151,8 @@ const MapComponent: React.FC<MapComponentProps> = ({
         drawingLayer
       ],
       view: new View({
-        projection: transverseMercatorProjection,
-        center: transverseMercatorCenter,
+        projection: mapProjection as any,
+        center: mapProjectionCenter,
         zoom: 2,
         maxZoom: (mapInfo?.zoom_info?.length || 1) - 1,
         minZoom: 1,

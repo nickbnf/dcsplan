@@ -1,0 +1,80 @@
+{
+    "theatre_name": "Caucasus",
+    "projection": "mercator",
+    "central_meridian": 42,
+    "origin_lat": 45.612974,
+    "origin_lon": 36.247109,
+    "ref_corner_ne_lat": 45.612974,
+    "ref_corner_ne_lon": 45.481958,
+    "bounds": {
+        "minLon": 36.247109,
+        "minLat": 36.39918,
+        "maxLon": 45.481958,
+        "maxLat": 45.610888
+    },
+    "zoom_info": [
+        {
+            "zoom": 0,
+            "nb_tiles_w": 1,
+            "nb_tiles_h": 1,
+            "width_px": 205,
+            "height_px": 151
+        },
+        {
+            "zoom": 1,
+            "nb_tiles_w": 2,
+            "nb_tiles_h": 2,
+            "width_px": 410,
+            "height_px": 302
+        },
+        {
+            "zoom": 2,
+            "nb_tiles_w": 4,
+            "nb_tiles_h": 3,
+            "width_px": 820,
+            "height_px": 605
+        },
+        {
+            "zoom": 3,
+            "nb_tiles_w": 7,
+            "nb_tiles_h": 5,
+            "width_px": 1641,
+            "height_px": 1211
+        },
+        {
+            "zoom": 4,
+            "nb_tiles_w": 13,
+            "nb_tiles_h": 10,
+            "width_px": 3282,
+            "height_px": 2422
+        },
+        {
+            "zoom": 5,
+            "nb_tiles_w": 26,
+            "nb_tiles_h": 19,
+            "width_px": 6564,
+            "height_px": 4844
+        },
+        {
+            "zoom": 6,
+            "nb_tiles_w": 52,
+            "nb_tiles_h": 38,
+            "width_px": 13129,
+            "height_px": 9688
+        },
+        {
+            "zoom": 7,
+            "nb_tiles_w": 103,
+            "nb_tiles_h": 76,
+            "width_px": 26259,
+            "height_px": 19377
+        },
+        {
+            "zoom": 8,
+            "nb_tiles_w": 206,
+            "nb_tiles_h": 152,
+            "width_px": 52518,
+            "height_px": 38754
+        }
+    ]
+}

@@ -46,6 +46,7 @@ class MapInfo(BaseModel):
     theatre: str = Field(..., description="Theatre code")
     theatre_name: str = Field(..., description="Theatre full name")
     zoom_info: List[ZoomLevelInfo]
+    projection: str = Field(..., description="Projection type")
     central_meridian: float = Field(..., description="Central meridian for Transverse Mercator projection")
     origin_lat: float = Field(..., description="Origin latitude (NW corner) for tile grid")
     origin_lon: float = Field(..., description="Origin longitude (NW corner) for tile grid")
@@ -142,26 +143,22 @@ def _get_map_info(theatre: str) -> MapInfo:
     return map_info
 
 
-def _lat_lon_to_transverse_mercator(lat: float, lon: float, central_meridian: float) -> Tuple[float, float]:
-    """
-    Convert lat/lon to Transverse Mercator coordinates.
-    
-    Args:
-        lat: Latitude in degrees
-        lon: Longitude in degrees
-        central_meridian: Central meridian for the projection
-        
-    Returns:
-        Tuple of (x, y) in meters
-    """
-    # Transverse Mercator projection with central meridian at 39°
-    transformer = Transformer.from_crs(
-        "EPSG:4326",  # WGS84
-        f"+proj=tmerc +lat_0=0 +lon_0={central_meridian} +k=1.0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs",
-        always_xy=True
-    )
-    x, y = transformer.transform(lon, lat)
-    return x, y
+def _transformer_for_projection(map_info: MapInfo) -> Transformer:
+    """Create a transformer for the projection."""
+    if map_info.projection == "transverse_mercator":
+        return Transformer.from_crs(
+            "EPSG:4326",  # WGS84
+            f"+proj=tmerc +lat_0=0 +lon_0={map_info.central_meridian} +k=1.0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs",
+            always_xy=True
+        )
+    elif map_info.projection == "mercator":
+        return Transformer.from_crs(
+            "EPSG:4326",  # WGS84
+            "EPSG:3857",  # Web Mercator
+            always_xy=True
+        )
+    else:
+        raise ValueError(f"Unsupported projection: {map_info.projection}")
 
 
 def _calculate_distance_meters(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -192,9 +189,10 @@ def _get_resolution_for_zoom(map_info: MapInfo, zoom: int) -> float:
     Returns:
         Resolution in meters per pixel
     """
-    # Calculate reference distance in Transverse Mercator
-    origin_x, origin_y = _lat_lon_to_transverse_mercator(map_info.origin_lat, map_info.origin_lon, map_info.central_meridian)
-    ref_x, ref_y = _lat_lon_to_transverse_mercator(map_info.ref_corner_ne_lat, map_info.ref_corner_ne_lon, map_info.central_meridian)
+    # Calculate reference distance in the projection
+    transformer = _transformer_for_projection(map_info)
+    origin_x, origin_y = transformer.transform(map_info.origin_lon, map_info.origin_lat)
+    ref_x, ref_y = transformer.transform(map_info.ref_corner_ne_lon, map_info.ref_corner_ne_lat)
     x_distance = math.sqrt((ref_x - origin_x)**2 + (ref_y - origin_y)**2)
     
     # Find zoom info for this zoom level
@@ -332,9 +330,10 @@ def _bbox_tm_to_tile_bounds(
         ValueError: If the zoom level is not found in map_info
     """
     min_x_tm, min_y_tm, max_x_tm, max_y_tm = bbox_tm
+    transformer = _transformer_for_projection(map_info)
     
-    # Get the tile grid origin (NW corner) in Transverse Mercator
-    origin_x, origin_y = _lat_lon_to_transverse_mercator(map_info.origin_lat, map_info.origin_lon, map_info.central_meridian)
+    # Get the tile grid origin (NW corner) in the projection
+    origin_x, origin_y = transformer.transform(map_info.origin_lon, map_info.origin_lat)
     
     # Get resolution (meters per pixel) for this zoom level
     resolution = _get_resolution_for_zoom(map_info, zoom)
@@ -468,9 +467,11 @@ def _create_bbox_around_leg(
     Returns:
         Bounding box in Transverse Mercator (min_x, min_y, max_x, max_y)
     """
-    # Convert to Transverse Mercator
-    x1, y1 = _lat_lon_to_transverse_mercator(lat1, lon1, map_info.central_meridian)
-    x2, y2 = _lat_lon_to_transverse_mercator(lat2, lon2, map_info.central_meridian)
+    transformer = _transformer_for_projection(map_info)
+
+    # Convert to the projection
+    x1, y1 = transformer.transform(lon1, lat1)
+    x2, y2 = transformer.transform(lon2, lat2)
     
     # Get resolution to convert pixels to meters
     resolution = _get_resolution_for_zoom(map_info, zoom)
@@ -576,7 +577,8 @@ def _tm_to_pixel_on_rotated_image(
         Tuple of (x, y) pixel coordinates in the rotated image
     """
     # Step 1: Convert TM coordinates to pixel coordinates in the original composite
-    grid_origin_x, grid_origin_y = _lat_lon_to_transverse_mercator(map_info.origin_lat, map_info.origin_lon, map_info.central_meridian)
+    transformer = _transformer_for_projection(map_info)
+    grid_origin_x, grid_origin_y = transformer.transform(map_info.origin_lon, map_info.origin_lat)
     resolution = _get_resolution_for_zoom(map_info, zoom)
     # Account for scaling: effective resolution = resolution / scale_factor
     effective_resolution = resolution / scale_factor
@@ -665,12 +667,17 @@ def generate_leg_map(
     logger.info(f"=== Starting leg map generation ===")
     logger.info(f"Leg: {leg_index}")
 
-    # Calculate leg distance
-    leg_distance = _calculate_distance_meters(
+    # Calculate direct leg distance
+    real_world_leg_distance = _calculate_distance_meters(
         origin.lat, origin.lon,
         destination.lat, destination.lon
     )
-    logger.info(f"Leg distance: {leg_distance:.2f} meters ({leg_distance/1852:.2f} NM)")
+    # Calculate leg distance in the projection (for Mercator compatibility)
+    transformer = _transformer_for_projection(map_info)
+    origin_x_tm, origin_y_tm = transformer.transform(origin.lon, origin.lat)
+    dest_x_tm, dest_y_tm = transformer.transform(destination.lon, destination.lat)
+    leg_distance = math.sqrt((dest_x_tm - origin_x_tm)**2 + (dest_y_tm - origin_y_tm)**2)
+    logger.info(f"Leg distance: {leg_distance:.2f} meters ({leg_distance/1852:.2f} NM) (real world: {real_world_leg_distance:.2f} meters)")
     
     # Select zoom level (just above 70% height)
     zoom, leg_height_px = _select_zoom_level(map_info, leg_distance)
@@ -702,12 +709,12 @@ def generate_leg_map(
     
     # Calculate the angle of the leg line in pixel/image coordinates
     # This is the straight part of the leg, excluding the turn.
-    # We need to use the projected coordinates (Transverse Mercator) converted to pixels
-    origin_x_tm, origin_y_tm = _lat_lon_to_transverse_mercator(straigthening_point.lat, straigthening_point.lon, map_info.central_meridian)
-    dest_x_tm, dest_y_tm = _lat_lon_to_transverse_mercator(destination.lat, destination.lon, map_info.central_meridian)
+    # We need to use the projected coordinates converted to pixels
+    origin_x_tm, origin_y_tm = transformer.transform(straigthening_point.lon, straigthening_point.lat)
+    dest_x_tm, dest_y_tm = transformer.transform(destination.lon, destination.lat)
     
     # Convert to pixel coordinates in the scaled composite
-    grid_origin_x, grid_origin_y = _lat_lon_to_transverse_mercator(map_info.origin_lat, map_info.origin_lon, map_info.central_meridian)
+    grid_origin_x, grid_origin_y = transformer.transform(map_info.origin_lon, map_info.origin_lat)
     resolution = _get_resolution_for_zoom(map_info, zoom)
     # Account for scaling: effective resolution in scaled composite
     effective_resolution = resolution / scale_factor
@@ -760,9 +767,9 @@ def generate_leg_map(
     # Create a converter function that converts lat/lon to pixel coordinates on the rotated image
     def coord_to_pixel(lat: float, lon: float) -> Tuple[float, float]:
         """Convert geographic coordinates to pixel coordinates on the rotated image."""
-        x_tm, y_tm = _lat_lon_to_transverse_mercator(lat, lon, map_info.central_meridian)
+        x_proj, y_proj = transformer.transform(lon, lat)
         return _tm_to_pixel_on_rotated_image(
-            x_tm, y_tm,
+            x_proj, y_proj,
             bbox_tm, map_info, zoom,
             rotation_angle, (center_x, center_y),
             scaled_composite_size, rotated.size,
@@ -779,7 +786,7 @@ def generate_leg_map(
     )
     
     # Find the leg center in the rotated image for cropping
-    # Calculate leg center in Transverse Mercator coordinates (reuse values calculated earlier)
+    # Calculate leg center in the projection coordinates (reuse values calculated earlier)
     leg_center_x_tm = (origin_x_tm + dest_x_tm) / 2
     leg_center_y_tm = (origin_y_tm + dest_y_tm) / 2
     

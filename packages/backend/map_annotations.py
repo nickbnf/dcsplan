@@ -136,8 +136,6 @@ def draw_leg(
         dest_x_px, dest_y_px = coord_to_pixel(leg_data.destination.lat, leg_data.destination.lon)
         center_x_px, center_y_px = coord_to_pixel(leg_data.turn_data.center.lat, leg_data.turn_data.center.lon)
         
-        logger.debug(f"Leg endpoints on image: O=({origin_x_px:.1f}, {origin_y_px:.1f}), D=({dest_x_px:.1f}, {dest_y_px:.1f}), S=({straightening_x_px:.1f}, {straightening_y_px:.1f})")
-        
         # Clamp to image bounds so line is visible even if slightly outside
         def _clamp(val, lo, hi):
             return max(lo, min(val, hi))
@@ -205,8 +203,8 @@ def draw_leg(
             )
 
         # Calculate direction vector and length
-        leg_dx = dx - ox
-        leg_dy = dy - oy
+        leg_dx = dx - sx
+        leg_dy = dy - sy
         leg_length = math.sqrt(leg_dx**2 + leg_dy**2)
         
         # Shorten the line at both ends by the circle radius
@@ -222,6 +220,7 @@ def draw_leg(
             # Draw line with blue color (#0066CC), width 3, and transparency
             line_width = 3  # Medium thickness
             draw.line([(sx, sy), (shortened_dx, shortened_dy)], fill=BLUE_COLOR_RGBA, width=line_width)
+            logger.debug(f"Drew straight leg line from ({sx:.1f}, {sy:.1f}) to ({shortened_dx:.1f}, {shortened_dy:.1f})")
         else:
             # If the leg is too short, don't draw it
             logger.debug(f"Leg too short to draw (length: {leg_length:.1f}px, need > {2 * circle_radius}px)")

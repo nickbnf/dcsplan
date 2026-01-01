@@ -81,7 +81,8 @@ export const createTileLayer = (
     source: new ImageTileSource({
       url: defaultBaseUrl,
       projection: projection,
-      tileGrid: tileGrid
+      tileGrid: tileGrid,
+      wrapX: false
     })
   });
 };

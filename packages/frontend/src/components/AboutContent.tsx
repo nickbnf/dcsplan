@@ -77,7 +77,7 @@ export const AboutContent: React.FC<AboutContentProps> = ({
           </li>
           <li>
             <strong className="font-aero-label">Turn calculation:</strong> Unlike most planners,
-            especially those designed for civilian aviation, DCSPlan accept you are flying fast and
+            especially those designed for civilian aviation, DCSPlan accepts you are flying fast and
             calculate and draw turns with the correct radius based on your speed and bank angle.
           </li>
         </ul>
@@ -114,6 +114,17 @@ export const AboutContent: React.FC<AboutContentProps> = ({
                 className="text-gray-900 hover:underline"
               >
                 dcsplan.bonnefon.org
+              </a>
+            </p>
+            <p>
+              DCSPlan is open source and available on GitHub at{' '}
+              <a
+                href="https://github.com/nickbnf/dcsplan"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-gray-900 hover:underline"
+              >
+                github.com/nickbnf/dcsplan
               </a>
             </p>
           </footer>
