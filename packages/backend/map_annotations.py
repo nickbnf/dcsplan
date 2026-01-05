@@ -111,8 +111,6 @@ def draw_leg(
     draw: ImageDraw.ImageDraw,
     leg_data: LegData,
     coord_to_pixel: Callable[[float, float], Tuple[float, float]],
-    image_width: int,
-    image_height: int
 ) -> None:
     """
     Draw a leg line between two waypoints on an image.
@@ -126,32 +124,20 @@ def draw_leg(
         leg_data: The leg data containing the course and distance
         coord_to_pixel: Function that converts geographic coordinates (lat, lon) to pixel coordinates (x, y)
                         Signature: (float, float) -> Tuple[float, float]
-        image_width: Width of the image (for clamping)
-        image_height: Height of the image (for clamping)
     """
     try:
         # Convert lat/lon coordinates to pixel coordinates using the provided converter function
-        origin_x_px, origin_y_px = coord_to_pixel(leg_data.origin.lat, leg_data.origin.lon)
-        straightening_x_px, straightening_y_px = coord_to_pixel(leg_data.straigthening_point.lat, leg_data.straigthening_point.lon)
-        dest_x_px, dest_y_px = coord_to_pixel(leg_data.destination.lat, leg_data.destination.lon)
+        ox, oy = coord_to_pixel(leg_data.origin.lat, leg_data.origin.lon)
+        sx, sy = coord_to_pixel(leg_data.straigthening_point.lat, leg_data.straigthening_point.lon)
+        dx, dy = coord_to_pixel(leg_data.destination.lat, leg_data.destination.lon)
         center_x_px, center_y_px = coord_to_pixel(leg_data.turn_data.center.lat, leg_data.turn_data.center.lon)
-        
-        # Clamp to image bounds so line is visible even if slightly outside
-        def _clamp(val, lo, hi):
-            return max(lo, min(val, hi))
-        ox = _clamp(origin_x_px, 0, image_width - 1)
-        oy = _clamp(origin_y_px, 0, image_height - 1)
-        sx = _clamp(straightening_x_px, 0, image_width - 1)
-        sy = _clamp(straightening_y_px, 0, image_height - 1)
-        dx = _clamp(dest_x_px, 0, image_width - 1)
-        dy = _clamp(dest_y_px, 0, image_height - 1)
         
         # Turnpoint circle radius in pixels
         circle_radius = 12
         
         # Draw the turning arc (only if the straightening point is outside the turnpoint circle)
         if math.sqrt((sx - ox)**2 + (sy - oy)**2) > circle_radius:
-            turn_radius_px = math.sqrt((straightening_x_px - center_x_px)**2 + (straightening_y_px - center_y_px)**2)
+            turn_radius_px = math.sqrt((sx - center_x_px)**2 + (sy - center_y_px)**2)
             
             # Calculate angles from turn center to intersection point and straightening point
             # Pillow's draw.arc uses: 0° = 3 o'clock (east), angles increase counterclockwise
@@ -166,10 +152,10 @@ def draw_leg(
             diff_backward = (angle_start - angle_end) % 360
             
             tpcircle_angle = math.degrees(math.asin(circle_radius / turn_radius_px))
-            logger.info(f"Turnpoint circle angle: {tpcircle_angle:.1f}")
+            logger.debug(f"Turnpoint circle angle: {tpcircle_angle:.1f}")
 
-            logger.info(f"Diff forward: {diff_forward:.1f}, Diff backward: {diff_backward:.1f}")
-            logger.info(f"Turn angle: {math.degrees(leg_data.turn_angle_rad):.1f}")
+            logger.debug(f"Diff forward: {diff_forward:.1f}, Diff backward: {diff_backward:.1f}")
+            logger.debug(f"Turn angle: {math.degrees(leg_data.turn_angle_rad):.1f}")
 
             if leg_data.turn_angle_rad < math.pi:
                 if diff_backward < diff_forward:
@@ -189,11 +175,11 @@ def draw_leg(
                 else:
                     angle_start += tpcircle_angle
             
-            logger.info(f"Angle start before: {angle_start}")
+            logger.debug(f"Angle start before: {angle_start}")
             angle_start = round(angle_start, 1) % 360
             angle_end = round(angle_end, 1) % 360
-            logger.info(f"Angle start before 2: {angle_start}")
-            logger.info(f"Angle start: {angle_start:.1f}, Angle end: {angle_end:.1f}")
+            logger.debug(f"Angle start before 2: {angle_start}")
+            logger.debug(f"Angle start: {angle_start:.1f}, Angle end: {angle_end:.1f}")
             draw.arc(
                 (center_x_px - turn_radius_px, center_y_px - turn_radius_px, center_x_px + turn_radius_px, center_y_px + turn_radius_px),
                 start=angle_start,
@@ -225,7 +211,7 @@ def draw_leg(
             # If the leg is too short, don't draw it
             logger.debug(f"Leg too short to draw (length: {leg_length:.1f}px, need > {2 * circle_radius}px)")
         
-        logger.debug(f"Drew leg overlay on image: O=({origin_x_px:.1f},{origin_y_px:.1f}) D=({dest_x_px:.1f},{dest_y_px:.1f}) | clamped O=({ox:.1f},{oy:.1f}) D=({dx:.1f},{dy:.1f})")
+        logger.debug(f"Drew leg overlay on image: O=({ox:.1f},{oy:.1f}) D=({dx:.1f},{dy:.1f})")
     except Exception as e:
         logger.warning(f"Failed to draw leg overlay on image: {e}")
 
@@ -596,7 +582,7 @@ def _draw_doghouse_roof(
     # Calculate the offset from baseline to center of text
     # bbox_roof[1] is the top (may be negative), bbox_roof[3] is the bottom
     text_center_offset_from_baseline = (bbox_roof[1] + bbox_roof[3]) / 2
-    text_y_roof = roof_center_y - text_center_offset_from_baseline
+    text_y_roof = roof_center_y - text_center_offset_from_baseline + 2
     draw.text((text_x_roof, text_y_roof), turnpoint_str, fill=text_color, font=font)
 
 
@@ -1018,12 +1004,12 @@ def annotate_map(
                 # Skip the focus leg so we can draw it last
                 continue
             logger.info(f"Drawing leg {i-1}")
-            draw_leg(overlay_draw, flight_plan_data.legData[i-1], coord_to_pixel, image.width, image.height)
+            draw_leg(overlay_draw, flight_plan_data.legData[i-1], coord_to_pixel)
             annotate_leg(overlay_draw, overlay, flight_plan_data.turnpointData[i-1].etaSec, flight_plan_data.legData[i-1], coord_to_pixel)
 
         # Draw the focus leg last
         logger.info(f"Drawing focus leg {focus_leg_index}")
-        draw_leg(overlay_draw, flight_plan_data.legData[focus_leg_index], coord_to_pixel, image.width, image.height)
+        draw_leg(overlay_draw, flight_plan_data.legData[focus_leg_index], coord_to_pixel)
         annotate_leg(overlay_draw, overlay, flight_plan_data.turnpointData[focus_leg_index].etaSec, flight_plan_data.legData[focus_leg_index], coord_to_pixel)
 
         # Draw all turnpoints on the overlay

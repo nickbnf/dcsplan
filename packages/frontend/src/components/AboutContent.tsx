@@ -77,8 +77,28 @@ export const AboutContent: React.FC<AboutContentProps> = ({
           </li>
           <li>
             <strong className="font-aero-label">Turn calculation:</strong> Unlike most planners,
-            especially those designed for civilian aviation, DCSPlan accepts you are flying fast and
-            calculate and draw turns with the correct radius based on your speed and bank angle.
+            especially those designed for civilian aviation, DCSPlan acknowledges you are flying fast and
+            calculates and draws turns with the correct radius based on your speed and bank angle.
+          </li>
+        </ul>
+      </div>
+
+      <Separator.Root className={separatorClassName} />
+
+      <div>
+        <h2 className="text-xl font-aero-label text-gray-900 mb-3">
+          Theatres
+        </h2>
+        <ul className="list-disc list-inside space-y-2 text-gray-700">
+          <li>
+            <strong className="font-aero-label">Syria:</strong> The map is captured directly
+            from DCS's mission editor by Karon (<a href="https://flyandwire.com/low-level-tools/" target="_blank" rel="noopener noreferrer">
+            @FlyAndWire</a>)
+          </li>
+          <li>
+            <strong className="font-aero-label">Caucasus:</strong> We use the beautiful map
+            hand crafted by Flappie (see <a href="https://forum.dcs.world/topic/209110-accurate-map-for-dcs-25-caucasus-theatre" target="_blank" rel="noopener noreferrer">
+            this thread</a> on the DCS forum)
           </li>
         </ul>
       </div>

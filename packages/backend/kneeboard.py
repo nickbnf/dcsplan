@@ -438,6 +438,8 @@ def _assemble_tiles(
             tiles_fetched += 1
     logger.info(f"Fetched and pasted {tiles_fetched} tiles, {composite.width}x{composite.height}")
     
+    # TODO: Crop to remove extra non needed data
+
     return composite
 
 
@@ -501,7 +503,10 @@ def _create_bbox_around_leg(
     # Convert diagonal to square side (worst case for rotation)
     # For a square with diagonal d: side = d / sqrt(2)
     # Add extra margin for rotation
-    side_meters = (pre_scale_diagonal_meters / math.sqrt(2)) * margin_factor
+    # side_meters = (pre_scale_diagonal_meters / math.sqrt(2)) * margin_factor
+    
+    # Not 100% sure, but I think dividing by 2 is sufficient (and result in a smaller area)
+    side_meters = pre_scale_diagonal_meters / 2
     
     half_width = side_meters
     half_height = side_meters
