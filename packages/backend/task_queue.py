@@ -149,7 +149,7 @@ class TaskQueue:
             # Generate kneeboard
             if task_state.output == "zip":
                 progress_callback("Generating all leg maps...")
-                result = self._generate_zip_with_progress(task_state.flight_plan, progress_callback)
+                result = generate_kneeboard_zip(task_state.flight_plan, progress_callback)
                 media_type = "application/zip"
             else:
                 leg_index = int(task_state.output) - 1
@@ -179,31 +179,6 @@ class TaskQueue:
                     task_state.completed_at = time.time()
                     task_state.error = error_msg
                     task_state.progress_message = f"Error: {error_msg}"
-    
-    def _generate_zip_with_progress(self, flight_plan: FlightPlan, progress_callback: Callable[[str], None]) -> bytes:
-        """Generate ZIP with progress updates."""
-        if len(flight_plan.points) < 2:
-            raise ValueError("Flight plan must have at least 2 waypoints to generate a leg map")
-        
-        # Generate all leg maps
-        flightPlanData = FlightPlanData(flight_plan)
-        total_legs = len(flightPlanData.legData)
-        leg_maps = []
-        
-        for i in range(total_legs):
-            progress_callback(f"Generating page {i+1}/{total_legs}")
-            leg_map = generate_leg_map(flight_plan, flightPlanData, i)
-            leg_maps.append(leg_map)
-        
-        progress_callback("Creating ZIP file...")
-        
-        # Create ZIP file
-        zip_data = io.BytesIO()
-        with zipfile.ZipFile(zip_data, 'w', compression=zipfile.ZIP_STORED) as zipf:
-            for i, leg_map in enumerate(leg_maps):
-                zipf.writestr(f"leg_{i+1}.png", leg_map)
-        
-        return zip_data.getvalue()
     
     def submit_task(self, flight_plan: FlightPlan, output: str, include_fuel: bool) -> str:
         """

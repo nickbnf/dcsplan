@@ -7,7 +7,7 @@ kneeboard PNG images.
 
 import pprint
 import time
-from typing import Tuple, Optional, Dict, List
+from typing import Callable, Tuple, Optional, Dict, List
 import zipfile
 from PIL import Image
 import math
@@ -84,7 +84,7 @@ def generate_kneeboard_single_png(flight_plan: FlightPlan, leg_index: int) -> by
     
     return leg_map_png
 
-def generate_kneeboard_zip(flight_plan: FlightPlan) -> bytes:
+def generate_kneeboard_zip(flight_plan: FlightPlan, progress_callback: Optional[Callable[[str], None]] = None) -> bytes:
     """
     Generate a ZIP file containing all the leg maps for the flight plan.
     
@@ -103,7 +103,9 @@ def generate_kneeboard_zip(flight_plan: FlightPlan) -> bytes:
     leg_maps = []
     for i in range(len(flightPlanData.legData)):
         logger.info(f"Processing leg {i+1}/{len(flightPlanData.legData)}")
-        
+
+        if progress_callback:
+            progress_callback(f"Generating leg {i+1}/{len(flightPlanData.legData)} map...")
         leg_map = generate_leg_map(flight_plan, flightPlanData, i)
         leg_maps.append(leg_map)
         logger.info(f"Leg {i+1}/{len(flightPlanData.legData)} completed: {len(leg_map)} bytes")
@@ -114,7 +116,9 @@ def generate_kneeboard_zip(flight_plan: FlightPlan) -> bytes:
     zip_data = io.BytesIO()
     with zipfile.ZipFile(zip_data, 'w', compression=zipfile.ZIP_STORED) as zipf:
         for i, leg_map in enumerate(leg_maps):
-            zipf.writestr(f"leg_{i+1}.png", leg_map)
+            filename = f"leg_{i+1:02d}.png"
+            logger.info(f"Adding {filename} to ZIP file")
+            zipf.writestr(filename, leg_map)
     return zip_data.getvalue()
 
 # Constants for leg map generation

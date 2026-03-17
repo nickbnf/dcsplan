@@ -112,10 +112,8 @@ const MapComponent: React.FC<MapComponentProps> = ({
       return;
     }
 
-    console.log('Map initialization starting, mapRef.current:', mapRef.current);
-    
     const regionBounds = mapInfo?.bounds;
-    const { projection: mapProjection } = createMapProjection(mapInfo?.projection, mapInfo?.central_meridian);
+    const { projection: mapProjection } = createMapProjection(mapInfo?.projection, mapInfo?.central_meridian, mapInfo?.std_parallel1, mapInfo?.std_parallel2);
     
     // Transform geographic bounds to transverse Mercator coordinates
     const mapProjectionExtent = transformBoundsToTransverseMercator(regionBounds, mapProjection);

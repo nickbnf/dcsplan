@@ -7,7 +7,7 @@ import type Projection from 'proj4/dist/lib/Proj';
 /**
  * Creates a transverse Mercator projection with the specified central meridian
  */
-export const createMapProjection = (projectionType: string, centralMeridian: number = 39) => {
+export const createMapProjection = (projectionType: string, centralMeridian: number, stdParallel1: number, stdParallel2: number) => {
   const falseEasting = 0;
   const falseNorthing = 0;
   const scaleFactor = 1.0;
@@ -15,28 +15,33 @@ export const createMapProjection = (projectionType: string, centralMeridian: num
   let projection: Projection | null = null;
 
   if (projectionType === 'transverse_mercator') {
-    // Define the projection code
-    const projectionCode = 'EPSG:123456'; // Custom code for our projection
+    const projectionCode = `custom:tmerc_${centralMeridian}`;
 
-    // Create PROJ.4 definition string for transverse Mercator
     const proj4Def = `+proj=tmerc +lat_0=0 +lon_0=${centralMeridian} +k=${scaleFactor} +x_0=${falseEasting} +y_0=${falseNorthing} +ellps=WGS84 +datum=WGS84 +units=m +no_defs`;
 
-    // Register the projection with PROJ.4
     proj4.defs(projectionCode, proj4Def);
-
-    // Register with OpenLayers
     register(proj4);
 
-    // Get the projection from OpenLayers registry
     projection = get(projectionCode) as Projection | null;
     if (!projection) {
       throw new Error(`Failed to get projection ${projectionCode}`);
     }
   } else if (projectionType === 'mercator') {
-    // Use web mercator projection
     projection = get('EPSG:3857') as Projection | null;
     if (!projection) {
       throw new Error(`Failed to get projection EPSG:3857`);
+    }
+  } else if (projectionType === 'lambert_conformal_conic') {
+    const projectionCode = `custom:lcc_${centralMeridian}_${stdParallel1}_${stdParallel2}`;
+
+    const proj4Def = `+proj=lcc +lat_0=0 +lon_0=${centralMeridian} +lat_1=${stdParallel1} +lat_2=${stdParallel2} +ellps=WGS84 +datum=WGS84 +units=m +no_defs`;
+
+    proj4.defs(projectionCode, proj4Def);
+    register(proj4);
+
+    projection = get(projectionCode) as Projection | null;
+    if (!projection) {
+      throw new Error(`Failed to get projection ${projectionCode}`);
     }
   } else {
     throw new Error(`Unsupported projection type: ${projectionType}`);

@@ -8,6 +8,8 @@ import type { Bounds } from './latLonGrid';
 
 export interface MapInfo {
   central_meridian: number;
+  std_parallel1: number;
+  std_parallel2: number;
   origin_lat: number;
   origin_lon: number;
   ref_corner_ne_lat: number;
@@ -38,8 +40,9 @@ export const createTileGrid = (
   // Calculate distance for resolution calculation
   const cornerNW = [mapInfo.origin_lon, mapInfo.origin_lat];
   const cornerNE = [mapInfo.ref_corner_ne_lon, mapInfo.ref_corner_ne_lat];
-  const cornerNWTransverseMercator = transform(cornerNW, 'EPSG:4326', projection.getCode());
-  const cornerNETransverseMercator = transform(cornerNE, 'EPSG:4326', projection.getCode());
+  const projCode = projection.getCode();
+  const cornerNWTransverseMercator = transform(cornerNW, 'EPSG:4326', projCode);
+  const cornerNETransverseMercator = transform(cornerNE, 'EPSG:4326', projCode);
   const line = new LineString([cornerNWTransverseMercator, cornerNETransverseMercator]);
   const xDistance = line.getLength();
   
