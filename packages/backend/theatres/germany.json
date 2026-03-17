@@ -1,0 +1,75 @@
+{
+  "theatre_name": "Germany",
+  "projection": "transverse_mercator",
+  "central_meridian": 21,
+  "std_parallel1": 49.33,
+  "std_parallel2": 54.66,
+  "origin_lat": 55.176,
+  "origin_lon": -0.32,
+  "ref_corner_ne_lat": 57.05,
+  "ref_corner_ne_lon": 20.417,
+  "bounds": {
+    "minLon": -0.333,
+    "minLat": 46.283,
+    "maxLon": 20.533,
+    "maxLat": 57.05
+  },
+  "zoom_info": [
+    {
+      "zoom": 0,
+      "nb_tiles_w": 1,
+      "nb_tiles_h": 1,
+      "width_px": 160,
+      "height_px": 128
+    },
+    {
+      "zoom": 1,
+      "nb_tiles_w": 2,
+      "nb_tiles_h": 1,
+      "width_px": 320,
+      "height_px": 256
+    },
+    {
+      "zoom": 2,
+      "nb_tiles_w": 3,
+      "nb_tiles_h": 2,
+      "width_px": 640,
+      "height_px": 512
+    },
+    {
+      "zoom": 3,
+      "nb_tiles_w": 5,
+      "nb_tiles_h": 4,
+      "width_px": 1280,
+      "height_px": 1024
+    },
+    {
+      "zoom": 4,
+      "nb_tiles_w": 10,
+      "nb_tiles_h": 8,
+      "width_px": 2560,
+      "height_px": 2048
+    },
+    {
+      "zoom": 5,
+      "nb_tiles_w": 20,
+      "nb_tiles_h": 16,
+      "width_px": 5120,
+      "height_px": 4096
+    },
+    {
+      "zoom": 6,
+      "nb_tiles_w": 40,
+      "nb_tiles_h": 32,
+      "width_px": 10240,
+      "height_px": 8192
+    },
+    {
+      "zoom": 7,
+      "nb_tiles_w": 80,
+      "nb_tiles_h": 64,
+      "width_px": 20480,
+      "height_px": 16384
+    }
+  ]
+}
