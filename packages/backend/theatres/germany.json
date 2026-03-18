@@ -2,6 +2,7 @@
   "theatre_name": "Germany",
   "projection": "transverse_mercator",
   "central_meridian": 21,
+  "navigation_mode": "projected",
   "std_parallel1": 49.33,
   "std_parallel2": 54.66,
   "origin_lat": 55.176,

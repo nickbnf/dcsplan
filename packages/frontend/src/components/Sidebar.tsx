@@ -12,6 +12,8 @@ interface SidebarProps {
   mouseCoordinate?: { lat: number; lon: number; raw_x: number; raw_y: number } | null;
   flightPlan: FlightPlan;
   drawingState: DrawingState;
+  projection?: any;
+  navigationMode: string;
   onUndo?: () => void;
   onRedo?: () => void;
   onFlightPlanUpdate: (flightPlan: FlightPlan) => void;
@@ -23,6 +25,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   mouseCoordinate,
   flightPlan,
   drawingState,
+  projection,
+  navigationMode,
   onUndo,
   onRedo,
   onFlightPlanUpdate,
@@ -85,9 +89,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
       />
       
       {/* Flight Plan Zone */}
-      <FlightPlanZone 
+      <FlightPlanZone
         flightPlan={flightPlan}
         onFlightPlanUpdate={onFlightPlanUpdate}
+        projection={projection}
+        navigationMode={navigationMode}
       />
 
       <ChangeTheatreDialog 

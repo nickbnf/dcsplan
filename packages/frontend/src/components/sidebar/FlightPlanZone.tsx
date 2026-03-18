@@ -9,6 +9,8 @@ import { ImportFlightPlanDialog } from './ImportFlightPlanDialog';
 interface FlightPlanZoneProps {
   flightPlan: FlightPlan;
   onFlightPlanUpdate: (flightPlan: FlightPlan) => void;
+  projection?: any;
+  navigationMode: string;
 }
 
 interface EditableFieldProps {
@@ -476,12 +478,16 @@ const RouteCard: React.FC<{
   );
 }
 
-export const FlightPlanZone: React.FC<FlightPlanZoneProps> = ({ 
-  flightPlan, 
-  onFlightPlanUpdate
+export const FlightPlanZone: React.FC<FlightPlanZoneProps> = ({
+  flightPlan,
+  onFlightPlanUpdate,
+  projection,
+  navigationMode
 }) => {
   const fligthPlanZoneContent = useMemo(() => {
-    const legData = flightPlanUtils.calculateAllLegData(flightPlan);
+    const legData = projection
+      ? flightPlanUtils.calculateAllLegData(flightPlan, projection, navigationMode)
+      : [];
     const planName = flightPlan.name
 
     return (
@@ -580,17 +586,17 @@ export const FlightPlanZone: React.FC<FlightPlanZoneProps> = ({
                 <WaypointCard
                   key={index}
                   flightPlan={flightPlan} 
-                  legData={index > 0 ? legData[index-1] : null}
+                  legData={index > 0 && legData[index-1] ? legData[index-1] : null}
                   index={index} 
                   onFlightPlanUpdate={onFlightPlanUpdate} 
                 />
 
                 {/* Route Card (indented) */}
-                {index < flightPlan.points.length - 1 && (
-                  <RouteCard 
+                {index < flightPlan.points.length - 1 && legData[index] && (
+                  <RouteCard
                     flightPlan={flightPlan}
                     legData={legData[index]}
-                    index={index} 
+                    index={index}
                     onFlightPlanUpdate={onFlightPlanUpdate}
                   />
                 )}
@@ -604,7 +610,7 @@ export const FlightPlanZone: React.FC<FlightPlanZoneProps> = ({
       <GenerateDialog flightPlan={flightPlan} />
     </div>
   );
-}, [flightPlan, onFlightPlanUpdate]);
+}, [flightPlan, onFlightPlanUpdate, projection, navigationMode]);
 
 return fligthPlanZoneContent
 };

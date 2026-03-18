@@ -7,14 +7,16 @@ This module defines the Pydantic models for flight plan validation and data stru
 import math
 import pprint
 import logging
+import os
+import json
 from pydantic import BaseModel, Field
 from typing import List, Tuple
 from pyproj import Transformer
 
-CENTRAL_MERIDIAN = 39
-
 # Set up logger (logging configuration is handled centrally in main.py)
 logger = logging.getLogger(__name__)
+
+THEATRES_DIR = os.path.join(os.path.dirname(__file__), "theatres")
 
 class FlightPlanTurnPoint(BaseModel):
     """Represents a single turn point in a flight plan."""
@@ -60,7 +62,7 @@ class Point:
     def __init__(self, lat: float, lon: float):
         self.lat = lat
         self.lon = lon
-    
+
     def __repr__(self) -> str:
         return f"Point(lat={self.lat:.6f}, lon={self.lon:.6f})"
 
@@ -71,8 +73,65 @@ class TurnData:
     def __init__(self, center_lat: float, center_lon: float):
         self.center = Point(center_lat, center_lon)
 
-def calculate_bearing(point1: Point, point2: Point) -> float:
-    """Calculate the bearing between two points in degrees (0-360)."""
+
+def _load_theatre_config(theatre: str) -> dict:
+    """Load theatre configuration from JSON file."""
+    map_info_path = os.path.join(THEATRES_DIR, f"{theatre}.json")
+    if not os.path.exists(map_info_path):
+        raise FileNotFoundError(f"Theatre config not found at {map_info_path}")
+    with open(map_info_path, 'r') as f:
+        return json.load(f)
+
+
+def _create_transformer(theatre_config: dict) -> Transformer:
+    """Create a pyproj Transformer from theatre configuration."""
+    projection = theatre_config.get("projection", "transverse_mercator")
+    central_meridian = theatre_config.get("central_meridian", 39)
+
+    if projection == "transverse_mercator":
+        return Transformer.from_crs(
+            "EPSG:4326",
+            f"+proj=tmerc +lat_0=0 +lon_0={central_meridian} +k=1.0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs",
+            always_xy=True
+        )
+    elif projection == "mercator":
+        return Transformer.from_crs(
+            "EPSG:4326",
+            "EPSG:3857",
+            always_xy=True
+        )
+    else:
+        raise ValueError(f"Unsupported projection: {projection}")
+
+
+def _project(transformer: Transformer, lat: float, lon: float) -> Tuple[float, float]:
+    """Project lat/lon to map coordinates using the given transformer."""
+    x, y = transformer.transform(lon, lat)
+    return x, y
+
+
+def _unproject(transformer: Transformer, x: float, y: float) -> Tuple[float, float]:
+    """Unproject map coordinates to lat/lon. Returns (lat, lon)."""
+    # Create inverse transformer
+    inv = Transformer.from_crs(
+        transformer.target_crs,
+        transformer.source_crs,
+        always_xy=True
+    )
+    lon, lat = inv.transform(x, y)
+    return lat, lon
+
+
+def calculate_bearing(point1: Point, point2: Point, navigation_mode: str = "geographic", transformer: Transformer = None) -> float:
+    """Calculate the bearing between two points in degrees (0-360).
+    In 'projected' mode, uses atan2 on projected coordinates.
+    In 'geographic' mode, uses the spherical forward-azimuth formula.
+    """
+    if navigation_mode == "projected" and transformer is not None:
+        x1, y1 = _project(transformer, point1.lat, point1.lon)
+        x2, y2 = _project(transformer, point2.lat, point2.lon)
+        return (math.degrees(math.atan2(x2 - x1, y2 - y1)) + 360) % 360
+
     lat1 = math.radians(point1.lat)
     lon1 = math.radians(point1.lon)
     lat2 = math.radians(point2.lat)
@@ -84,8 +143,16 @@ def calculate_bearing(point1: Point, point2: Point) -> float:
     # Normalize to 0-360 degrees
     return (bearing + 360) % 360
 
-def calculate_distance(point1: Point, point2: Point) -> float:
-    """Calculate the distance between two points."""
+def calculate_distance(point1: Point, point2: Point, navigation_mode: str = "geographic", transformer: Transformer = None) -> float:
+    """Calculate the distance between two points in meters.
+    In 'projected' mode, uses Euclidean distance in projected coordinates.
+    In 'geographic' mode, uses the Haversine formula.
+    """
+    if navigation_mode == "projected" and transformer is not None:
+        x1, y1 = _project(transformer, point1.lat, point1.lon)
+        x2, y2 = _project(transformer, point2.lat, point2.lon)
+        return math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+
     R = 6371000  # Earth's radius in meters
     lat1_rad = math.radians(point1.lat)
     lon1_rad = math.radians(point1.lon)
@@ -97,52 +164,18 @@ def calculate_distance(point1: Point, point2: Point) -> float:
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
     return R * c
 
-# TODO: Move to a separate module
-def _lat_lon_to_transverse_mercator(lat: float, lon: float) -> Tuple[float, float]:
-    """
-    Convert lat/lon to Transverse Mercator coordinates.
-    
-    Args:
-        lat: Latitude in degrees
-        lon: Longitude in degrees
-        
-    Returns:
-        Tuple of (x, y) in meters
-    """
-    # Transverse Mercator projection with central meridian at 39°
-    transformer = Transformer.from_crs(
-        "EPSG:4326",  # WGS84
-        f"+proj=tmerc +lat_0=0 +lon_0={CENTRAL_MERIDIAN} +k=1.0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs",
-        always_xy=True
-    )
-    x, y = transformer.transform(lon, lat)
-    return x, y
 
-def _transverse_mercator_to_lat_lon(x: float, y: float) -> Tuple[float, float]:
-    """
-    Convert Transverse Mercator coordinates to lat/lon.
-    
-    Args:
-        x: X coordinate in meters
-        y: Y coordinate in meters
-        
-    Returns:
-        Tuple of (lat, lon) in degrees
-    """
-    # Reverse Transverse Mercator projection with central meridian at 39°
-    transformer = Transformer.from_crs(
-        f"+proj=tmerc +lat_0=0 +lon_0={CENTRAL_MERIDIAN} +k=1.0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs",
-        "EPSG:4326",  # WGS84
-        always_xy=True
-    )
-    lon, lat = transformer.transform(x, y)
-    return lat, lon
-
-def calculate_straigthening_point(inbound_bearing: float, point1: Point, point2: Point, turn_radius_m: float) -> Tuple[TurnData, float, float]:
+def calculate_straigthening_point(inbound_bearing: float, point1: Point, point2: Point, turn_radius_m: float, transformer: Transformer = None, navigation_mode: str = "geographic") -> Tuple[TurnData, float, float]:
     """Calculate the straigthening point (point where the turn is finished)."""
-    aprox_outbound_bearing = calculate_bearing(point1, point2)
-    sx, sy = _lat_lon_to_transverse_mercator(point1.lat, point1.lon)
-    dx, dy = _lat_lon_to_transverse_mercator(point2.lat, point2.lon)
+
+    sx, sy = _project(transformer, point1.lat, point1.lon)
+    dx, dy = _project(transformer, point2.lat, point2.lon)
+
+    if navigation_mode == "projected":
+        aprox_outbound_bearing = (math.degrees(math.atan2(dx - sx, dy - sy)) + 360) % 360
+    else:
+        aprox_outbound_bearing = calculate_bearing(point1, point2)
+
     logger.info(f"Start point: {sx}, {sy}")
 
     # Calculate the turning circle
@@ -157,7 +190,7 @@ def calculate_straigthening_point(inbound_bearing: float, point1: Point, point2:
 
     cx = sx - turn_direction * math.cos(math.radians(inbound_bearing)) * turn_radius_m
     cy = sy + turn_direction * math.sin(math.radians(inbound_bearing)) * turn_radius_m
-    c_lat, c_lon = _transverse_mercator_to_lat_lon(cx, cy)
+    c_lat, c_lon = _unproject(transformer, cx, cy)
     turn_data = TurnData(c_lat, c_lon)
 
     logger.info(f"Centre of the turning circle: {cx}, {cy}")
@@ -165,21 +198,14 @@ def calculate_straigthening_point(inbound_bearing: float, point1: Point, point2:
 
     # Calculate the coefs for the equation of the radical axis line
     # Line equation: Ax + By = C
-    # According to formulas:
-    #   (x₁, y₁) = destination = (dx, dy)
-    #   (x₂, y₂) = circle center = (cx, cy)
-    #   A = x₂ - x₁, B = y₂ - y₁
     A = cx - dx
     B = cy - dy
-    # C = (x₂² + y₂² - r²) - (x₁x₂ + y₁y₂)
     C = (cx**2 + cy**2 - turn_radius_m**2) - (dx * cx + dy * cy)
-    
+
     logger.info(f"Radical axis line: A={A:.2f}, B={B:.2f}, C={C:.2f}")
-    
+
     # Handle edge case: if B = 0, the line is horizontal (y = constant)
     if abs(B) < 1e-10:
-        # Horizontal line: y = constant
-        # Circle: (x - cx)² + (y - cy)² = r²
         if abs(A) < 1e-10:
             raise ValueError("Line is degenerate (both A and B are zero)")
         x_line = C / A
@@ -187,61 +213,41 @@ def calculate_straigthening_point(inbound_bearing: float, point1: Point, point2:
         if discriminant < 0:
             raise ValueError(f"No intersection: line too far from circle (discriminant={discriminant})")
         sqrt_disc = math.sqrt(discriminant)
-        # Choose the point in the direction of travel
         sy_result = cy + turn_direction * sqrt_disc
         sx_result = x_line
         logger.info(f"Edge case: horizontal line, sx_result={sx_result:.2f}, sy_result={sy_result:.2f}")
     else:
-        # Calculate the coefs for the quadratic equation
-        # Circle: (x - cx)² + (y - cy)² = r²
-        # After substitution: ax² + bx + c = 0
-        # According to formulas (using circle center cx, cy):
         a = A**2 + B**2
         b = -2 * B**2 * cx + 2 * A * (B * cy - C)
         c = B**2 * cx**2 + (C - B * cy)**2 - turn_radius_m**2 * B**2
 
         logger.info(f"Quadratic coefficients: a={a:.2f}, b={b:.2f}, c={c:.2f}")
 
-        # Check discriminant before taking square root
         discriminant = b**2 - 4 * a * c
         logger.info(f"Discriminant: {discriminant:.2f}")
         if discriminant < 0:
             raise ValueError(f"No intersection: line does not intersect circle (discriminant={discriminant})")
-        
-        # Calculate the straigthening point (x₃, y₃)
+
         sqrt_disc = math.sqrt(discriminant)
-        
-        # Calculate both solutions for the straigthening point
+
         x1_intersect = (-b + sqrt_disc) / (2 * a)
         y1_intersect = (C - A * x1_intersect) / B
         x2_intersect = (-b - sqrt_disc) / (2 * a)
         y2_intersect = (C - A * x2_intersect) / B
-        
-        # Select the correct intersection point based on smooth transition criterion:
-        # The tangent vector of the arc at the intersection point must be parallel
-        # to the direction vector from the intersection point to the destination.
-        # This ensures C1 continuity (smooth transition, no sharp angle).
-        
-        # For intersection point 1:
-        # Radius vector from circle center to intersection point
+
+        # Select the correct intersection point based on smooth transition criterion
         radius1_x = x1_intersect - cx
         radius1_y = y1_intersect - cy
-        # Tangent vector (perpendicular to radius)
-        # For counter-clockwise (turn_direction=1): rotate radius 90° CCW: (-y, x)
-        # For clockwise (turn_direction=-1): rotate radius 90° CW: (y, -x)
         if turn_direction == 1:
             tangent1_x = -radius1_y
             tangent1_y = radius1_x
         else:
             tangent1_x = radius1_y
             tangent1_y = -radius1_x
-        # Direction vector from intersection point to destination
         dir1_x = dx - x1_intersect
         dir1_y = dy - y1_intersect
-        # Dot product: positive means tangent and direction are aligned
         dot1 = tangent1_x * dir1_x + tangent1_y * dir1_y
-        
-        # For intersection point 2:
+
         radius2_x = x2_intersect - cx
         radius2_y = y2_intersect - cy
         if turn_direction == 1:
@@ -253,11 +259,10 @@ def calculate_straigthening_point(inbound_bearing: float, point1: Point, point2:
         dir2_x = dx - x2_intersect
         dir2_y = dy - y2_intersect
         dot2 = tangent2_x * dir2_x + tangent2_y * dir2_y
-        
+
         logger.debug(f"Intersection point 1: ({x1_intersect:.2f}, {y1_intersect:.2f}), dot product: {dot1:.2f}")
         logger.debug(f"Intersection point 2: ({x2_intersect:.2f}, {y2_intersect:.2f}), dot product: {dot2:.2f}")
-        
-        # Select the point where tangent and direction are aligned (positive dot product)
+
         if dot1 > 0:
             sx_result = x1_intersect
             sy_result = y1_intersect
@@ -267,8 +272,6 @@ def calculate_straigthening_point(inbound_bearing: float, point1: Point, point2:
             sy_result = y2_intersect
             logger.debug(f"Selected intersection point 2 (dot={dot2:.2f})")
         else:
-            # Fallback: if neither has positive dot product, choose the one with larger dot product
-            # (less negative, closer to alignment)
             if dot1 > dot2:
                 sx_result = x1_intersect
                 sy_result = y1_intersect
@@ -278,7 +281,7 @@ def calculate_straigthening_point(inbound_bearing: float, point1: Point, point2:
                 sy_result = y2_intersect
                 logger.warning(f"Both dot products negative, selected point 2 (dot={dot2:.2f} vs {dot1:.2f})")
 
-    s_lat, s_lon = _transverse_mercator_to_lat_lon(sx_result, sy_result)
+    s_lat, s_lon = _unproject(transformer, sx_result, sy_result)
     return turn_data, s_lat, s_lon
 
 class LegData:
@@ -298,9 +301,9 @@ class LegData:
     turn_angle_rad: float       # Turn angle in radians (along the arc)
     turn_direction: int         # Turn direction: 1 for counter-clockwise, -1 for clockwise
 
-    def __init__(self, flightPlan: FlightPlan, indexWptFrom: int, indexWptTo: int, inbound_bearing: float):
+    def __init__(self, flightPlan: FlightPlan, indexWptFrom: int, indexWptTo: int, inbound_bearing: float, transformer: Transformer = None, navigation_mode: str = "geographic"):
         """Initialize a new leg from indexWptFrom to indexWptTo."""
-        
+
         logger.info(f"== Calculating leg from {indexWptFrom} to {indexWptTo} ==")
         self.origin = Point(flightPlan.points[indexWptFrom].lat, flightPlan.points[indexWptFrom].lon)
         self.destination = Point(flightPlan.points[indexWptTo].lat, flightPlan.points[indexWptTo].lon)
@@ -316,42 +319,34 @@ class LegData:
             turn_data = TurnData(0, 0)
             turn_direction = 1  # Default, not used for first leg
         else:
-            turn_data, s_lat, s_lon = calculate_straigthening_point(inbound_bearing, flightPlan.points[indexWptFrom], flightPlan.points[indexWptTo], turn_radius_m)
+            turn_data, s_lat, s_lon = calculate_straigthening_point(inbound_bearing, flightPlan.points[indexWptFrom], flightPlan.points[indexWptTo], turn_radius_m, transformer, navigation_mode)
         self.straigthening_point = Point(s_lat, s_lon)
         logger.info(f"Straigthening point: {self.straigthening_point}")
         self.turn_data = turn_data
 
         # Calculate the course and distance of the leg.
-        bearing = calculate_bearing(self.straigthening_point, self.destination)
+        bearing = calculate_bearing(self.straigthening_point, self.destination, navigation_mode, transformer)
         self.course = (bearing + flightPlan.declination + 360) % 360
         logger.info(f"Course: {self.course}")
 
         # Calculate the distance of the leg.
-        # Calculate the actual turn angle along the arc from entry to exit point.
-        # This correctly handles turns >180° by calculating the arc distance along the circle.
         if indexWptFrom == 0:
-            # First leg has no turn
             turn_angle_rd = 0
             arc_distance = 0
         else:
-            # Get circle center and calculate angles from center to entry and exit points
-            cx, cy = _lat_lon_to_transverse_mercator(turn_data.center.lat, turn_data.center.lon)
-            sx_entry, sy_entry = _lat_lon_to_transverse_mercator(self.origin.lat, self.origin.lon)
-            sx_exit, sy_exit = _lat_lon_to_transverse_mercator(self.straigthening_point.lat, self.straigthening_point.lon)
-            
-            # Calculate angles from circle center to entry and exit points
+            cx, cy = _project(transformer, turn_data.center.lat, turn_data.center.lon)
+            sx_entry, sy_entry = _project(transformer, self.origin.lat, self.origin.lon)
+            sx_exit, sy_exit = _project(transformer, self.straigthening_point.lat, self.straigthening_point.lon)
+
             angle_entry = math.atan2(sy_entry - cy, sx_entry - cx)
             angle_exit = math.atan2(sy_exit - cy, sx_exit - cx)
-            
-            # Determine turn direction (same logic as in calculate_straigthening_point)
-            aprox_outbound_bearing = calculate_bearing(self.origin, self.destination)
+
+            aprox_outbound_bearing = calculate_bearing(self.origin, self.destination, navigation_mode, transformer)
             if (aprox_outbound_bearing - inbound_bearing + 360) % 360 > 180:
                 turn_direction = 1  # Counter-clockwise
             else:
                 turn_direction = -1  # Clockwise
-            
-            # Calculate angular distance along the arc in the turn direction
-            # Normalize angles to [0, 2π) for easier calculation
+
             def normalize_angle(angle):
                 """Normalize angle to [0, 2π)"""
                 while angle < 0:
@@ -359,34 +354,29 @@ class LegData:
                 while angle >= 2 * math.pi:
                     angle -= 2 * math.pi
                 return angle
-            
+
             angle_entry_norm = normalize_angle(angle_entry)
             angle_exit_norm = normalize_angle(angle_exit)
-            
+
             if turn_direction == 1:  # Counter-clockwise: increasing angle direction
-                # Calculate forward distance
                 if angle_exit_norm >= angle_entry_norm:
                     turn_angle_rd = angle_exit_norm - angle_entry_norm
                 else:
-                    # Wrap around: go forward past 2π
                     turn_angle_rd = (2 * math.pi - angle_entry_norm) + angle_exit_norm
             else:  # Clockwise: decreasing angle direction
-                # Calculate backward distance
                 if angle_exit_norm <= angle_entry_norm:
                     turn_angle_rd = angle_entry_norm - angle_exit_norm
                 else:
-                    # Wrap around: go backward past 0
                     turn_angle_rd = angle_entry_norm + (2 * math.pi - angle_exit_norm)
-            
+
         logger.info(f"Turn angle: {math.degrees(turn_angle_rd):.2f} degrees")
-        # Store turn angle and direction for use in drawing
         self.turn_angle_rad = turn_angle_rd
-        self.turn_direction = turn_direction if indexWptFrom > 0 else 1  # Default to 1 for first leg (no turn)
-        
+        self.turn_direction = turn_direction if indexWptFrom > 0 else 1
+
         arc_distance = turn_radius_m * turn_angle_rd
-        distance = arc_distance + calculate_distance(self.straigthening_point, self.destination)
+        distance = arc_distance + calculate_distance(self.straigthening_point, self.destination, navigation_mode, transformer)
         self.distanceNm = distance / 1852
-        
+
         # Calculate wind.
         windAngleRad = ((((flightPlan.points[indexWptTo].windDir + 180) % 360) - self.course + 360) % 360) * (math.pi / 180)
         tailComponent = flightPlan.points[indexWptTo].windSpeed * math.cos(windAngleRad)
@@ -425,6 +415,11 @@ class FlightPlanData:
         self.totalFuel = 0
         self.fuelReserve = 0
 
+        # Load theatre config and create transformer
+        theatre_config = _load_theatre_config(flightPlan.theatre)
+        transformer = _create_transformer(theatre_config)
+        navigation_mode = theatre_config.get("navigation_mode", "geographic")
+
         for i in range(len(flightPlan.points)):
             if i == 0:
                 tp = TurnpointData()
@@ -434,7 +429,7 @@ class FlightPlanData:
             else:
                 if i < len(flightPlan.points):
                     inbound_bearing = self.legData[-1].heading if len(self.legData) > 0 else 0
-                    leg = LegData(flightPlan, i-1, i, inbound_bearing)
+                    leg = LegData(flightPlan, i-1, i, inbound_bearing, transformer, navigation_mode)
                     self.legData.append(leg)
                 tp = TurnpointData()
                 tp.etaSec = self.turnpointData[-1].etaSec + leg.eteSec

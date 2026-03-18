@@ -28,6 +28,7 @@ interface MapComponentProps {
   onStopDragging: () => void;
   addPoint: (coordinate: [number, number]) => void;
   updatePreviewLine: (coordinate: [number, number]) => void;
+  onMapNavInfoChange?: (info: { projection: any; navigationMode: string }) => void;
 }
 
 const MapComponent: React.FC<MapComponentProps> = ({ 
@@ -37,8 +38,9 @@ const MapComponent: React.FC<MapComponentProps> = ({
   drawingState, 
   onStartDragging,
   onStopDragging,
-  addPoint, 
+  addPoint,
   updatePreviewLine,
+  onMapNavInfoChange,
 }) => {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<Map | null>(null);
@@ -51,6 +53,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
   const [mapInfo, setMapInfo] = useState<MapInfo | null>(null);
   const [gridEnabled, setGridEnabled] = useState(false);
   const [measureEnabled, setMeasureEnabled] = useState(false);
+  const navigationModeRef = useRef<string>("geographic");
 
   // Safe function to fetch and parse tile info JSON
   const fetchMapInfo = async (): Promise<MapInfo | null> => {
@@ -114,7 +117,14 @@ const MapComponent: React.FC<MapComponentProps> = ({
 
     const regionBounds = mapInfo?.bounds;
     const { projection: mapProjection } = createMapProjection(mapInfo?.projection, mapInfo?.central_meridian, mapInfo?.std_parallel1, mapInfo?.std_parallel2);
-    
+    const navigationMode = mapInfo?.navigation_mode || "geographic";
+    navigationModeRef.current = navigationMode;
+
+    // Notify parent of projection and navigation mode
+    if (onMapNavInfoChange) {
+      onMapNavInfoChange({ projection: mapProjection, navigationMode });
+    }
+
     // Transform geographic bounds to transverse Mercator coordinates
     const mapProjectionExtent = transformBoundsToTransverseMercator(regionBounds, mapProjection);
     
@@ -131,7 +141,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
     gridLayerRef.current = gridLayer;
     // Set initial grid visibility based on state
     gridLayer.setVisible(gridEnabled);
-    const flightPlanLayer = createFlightPlanLayer(flightPlan, mapProjection);
+    const flightPlanLayer = createFlightPlanLayer(flightPlan, mapProjection, navigationMode);
     flightPlanLayer.set('name', 'flightplan');
     
     // Create drawing layer
@@ -327,7 +337,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
     }
 
     // Create a new flight plan layer with current data
-    const newFlightPlanLayer = createFlightPlanLayer(flightPlan, mapInstanceRef.current.getView().getProjection(), drawingState.draggedWaypointIndex ?? undefined);
+    const newFlightPlanLayer = createFlightPlanLayer(flightPlan, mapInstanceRef.current.getView().getProjection(), navigationModeRef.current, drawingState.draggedWaypointIndex ?? undefined);
     newFlightPlanLayer.set('name', 'flightplan');
     
     // Add the new layer to the map

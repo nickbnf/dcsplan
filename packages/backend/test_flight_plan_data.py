@@ -389,7 +389,7 @@ class TestFlightPlanDataEdgeCases:
         # Distance should be approximately 60 nautical miles (1° latitude = ~60 NM)
         # Allow some tolerance for floating point precision
         assert abs(leg.distanceNm - 60.0) < 0.1
-        
+
         # ETA should be calculated correctly (30 minutes = 1800 seconds)
         # With TAS 120 kts and no wind, ground speed should be ~120 kts
         # 60 NM / 120 kts = 0.5 hours = 1800 seconds

@@ -1,28 +1,40 @@
 import type { FlightPlan, LegData } from "../types/flightPlan";
 import { transform } from "ol/proj";
-import { get } from "ol/proj";
-import proj4 from "proj4";
-import { register } from "ol/proj/proj4";
 
-const CENTRAL_MERIDIAN = 39;
+/**
+ * Project a lat/lon point to the map projection coordinates.
+ */
+function projectPoint(lat: number, lon: number, projection: any): [number, number] {
+  return transform([lon, lat], 'EPSG:4326', projection.getCode()) as [number, number];
+}
 
-// Ensure the transverse Mercator projection is registered
-const TRANSVERSE_MERCATOR_CODE = 'EPSG:123456';
-if (!proj4.defs(TRANSVERSE_MERCATOR_CODE)) {
-  const proj4Def = `+proj=tmerc +lat_0=0 +lon_0=${CENTRAL_MERIDIAN} +k=1.0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs`;
-  proj4.defs(TRANSVERSE_MERCATOR_CODE, proj4Def);
-  register(proj4);
+/**
+ * Unproject map coordinates back to lat/lon.
+ */
+function unprojectPoint(x: number, y: number, projection: any): [number, number] {
+  const [lon, lat] = transform([x, y], projection.getCode(), 'EPSG:4326');
+  return [lat, lon];
 }
 
 /**
  * Calculate the bearing between two points in degrees (0-360).
+ * In "projected" mode, uses atan2 on projected coordinates.
+ * In "geographic" mode, uses the spherical forward-azimuth formula.
  */
 export function calculateBearing(
   lat1: number,
   lon1: number,
   lat2: number,
-  lon2: number
+  lon2: number,
+  navigationMode: string = "geographic",
+  projection?: any
 ): number {
+  if (navigationMode === "projected" && projection) {
+    const [x1, y1] = projectPoint(lat1, lon1, projection);
+    const [x2, y2] = projectPoint(lat2, lon2, projection);
+    return (Math.atan2(x2 - x1, y2 - y1) * 180 / Math.PI + 360) % 360;
+  }
+
   const lat1Rad = (lat1 * Math.PI) / 180;
   const lon1Rad = (lon1 * Math.PI) / 180;
   const lat2Rad = (lat2 * Math.PI) / 180;
@@ -38,9 +50,24 @@ export function calculateBearing(
 }
 
 /**
- * Calculate the distance between two points in meters using the Haversine formula.
+ * Calculate the distance between two points in meters.
+ * In "projected" mode, uses Euclidean distance in projected coordinates.
+ * In "geographic" mode, uses the Haversine formula.
  */
-export function calculateDistanceM(lat1: number, lon1: number, lat2: number, lon2: number): number {
+export function calculateDistanceM(
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number,
+  navigationMode: string = "geographic",
+  projection?: any
+): number {
+  if (navigationMode === "projected" && projection) {
+    const [x1, y1] = projectPoint(lat1, lon1, projection);
+    const [x2, y2] = projectPoint(lat2, lon2, projection);
+    return Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
+  }
+
   const R = 6371000; // Earth's radius in meters
   const lat1Rad = (lat1 * Math.PI) / 180;
   const lon1Rad = (lon1 * Math.PI) / 180;
@@ -64,28 +91,8 @@ export function calculateTurnRadius(tas: number, bankAngleDeg: number): number {
 }
 
 /**
- * Convert lat/lon to Transverse Mercator coordinates.
- */
-function latLonToTransverseMercator(lat: number, lon: number): [number, number] {
-  const projection = get(TRANSVERSE_MERCATOR_CODE);
-  if (!projection) {
-    throw new Error(`Failed to get projection ${TRANSVERSE_MERCATOR_CODE}`);
-  }
-  const [x, y] = transform([lon, lat], "EPSG:4326", TRANSVERSE_MERCATOR_CODE);
-  return [x, y];
-}
-
-/**
- * Convert Transverse Mercator coordinates to lat/lon.
- */
-function transverseMercatorToLatLon(x: number, y: number): [number, number] {
-  const [lon, lat] = transform([x, y], TRANSVERSE_MERCATOR_CODE, "EPSG:4326");
-  return [lat, lon];
-}
-
-/**
  * Calculate the straightening point (point where the turn is finished).
- * Returns: [turnCenterLat, turnCenterLon, straighteningLat, straighteningLon]
+ * Returns: [turnCenterLat, turnCenterLon, straighteningLat, straighteningLon, turnDirection]
  */
 export function calculateStraighteningPoint(
   inboundBearing: number,
@@ -93,16 +100,19 @@ export function calculateStraighteningPoint(
   point1Lon: number,
   point2Lat: number,
   point2Lon: number,
-  turnRadiusM: number
+  turnRadiusM: number,
+  projection: any,
+  navigationMode: string = "geographic"
 ): [number, number, number, number, number] {
-  const aproxOutboundBearing = calculateBearing(
-    point1Lat,
-    point1Lon,
-    point2Lat,
-    point2Lon
-  );
-  const [sx, sy] = latLonToTransverseMercator(point1Lat, point1Lon);
-  const [dx, dy] = latLonToTransverseMercator(point2Lat, point2Lon);
+  let aproxOutboundBearing: number;
+  const [sx, sy] = projectPoint(point1Lat, point1Lon, projection);
+  const [dx, dy] = projectPoint(point2Lat, point2Lon, projection);
+
+  if (navigationMode === "projected") {
+    aproxOutboundBearing = (Math.atan2(dx - sx, dy - sy) * 180 / Math.PI + 360) % 360;
+  } else {
+    aproxOutboundBearing = calculateBearing(point1Lat, point1Lon, point2Lat, point2Lon);
+  }
 
   // Calculate the turning circle
   const turnDirection =
@@ -112,7 +122,7 @@ export function calculateStraighteningPoint(
     sx - turnDirection * Math.cos((inboundBearing * Math.PI) / 180) * turnRadiusM;
   const cy =
     sy + turnDirection * Math.sin((inboundBearing * Math.PI) / 180) * turnRadiusM;
-  const [cLat, cLon] = transverseMercatorToLatLon(cx, cy);
+  const [cLat, cLon] = unprojectPoint(cx, cy, projection);
 
   // Calculate the coefs for the equation of the radical axis line
   // Line equation: Ax + By = C
@@ -218,7 +228,7 @@ export function calculateStraighteningPoint(
     }
   }
 
-  const [sLat, sLon] = transverseMercatorToLatLon(sxResult, syResult);
+  const [sLat, sLon] = unprojectPoint(sxResult, syResult, projection);
   return [cLat, cLon, sLat, sLon, turnDirection];
 }
 
@@ -234,21 +244,21 @@ function angleDiff(startAngleRad: number, endAngleRad: number, turnDirection: nu
     }
 
     // Calculate angular difference, taking the shorter path
-    let angleDiff = endAngleRad - startAngleRad;
-    if (turnDirection === 1 && angleDiff < 0) {
-        angleDiff += 2 * Math.PI;
+    let angleDiffVal = endAngleRad - startAngleRad;
+    if (turnDirection === 1 && angleDiffVal < 0) {
+        angleDiffVal += 2 * Math.PI;
     }
-    if (turnDirection === -1 && angleDiff > 0) {
-        angleDiff -= 2 * Math.PI;
+    if (turnDirection === -1 && angleDiffVal > 0) {
+        angleDiffVal -= 2 * Math.PI;
     }
 
-    return angleDiff;
+    return angleDiffVal;
 }
 
 /**
  * Generate points along an arc from a start point to an end point around a center point.
  * Returns array of [lat, lon] coordinates.
- * All points are specified in lat/lon, and angles are calculated in transverse Mercator coordinates.
+ * All points are specified in lat/lon, and angles are calculated in projected coordinates.
  */
 export function generateArcPoints(
   centerLat: number,
@@ -259,36 +269,30 @@ export function generateArcPoints(
   endLat: number,
   endLon: number,
   turnDirection: number,
+  projection: any,
   numPoints: number = 6
 ): Array<[number, number]> {
-  const [cx, cy] = latLonToTransverseMercator(centerLat, centerLon);
-  const [sx, sy] = latLonToTransverseMercator(startLat, startLon);
-  const [ex, ey] = latLonToTransverseMercator(endLat, endLon);
+  const [cx, cy] = projectPoint(centerLat, centerLon, projection);
+  const [sx, sy] = projectPoint(startLat, startLon, projection);
+  const [ex, ey] = projectPoint(endLat, endLon, projection);
   const points: Array<[number, number]> = [];
 
-  // Calculate angles in transverse Mercator coordinates (math angles: 0° = east, counter-clockwise)
+  // Calculate angles in projected coordinates (math angles: 0° = east, counter-clockwise)
   // atan2(y, x) gives: 0° = east, 90° = north, -90° = south, 180° = west
   let startAngleRad = Math.atan2(sy - cy, sx - cx);
   let endAngleRad = Math.atan2(ey - cy, ex - cx);
-  
+
   const angleDiffRad = angleDiff(startAngleRad, endAngleRad, turnDirection);
   for (let i = 0; i <= numPoints; i++) {
     const t = i / numPoints;
     const angle = startAngleRad + angleDiffRad * t;
 
-    // Calculate point on circle in transverse Mercator
-    var px: number;
-    var py: number;
-    if (turnDirection === 1) {
-      px = cx + radiusM * Math.cos(angle);
-      py = cy + radiusM * Math.sin(angle);
-    } else {
-      px = cx + radiusM * Math.cos(angle);
-      py = cy + radiusM * Math.sin(angle);
-    }
+    // Calculate point on circle in projected coordinates
+    const px = cx + radiusM * Math.cos(angle);
+    const py = cy + radiusM * Math.sin(angle);
 
     // Convert back to lat/lon
-    const [lat, lon] = transverseMercatorToLatLon(px, py);
+    const [lat, lon] = unprojectPoint(px, py, projection);
     points.push([lat, lon]);
   }
 
@@ -341,7 +345,9 @@ export interface LegDrawDataResult {
  * Calculate all leg data sequentially (each leg depends on previous leg's heading).
  */
 export function calculateAllLegDrawData(
-  flightPlan: FlightPlan
+  flightPlan: FlightPlan,
+  projection: any,
+  navigationMode: string
 ): LegDrawDataResult[] {
   const results: LegDrawDataResult[] = [];
 
@@ -381,7 +387,9 @@ export function calculateAllLegDrawData(
             origin.lon,
             destination.lat,
             destination.lon,
-            turnRadiusM
+            turnRadiusM,
+            projection,
+            navigationMode
           );
       } catch (error) {
         // Fallback: use origin as straightening point if calculation fails
@@ -402,7 +410,9 @@ export function calculateAllLegDrawData(
       straighteningLat,
       straighteningLon,
       destination.lat,
-      destination.lon
+      destination.lon,
+      navigationMode,
+      projection
     );
 
     // Calculate course (magnetic) for the straight portion of the leg
@@ -440,14 +450,16 @@ export function calculateAllLegDrawData(
 }
 
 export function calculateAllLegData(
-  flightPlan: FlightPlan
+  flightPlan: FlightPlan,
+  projection: any,
+  navigationMode: string
 ): LegData[] {
   const results: LegData[] = [];
 
   if (flightPlan.points.length < 2) {
     return results;
   }
-  
+
   let inboundBearing = 0; // First leg has no inbound bearing
   let previousEta = flightPlan.initTimeSec;
   let previousEfr = flightPlan.initFob;
@@ -478,7 +490,9 @@ export function calculateAllLegData(
             origin.lon,
             destination.lat,
             destination.lon,
-            turnRadiusM
+            turnRadiusM,
+            projection,
+            navigationMode
           );
       } catch (error) {
         // Fallback: use origin as straightening point if calculation fails
@@ -497,7 +511,9 @@ export function calculateAllLegData(
       straighteningLat,
       straighteningLon,
       destination.lat,
-      destination.lon
+      destination.lon,
+      navigationMode,
+      projection
     );
 
     // Calculate turn angle
@@ -518,7 +534,11 @@ export function calculateAllLegData(
 
     // Calculate distance and time to the destination
     const turnDistanceM = Math.abs(turnRadiusM * turnAngleRad);
-    const straightDistanceM = calculateDistanceM(straighteningLat, straighteningLon, destination.lat, destination.lon);
+    const straightDistanceM = calculateDistanceM(
+      straighteningLat, straighteningLon,
+      destination.lat, destination.lon,
+      navigationMode, projection
+    );
     const distanceNm = (turnDistanceM + straightDistanceM) / 1852;
     const eteSec = Math.round(distanceNm / (destination.tas + destination.windSpeed * Math.cos(Math.PI / 2 - (destination.windDir - course) * Math.PI / 180)) * 3600);
     results.push({

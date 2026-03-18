@@ -2,6 +2,7 @@
     "theatre_name": "Syria",
     "projection": "transverse_mercator",
     "central_meridian": 39,
+    "navigation_mode": "geographic",
     "origin_lat": 37.50575,
     "origin_lon": 29.9266,
     "ref_corner_ne_lat": 37.8254,

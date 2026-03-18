@@ -11,7 +11,7 @@ const App: React.FC = () => {
         <title>DCSPlan - Tactical Flight Planner for DCS</title>
         <meta
           name="description"
-          content="Plan missions for DCS flight simulators. Generate detailed kneeboards for navigation, especially for aircraft with limited onboard systems."
+          content="Plan missions for the DCS flight simulator. Generate detailed kneeboards for navigation, especially for aircraft with limited onboard systems."
         />
       </Helmet>
       <Routes>

@@ -13,6 +13,7 @@ const PlannerApp: React.FC = () => {
     let plan = flightPlanUtils.newFlightPlan();
     return plan;
   });
+  const [mapNavInfo, setMapNavInfo] = useState<{ projection: any; navigationMode: string } | null>(null);
   const { drawingState, startDrawing, stopDrawing, startDragging, stopDragging, addPoint, updatePreviewLine } = useDrawing();
 
   const handleCoordinateChange = (coord: { lat: number; lon: number; raw_x: number; raw_y: number } | null) => {
@@ -28,10 +29,12 @@ const PlannerApp: React.FC = () => {
     <>
       <AboutModal />
       <div className="flex h-screen w-screen overflow-hidden">
-        <Sidebar 
+        <Sidebar
           mouseCoordinate={mouseCoordinate}
           flightPlan={flightPlan}
           drawingState={drawingState}
+          projection={mapNavInfo?.projection}
+          navigationMode={mapNavInfo?.navigationMode || "geographic"}
           onUndo={() => {
             console.log('Undo requested');
             // Implement undo functionality
@@ -45,7 +48,7 @@ const PlannerApp: React.FC = () => {
           onStopDrawing={stopDrawing}
         />
         <div className="flex-grow h-full overflow-hidden">
-          <MapComponent 
+          <MapComponent
             onCoordinateChange={handleCoordinateChange}
             flightPlan={flightPlan}
             onFlightPlanUpdate={handleFlightPlanUpdate}
@@ -54,6 +57,7 @@ const PlannerApp: React.FC = () => {
             onStopDragging={stopDragging}
             addPoint={addPoint}
             updatePreviewLine={updatePreviewLine}
+            onMapNavInfoChange={setMapNavInfo}
           />
         </div>
       </div>

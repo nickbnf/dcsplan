@@ -2,6 +2,7 @@
     "theatre_name": "Caucasus",
     "projection": "mercator",
     "central_meridian": 42,
+    "navigation_mode": "geographic",
     "origin_lat": 45.612974,
     "origin_lon": 36.247109,
     "ref_corner_ne_lat": 45.612974,
