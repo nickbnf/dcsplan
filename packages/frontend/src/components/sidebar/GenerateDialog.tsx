@@ -19,6 +19,7 @@ interface TaskStatus {
 export const GenerateDialog: React.FC<GenerateDialogProps> = ({ flightPlan }) => {
   const [output, setOutput] = useState<'zip' | number>('zip');
   const [includeFuelCalculations, setIncludeFuelCalculations] = useState(false);
+  const [includeCoordinates, setIncludeCoordinates] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isOpen, setIsOpen] = useState(false);
@@ -179,8 +180,11 @@ export const GenerateDialog: React.FC<GenerateDialogProps> = ({ flightPlan }) =>
       // Build query parameters
       const params = new URLSearchParams();
       params.append('output', output.toString());
-      if (includeFuelCalculations) {
-        params.append('include_fuel', 'true');
+      const detailsList: string[] = [];
+      if (includeFuelCalculations) detailsList.push('efr');
+      if (includeCoordinates) detailsList.push('coords');
+      if (detailsList.length > 0) {
+        params.append('details', detailsList.join(','));
       }
 
       const response = await fetch(`${getApiUrl('kneeboard')}?${params.toString()}`, {
@@ -278,6 +282,15 @@ export const GenerateDialog: React.FC<GenerateDialogProps> = ({ flightPlan }) =>
                   className="mr-2"
                 />
                 <span className="text-sm">Include fuel calculations</span>
+              </label>
+              <label className="flex items-center">
+                <input
+                  type="checkbox"
+                  checked={includeCoordinates}
+                  onChange={(e) => setIncludeCoordinates(e.target.checked)}
+                  className="mr-2"
+                />
+                <span className="text-sm">Include coordinates</span>
               </label>
             </div>
           </div>

@@ -50,3 +50,23 @@ pnpm dev
 
 - The front-end (Vite) will be available at `http://localhost:5173` (or the next available port).
 - The back-end (FastAPI) will be available at `http://localhost:8000`.
+
+### Running the Tests
+
+To run all tests (back-end and front-end):
+
+```bash
+pnpm test
+```
+
+To run back-end tests only:
+
+```bash
+pnpm test:backend
+```
+
+To run front-end tests only:
+
+```bash
+pnpm test:frontend
+```

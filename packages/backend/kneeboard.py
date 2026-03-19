@@ -17,7 +17,7 @@ import json
 import logging
 from pydantic import BaseModel, Field
 from pyproj import Transformer
-from map_annotations import annotate_map
+from map_annotations import annotate_map, draw_info_box
 from flight_plan import FlightPlan, FlightPlanData
 
 # Set up logger (logging configuration is handled centrally in main.py)
@@ -58,7 +58,7 @@ class MapInfo(BaseModel):
     tileSize: Optional[int] = 256
 
 
-def generate_kneeboard_single_png(flight_plan: FlightPlan, leg_index: int) -> bytes:
+def generate_kneeboard_single_png(flight_plan: FlightPlan, leg_index: int, details: set[str] = None) -> bytes:
     """
     Generate a 768x1024 PNG image with the map for the given leg of the flight plan.
     
@@ -79,12 +79,12 @@ def generate_kneeboard_single_png(flight_plan: FlightPlan, leg_index: int) -> by
     # Generate map for the given leg
     flightPlanData = FlightPlanData(flight_plan)
     logger.info(f"Flight plan data: {pprint.pformat(flightPlanData)}")
-    leg_map_png = generate_leg_map(flight_plan, flightPlanData, leg_index)
+    leg_map_png = generate_leg_map(flight_plan, flightPlanData, leg_index, details or set())
     logger.info(f"Kneeboard PNG generated: {len(leg_map_png)} bytes")
-    
+
     return leg_map_png
 
-def generate_kneeboard_zip(flight_plan: FlightPlan, progress_callback: Optional[Callable[[str], None]] = None) -> bytes:
+def generate_kneeboard_zip(flight_plan: FlightPlan, progress_callback: Optional[Callable[[str], None]] = None, details: set[str] = None) -> bytes:
     """
     Generate a ZIP file containing all the leg maps for the flight plan.
     
@@ -106,7 +106,7 @@ def generate_kneeboard_zip(flight_plan: FlightPlan, progress_callback: Optional[
 
         if progress_callback:
             progress_callback(f"Generating leg {i+1}/{len(flightPlanData.legData)} map...")
-        leg_map = generate_leg_map(flight_plan, flightPlanData, i)
+        leg_map = generate_leg_map(flight_plan, flightPlanData, i, details or set())
         leg_maps.append(leg_map)
         logger.info(f"Leg {i+1}/{len(flightPlanData.legData)} completed: {len(leg_map)} bytes")
 
@@ -651,7 +651,8 @@ def _tm_to_pixel_on_rotated_image(
 def generate_leg_map(
     flight_plan: FlightPlan,
     flight_plan_data: FlightPlanData,
-    leg_index: int
+    leg_index: int,
+    details: set[str] = None
 ) -> bytes:
     """
     Generate a map image for a single leg of the flight plan.
@@ -859,6 +860,17 @@ def generate_leg_map(
             logger.info(f"Resizing cropped image from {cropped.width}x{cropped.height} to {MAP_WIDTH}x{MAP_HEIGHT}")
             cropped = cropped.resize((MAP_WIDTH, MAP_HEIGHT), Image.Resampling.LANCZOS)
     
+    # Draw the info box on the final cropped image (fixed position, not geo-referenced)
+    if details:
+        from PIL import ImageDraw
+        if cropped.mode != 'RGBA':
+            cropped = cropped.convert('RGBA')
+        info_overlay = Image.new('RGBA', cropped.size, (0, 0, 0, 0))
+        info_draw = ImageDraw.Draw(info_overlay)
+        draw_info_box(info_draw, flight_plan, flight_plan_data, leg_index, details, cropped.width, cropped.height)
+        cropped = Image.alpha_composite(cropped, info_overlay)
+        cropped = cropped.convert('RGB')
+
     # Save cropped image as PNG
     img_byte_arr = io.BytesIO()
     cropped.save(img_byte_arr, format='PNG')

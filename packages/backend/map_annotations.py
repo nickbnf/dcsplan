@@ -17,8 +17,11 @@ logger = logging.getLogger(__name__)
 
 # Frontend color: #0066CC = RGB(0, 102, 204)
 # Using alpha ~200 (78% opacity)
-BLUE_COLOR_RGBA = (0, 102, 204, 200)
+OUTLINE_COLOR_RGBA = (0, 102, 204, 200) # Blue with a bit of transparency
+TEXT_COLOR_RGBA = (0, 102, 204, 255)    # Solid blue
 RED_COLOR_RGBA = (204, 0, 0, 200)
+
+BACKGROUND_OPACITY = 0.5  # Opacity for annotation backgrounds
 
 FONTS_DIR = os.path.join(os.path.dirname(__file__), "config", "fonts")
 
@@ -98,7 +101,7 @@ def draw_turnpoint(
         radius_outer = 12
         draw.ellipse(
             (x - radius_outer, y - radius_outer, x + radius_outer, y + radius_outer),
-            outline=BLUE_COLOR_RGBA,
+            outline=OUTLINE_COLOR_RGBA,
             width=3
         )
         
@@ -184,7 +187,7 @@ def draw_leg(
                 (center_x_px - turn_radius_px, center_y_px - turn_radius_px, center_x_px + turn_radius_px, center_y_px + turn_radius_px),
                 start=angle_start,
                 end=angle_end,
-                fill=BLUE_COLOR_RGBA,
+                fill=OUTLINE_COLOR_RGBA,
                 width=3
             )
 
@@ -205,7 +208,7 @@ def draw_leg(
             
             # Draw line with blue color (#0066CC), width 3, and transparency
             line_width = 3  # Medium thickness
-            draw.line([(sx, sy), (shortened_dx, shortened_dy)], fill=BLUE_COLOR_RGBA, width=line_width)
+            draw.line([(sx, sy), (shortened_dx, shortened_dy)], fill=OUTLINE_COLOR_RGBA, width=line_width)
             logger.debug(f"Drew straight leg line from ({sx:.1f}, {sy:.1f}) to ({shortened_dx:.1f}, {shortened_dy:.1f})")
         else:
             # If the leg is too short, don't draw it
@@ -269,7 +272,7 @@ def annotate_leg(
             perp_dx = -dy / leg_length_px * 5
             perp_dy = dx / leg_length_px * 5
             
-            draw.line([(x - perp_dx, y - perp_dy), (x + perp_dx, y + perp_dy)], fill=BLUE_COLOR_RGBA, width=3)
+            draw.line([(x - perp_dx, y - perp_dy), (x + perp_dx, y + perp_dy)], fill=OUTLINE_COLOR_RGBA, width=3)
             
             distance_from_origin_px = math.sqrt((x - origin_x_px)**2 + (y - origin_y_px)**2)
             distance_from_dest_px = math.sqrt((x - dest_x_px)**2 + (y - dest_y_px)**2)
@@ -307,10 +310,11 @@ def annotate_leg(
                 
                 # Draw text centered in temp image
                 # Account for bbox offsets to properly center the text
+                MARGIN_PX = 2
                 temp_text_x = (temp_size - text_width) / 2 - text_bbox[0]
                 temp_text_y = (temp_size - text_height) / 2 - text_bbox[1]
-                text_color = (0, 102, 204, 255)  # Solid blue for text
-                temp_draw.text((temp_text_x, temp_text_y), label_txt, fill=text_color, font=SMALL_FONT)
+                temp_draw.rectangle((temp_text_x - MARGIN_PX, temp_text_y, temp_text_x + text_width + MARGIN_PX, temp_text_y + text_height + MARGIN_PX*3), fill=(255, 255, 255, int(255 * BACKGROUND_OPACITY)))
+                temp_draw.text((temp_text_x, temp_text_y), label_txt, fill=TEXT_COLOR_RGBA, font=SMALL_FONT)
                 
                 # Rotate the temporary image
                 rotated_temp = temp_image.rotate(
@@ -381,9 +385,6 @@ def annotate_turnpoint(
         # The turnpoint marker has radius 12, so offset by ~20 pixels
         offset_x = 20
         
-        # Text color - using blue to match the turnpoint marker
-        text_color = (0, 102, 204, 255)  # Solid blue for text
-        
         # Draw turnpoint number on the left (bigger font)
         turnpoint_number = str(index + 1)  # 1-based for display
         text_x_left = x + offset_x
@@ -416,32 +417,22 @@ def annotate_turnpoint(
         bbox_name_actual = draw.textbbox((text_x_right, text_y_right_name), turnpoint_name, font=MEDIUM_FONT)
         bbox_eta_actual = draw.textbbox((text_x_right, text_y_right_eta), eta_str, font=MEDIUM_FONT)
         
-        # Find the overall bounding box for name and ETA
-        annotation_left = min(bbox_name_actual[0], bbox_eta_actual[0])
-        annotation_right = max(bbox_name_actual[2], bbox_eta_actual[2])
-        annotation_top = min(bbox_name_actual[1], bbox_eta_actual[1])
-        annotation_bottom = max(bbox_name_actual[3], bbox_eta_actual[3])
-        
-        # Add padding (similar to doghouse fill_overhang)
-        annotation_padding = 4
-        foundation_left = annotation_left - annotation_padding
-        foundation_right = annotation_right + annotation_padding
-        foundation_top = annotation_top - annotation_padding
-        foundation_bottom = annotation_bottom + annotation_padding
-        
-        # Draw transparent white foundation (same as doghouse)
-        fill_color = (255, 255, 255, int(255 * 0.3))  # 30% opacity white
-        draw.rectangle(
-            [(foundation_left, foundation_top), (foundation_right, foundation_bottom)],
-            fill=fill_color
+        # Draw transparent white foundation behind name and ETA
+        pad = 4
+        foundation = (
+            min(bbox_name_actual[0], bbox_eta_actual[0]) - pad,
+            min(bbox_name_actual[1], bbox_eta_actual[1]) - pad,
+            max(bbox_name_actual[2], bbox_eta_actual[2]) + pad,
+            max(bbox_name_actual[3], bbox_eta_actual[3]) + pad,
         )
+        draw.rectangle(foundation, fill=(255, 255, 255, int(255 * BACKGROUND_OPACITY)))
         
         # Draw number (left, bigger font)
-        draw.text((text_x_left, text_y_left), turnpoint_number, fill=text_color, font=LARGE_FONT)
+        draw.text((text_x_left, text_y_left), turnpoint_number, fill=TEXT_COLOR_RGBA, font=LARGE_FONT)
         
         # Draw name and ETA (right, stacked, smaller font)
-        draw.text((text_x_right, text_y_right_name), turnpoint_name, fill=text_color, font=MEDIUM_FONT)
-        draw.text((text_x_right, text_y_right_eta), eta_str, fill=text_color, font=MEDIUM_FONT)
+        draw.text((text_x_right, text_y_right_name), turnpoint_name, fill=TEXT_COLOR_RGBA, font=MEDIUM_FONT)
+        draw.text((text_x_right, text_y_right_eta), eta_str, fill=TEXT_COLOR_RGBA, font=MEDIUM_FONT)
         
         logger.debug(f"Annotated turnpoint {index + 1} at ({x_px:.1f}, {y_px:.1f}) with ETA {eta_str}")
     except Exception as e:
@@ -736,11 +727,8 @@ def draw_doghouse(
         doghouse_top_x = doghouse_center_x - box_width / 2
         doghouse_top_y = doghouse_center_y - total_height / 2
         
-        # Text color - using blue to match other annotations
-        text_color = (0, 102, 204, 255)  # Solid blue for text
-        outline_color = BLUE_COLOR_RGBA
         # Transparent white fill at 30% opacity
-        fill_color = (255, 255, 255, int(255 * 0.3))  # 30% opacity white
+        fill_color = (255, 255, 255, int(255 * BACKGROUND_OPACITY))
         fill_overhang = 4  # Pixels to extend fill beyond outline
         
         # Calculate boundaries for the entire doghouse
@@ -763,7 +751,7 @@ def draw_doghouse(
         turnpoint_number = str(destination_turnpoint_index + 1)  # 1-based for display
         _draw_doghouse_roof(
             draw, roof_left_x, roof_right_x, roof_top_y, roof_bottom_y,
-            roof_height, turnpoint_number, LARGE_FONT, text_color, outline_color, line_width
+            roof_height, turnpoint_number, LARGE_FONT, TEXT_COLOR_RGBA, OUTLINE_COLOR_RGBA, line_width
         )
         
         # Format leg data
@@ -793,7 +781,7 @@ def draw_doghouse(
         # Draw boxes
         _draw_doghouse_boxes(
             draw, doghouse_top_x, box_start_y, box_width, box_height,
-            box_values, LARGE_FONT, text_color, outline_color, line_width
+            box_values, LARGE_FONT, TEXT_COLOR_RGBA, OUTLINE_COLOR_RGBA, line_width
         )
         
         logger.debug(f"Drew doghouse for leg at ({ref_x:.1f}, {ref_y:.1f})")
@@ -900,11 +888,8 @@ def draw_mini_doghouse(
         temp_box_start_y = temp_roof_bottom_y
         temp_box_bottom_y = temp_box_start_y + num_boxes * box_height
         
-        # Text color - using blue to match other annotations
-        text_color = (0, 102, 204, 255)  # Solid blue for text
-        outline_color = BLUE_COLOR_RGBA
         # Transparent white fill at 30% opacity
-        fill_color = (255, 255, 255, int(255 * 0.3))  # 30% opacity white
+        fill_color = (255, 255, 255, int(255 * BACKGROUND_OPACITY))
         fill_overhang = 3  # Smaller overhang for mini version
         
         # Draw unified background fill on temp image
@@ -917,7 +902,7 @@ def draw_mini_doghouse(
         turnpoint_number = str(destination_turnpoint_index + 1)  # 1-based for display
         _draw_doghouse_roof(
             temp_draw, temp_roof_left_x, temp_roof_right_x, temp_roof_top_y, temp_roof_bottom_y,
-            roof_height, turnpoint_number, MEDIUM_FONT, text_color, outline_color, line_width
+            roof_height, turnpoint_number, MEDIUM_FONT, TEXT_COLOR_RGBA, OUTLINE_COLOR_RGBA, line_width
         )
         
         # Format heading from leg data
@@ -933,7 +918,7 @@ def draw_mini_doghouse(
         # Draw boxes on temp image
         _draw_doghouse_boxes(
             temp_draw, temp_box_left_x, temp_box_start_y, box_width, box_height,
-            box_values, MEDIUM_FONT, text_color, outline_color, line_width
+            box_values, MEDIUM_FONT, TEXT_COLOR_RGBA, OUTLINE_COLOR_RGBA, line_width
         )
         
         # Rotate the temporary image around its center
@@ -966,6 +951,104 @@ def draw_mini_doghouse(
         logger.debug(f"Drew mini-doghouse for leg at ({ref_x:.1f}, {ref_y:.1f}) with rotation {rotation_angle:.1f}° (leg angle: {leg_angle_deg:.1f}°)")
     except Exception as e:
         logger.warning(f"Failed to draw mini-doghouse: {e}")
+
+
+def _format_coord_ddm(deg: float, pos_char: str, neg_char: str) -> str:
+    """Format a coordinate in degrees/decimal minutes (e.g. N34°12.55')."""
+    hemisphere = pos_char if deg >= 0 else neg_char
+    deg = abs(deg)
+    d = int(deg)
+    m = (deg - d) * 60
+    return f"{hemisphere}{d:02d}\u00b0{m:05.2f}'"
+
+
+def draw_info_box(
+    draw: ImageDraw.ImageDraw,
+    flight_plan: FlightPlan,
+    flight_plan_data: FlightPlanData,
+    focus_leg_index: int,
+    details: set[str],
+    image_width: int,
+    image_height: int
+) -> None:
+    """
+    Draw an info box at the bottom-left of the kneeboard page.
+
+    Shows destination waypoint details (name, coordinates, EFR) depending on
+    which detail keys are requested.
+    """
+    dest_index = focus_leg_index + 1
+    dest_point = flight_plan.points[dest_index]
+    dest_name = dest_point.name if dest_point.name else f"WP{dest_index + 1}"
+
+    # Build rows: header + requested details
+    header_text = f"{dest_index + 1}. {dest_name}"
+    rows = []
+    if "coords" in details:
+        rows.append(_format_coord_ddm(dest_point.lat, "N", "S"))
+        rows.append(_format_coord_ddm(dest_point.lon, "E", "W"))
+    if "efr" in details:
+        efr = flight_plan_data.turnpointData[dest_index].efr
+        rows.append(f"EFR: {efr:.0f}")
+
+    if not rows:
+        return
+
+    # Measure text to determine box width
+    font = SMALL_FONT
+    all_texts = [header_text] + rows
+    max_text_width = 0
+    for text in all_texts:
+        bbox = draw.textbbox((0, 0), text, font=font)
+        max_text_width = max(max_text_width, bbox[2] - bbox[0])
+
+    padding = 10
+    box_width = max_text_width + padding * 2
+    box_height = 30
+    header_height = 34
+    line_width = 2
+
+    total_height = header_height + len(rows) * box_height
+    margin = 10
+
+    # Position at bottom-left
+    box_left = margin
+    box_top = image_height - margin - total_height
+
+    # Draw background
+    fill_color = (255, 255, 255, int(255 * BACKGROUND_OPACITY))
+    overhang = 4
+    draw.rectangle(
+        (box_left - overhang, box_top - overhang,
+         box_left + box_width + overhang, box_top + total_height + overhang),
+        fill=fill_color
+    )
+
+    # Draw header row (destination name)
+    header_bbox = draw.textbbox((0, 0), header_text, font=font)
+    header_text_w = header_bbox[2] - header_bbox[0]
+    header_x = box_left + (box_width - header_text_w) / 2 - header_bbox[0]
+    header_text_h = header_bbox[3] - header_bbox[1]
+    header_y = box_top + (header_height - header_text_h) / 2 - header_bbox[1]
+    draw.text((header_x, header_y), header_text, fill=TEXT_COLOR_RGBA, font=font)
+
+    # Draw separator line below header
+    sep_y = box_top + header_height
+    draw.line([(box_left, sep_y), (box_left + box_width, sep_y)], fill=OUTLINE_COLOR_RGBA, width=line_width)
+
+    # Draw detail rows
+    _draw_doghouse_boxes(
+        draw, box_left, sep_y, box_width, box_height,
+        rows, font, TEXT_COLOR_RGBA, OUTLINE_COLOR_RGBA, line_width
+    )
+
+    # Draw outer border
+    draw.rectangle(
+        (box_left, box_top, box_left + box_width, box_top + total_height),
+        outline=OUTLINE_COLOR_RGBA, width=line_width
+    )
+
+    logger.debug(f"Drew info box at ({box_left}, {box_top})")
 
 
 def annotate_map(

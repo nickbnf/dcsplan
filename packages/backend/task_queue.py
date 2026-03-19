@@ -36,7 +36,7 @@ class TaskState:
     status: TaskStatus
     flight_plan: FlightPlan
     output: str  # "zip" or leg number
-    include_fuel: bool
+    details: set[str]
     created_at: float
     started_at: Optional[float] = None
     completed_at: Optional[float] = None
@@ -136,7 +136,7 @@ class TaskQueue:
             task_state.progress_message = "Starting generation..."
             task_state.queue_position = None
         
-        logger.info(f"Processing task {task_id}: output={task_state.output}, include_fuel={task_state.include_fuel}")
+        logger.info(f"Processing task {task_id}: output={task_state.output}, details={task_state.details}")
         
         try:
             # Create progress callback
@@ -149,12 +149,12 @@ class TaskQueue:
             # Generate kneeboard
             if task_state.output == "zip":
                 progress_callback("Generating all leg maps...")
-                result = generate_kneeboard_zip(task_state.flight_plan, progress_callback)
+                result = generate_kneeboard_zip(task_state.flight_plan, progress_callback, task_state.details)
                 media_type = "application/zip"
             else:
                 leg_index = int(task_state.output) - 1
                 progress_callback(f"Generating leg {task_state.output} map...")
-                result = generate_kneeboard_single_png(task_state.flight_plan, leg_index)
+                result = generate_kneeboard_single_png(task_state.flight_plan, leg_index, task_state.details)
                 media_type = "image/png"
             
             # Update task state with result
@@ -180,15 +180,15 @@ class TaskQueue:
                     task_state.error = error_msg
                     task_state.progress_message = f"Error: {error_msg}"
     
-    def submit_task(self, flight_plan: FlightPlan, output: str, include_fuel: bool) -> str:
+    def submit_task(self, flight_plan: FlightPlan, output: str, details: set[str]) -> str:
         """
         Submit a new task to the queue.
-        
+
         Args:
             flight_plan: The flight plan to generate
             output: Output type ("zip" or leg number)
-            include_fuel: Whether to include fuel calculations
-        
+            details: Set of extra detail keys to display (e.g. {"coords", "efr"})
+
         Returns:
             Task ID
         """
@@ -198,7 +198,7 @@ class TaskQueue:
             status=TaskStatus.QUEUED,
             flight_plan=flight_plan,
             output=output,
-            include_fuel=include_fuel,
+            details=details,
             created_at=time.time(),
             progress_message="In queue"
         )

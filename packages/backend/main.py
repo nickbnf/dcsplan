@@ -47,12 +47,13 @@ BLANK_TILE_PATH = os.path.join(os.path.dirname(__file__), "config", "blank.png")
 async def generate_kneeboard(
     flight_plan: FlightPlan,
     output: str = Query(default="zip", description="Output type: 'zip' or leg number"),
-    include_fuel: bool = Query(default=False, description="Include fuel calculations")
+    details: str = Query(default="", description="Comma-separated list of extra details to show (e.g. 'coords,efr')")
 ):
     """Submit a kneeboard generation task and return task ID."""
     logger.info(f"=== /kneeboard endpoint called ===")
     logger.info(f"Flight plan has {len(flight_plan.points)} waypoint(s)")
-    logger.info(f"Output: {output}, Include fuel: {include_fuel}")
+    details_set = {d.strip() for d in details.split(",") if d.strip()} if details else set()
+    logger.info(f"Output: {output}, Details: {details_set}")
     
     # Validate that we have at least 2 points
     if len(flight_plan.points) < 2:
@@ -74,7 +75,7 @@ async def generate_kneeboard(
     
     # Submit task to queue
     task_queue = get_task_queue()
-    task_id = task_queue.submit_task(flight_plan, output, include_fuel)
+    task_id = task_queue.submit_task(flight_plan, output, details_set)
     
     logger.info(f"Task {task_id} submitted to queue")
     return {"task_id": task_id}
