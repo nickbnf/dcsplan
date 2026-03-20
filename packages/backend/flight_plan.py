@@ -28,6 +28,9 @@ class FlightPlanTurnPoint(BaseModel):
     windSpeed: float = Field(..., ge=0, description="Wind speed")
     windDir: float = Field(..., ge=0, le=360, description="Wind direction (0-360)")
     name: str | None = Field(default=None, description="Name of the turnpoint")
+    waypointType: str | None = Field(default=None, description="Waypoint type: normal, push, ip, tgt")
+    exitTimeSec: int | None = Field(default=None, ge=0, le=86399, description="Push only: exit time")
+    hack: bool | None = Field(default=None, description="Push only: HACK enabled")
 
 
 class FlightPlan(BaseModel):
@@ -46,13 +49,23 @@ class ImportFlightPlanRequest(BaseModel):
     version: str
     flightPlan: FlightPlan
 
+def get_effective_exit_time(exit_time_sec: int | None, eta: int) -> int:
+    return max(exit_time_sec if exit_time_sec is not None else eta, eta)
+
+
 class TurnpointData:
     """Represent a turnpoint with all the data to display."""
     etaSec: int
     efr: float
+    hackEtaSec: int | None
+    exitTimeSec: int | None  # Push only: effective exit time
+
+    def __init__(self):
+        self.hackEtaSec = None
+        self.exitTimeSec = None
 
     def __repr__(self) -> str:
-        return f"TurnpointData(etaSec={self.etaSec}, efr={self.efr})"
+        return f"TurnpointData(etaSec={self.etaSec}, efr={self.efr}, hackEtaSec={self.hackEtaSec})"
 
 class Point:
     """Represent a point in latitude and longitude."""
@@ -420,6 +433,10 @@ class FlightPlanData:
         transformer = _create_transformer(theatre_config)
         navigation_mode = theatre_config.get("navigation_mode", "geographic")
 
+        hackOffsetSec: int | None = None
+        previousEta = flightPlan.initTimeSec
+        previousEfr = flightPlan.initFob
+
         for i in range(len(flightPlan.points)):
             if i == 0:
                 tp = TurnpointData()
@@ -432,8 +449,33 @@ class FlightPlanData:
                     leg = LegData(flightPlan, i-1, i, inbound_bearing, transformer, navigation_mode)
                     self.legData.append(leg)
                 tp = TurnpointData()
-                tp.etaSec = self.turnpointData[-1].etaSec + leg.eteSec
-                tp.efr = self.turnpointData[-1].efr - leg.legFuel
+                arrivalEta = previousEta + leg.eteSec
+                arrivalEfr = previousEfr - leg.legFuel
+                tp.etaSec = arrivalEta
+                tp.efr = arrivalEfr
+
+                # If destination is a Push point, account for wait time fuel burn
+                dest_point = flightPlan.points[i]
+                if dest_point.waypointType == 'push':
+                    effectiveExitTime = get_effective_exit_time(dest_point.exitTimeSec, arrivalEta)
+                    waitTimeSec = effectiveExitTime - arrivalEta
+                    waitFuel = waitTimeSec * dest_point.fuelFlow / 3600
+                    leg.legFuel += waitFuel
+                    tp.efr = arrivalEfr - waitFuel
+                    tp.exitTimeSec = effectiveExitTime
+                    previousEta = effectiveExitTime
+                    # HACK ETA reset
+                    if dest_point.hack:
+                        hackOffsetSec = effectiveExitTime
+                else:
+                    previousEta = arrivalEta
+
+                previousEfr = tp.efr
+
+                # Set hackEtaSec for waypoints after a hack push point
+                if hackOffsetSec is not None:
+                    tp.hackEtaSec = tp.etaSec - hackOffsetSec
+
                 self.turnpointData.append(tp)
 
     def __repr__(self) -> str:

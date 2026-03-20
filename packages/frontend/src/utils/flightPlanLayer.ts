@@ -2,7 +2,7 @@ import VectorSource from "ol/source/Vector";
 import type { FlightPlan } from "../types/flightPlan";
 import VectorLayer from "ol/layer/Vector";
 import { Point, LineString } from "ol/geom";
-import { Stroke, Style, Circle, Fill, Text } from "ol/style";
+import { Stroke, Style, Circle, Fill, Text, RegularShape } from "ol/style";
 import Feature from "ol/Feature";
 import { transform } from "ol/proj";
 import { calculateAllLegDrawData, generateArcPoints } from "./legCalculations";
@@ -20,7 +20,8 @@ export const createFlightPlanLayer = (flightPlan: FlightPlan, projection: any, n
                 geometry: new Point([x, y]),
                 type: 'turnpoint',
                 waypointIndex: index,
-                waypointName: point.name || `WP${index + 1}`
+                waypointName: point.name || `WP${index + 1}`,
+                waypointType: point.waypointType || 'normal'
             });
             source.addFeature(feature);
         }
@@ -96,41 +97,87 @@ export const createFlightPlanLayer = (flightPlan: FlightPlan, projection: any, n
             if (featureType === 'turnpoint') {
                 const waypointIndex = feature.get('waypointIndex');
                 const waypointName = feature.get('waypointName') || `WP${waypointIndex !== undefined ? waypointIndex + 1 : ''}`;
+                const wpType = feature.get('waypointType') || 'normal';
                 const turnpointNumber = (waypointIndex !== undefined ? waypointIndex + 1 : '').toString();
                 const labelText = `${turnpointNumber}. ${waypointName}`;
-                
-                return [
-                    // Outer circle
-                    new Style({
+
+                const styles = [];
+
+                // Shape depends on waypoint type
+                if (wpType === 'ip') {
+                    // Square
+                    styles.push(new Style({
+                        image: new RegularShape({
+                            points: 4,
+                            radius: 14,
+                            angle: Math.PI / 4,
+                            stroke: new Stroke({ color: '#0066CC', width: 2 })
+                        })
+                    }));
+                } else if (wpType === 'tgt') {
+                    // Triangle
+                    styles.push(new Style({
+                        image: new RegularShape({
+                            points: 3,
+                            radius: 14,
+                            stroke: new Stroke({ color: '#0066CC', width: 2 })
+                        })
+                    }));
+                } else {
+                    // Normal and Push: circle
+                    styles.push(new Style({
                         image: new Circle({
                             radius: 12,
                             stroke: new Stroke({ color: '#0066CC', width: 2 })
                         })
-                    }),
-                    // Center dot
-                    new Style({
-                        image: new Circle({
-                            radius: 1,
-                            fill: new Fill({ color: '#0066CC' })
-                        })
-                    }),
-                    // Turnpoint number and name label
-                    new Style({
-                        text: new Text({
-                            text: labelText,
-                            offsetX: 20, // Position to the right of the turnpoint
-                            offsetY: 0,
-                            textAlign: 'left', // Left-align the text
-                            textBaseline: 'middle', // Vertically center the text
-                            fill: new Fill({ color: '#0066CC' }),
-                            stroke: new Stroke({ 
-                                color: '#ffffff', 
-                                width: 3 
-                            }),
-                            font: 'bold 14px sans-serif'
-                        })
+                    }));
+                }
+
+                // Center dot (all types)
+                styles.push(new Style({
+                    image: new Circle({
+                        radius: 1,
+                        fill: new Fill({ color: '#0066CC' })
                     })
-                ];
+                }));
+
+                // Turnpoint number and name label
+                styles.push(new Style({
+                    text: new Text({
+                        text: labelText,
+                        offsetX: 20,
+                        offsetY: 0,
+                        textAlign: 'left',
+                        textBaseline: 'middle',
+                        fill: new Fill({ color: '#0066CC' }),
+                        stroke: new Stroke({
+                            color: '#ffffff',
+                            width: 3
+                        }),
+                        font: 'bold 14px sans-serif'
+                    })
+                }));
+
+                // Push: additional "PUSH" label below the symbol
+                if (wpType === 'push') {
+                    styles.push(new Style({
+                        text: new Text({
+                            text: 'PUSH',
+                            offsetX: 0,
+                            offsetY: 24,
+                            textAlign: 'center',
+                            textBaseline: 'top',
+                            fill: new Fill({ color: '#0066CC' }),
+                            stroke: new Stroke({
+                                color: '#ffffff',
+                                width: 3
+                            }),
+                            font: 'bold 12px sans-serif'
+                        })
+                    }));
+                }
+
+                return styles;
             } else if (featureType === 'flightline') {
                 // Draw the arc+line geometry as-is (no shortening)
                 return new Style({

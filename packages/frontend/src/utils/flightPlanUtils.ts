@@ -1,4 +1,8 @@
 import type { FlightPlan, FlightPlanPointChange, LegData, VersionedFlightPlan } from "../types/flightPlan";
+
+/** Returns the effective exit time for a Push waypoint, clamped to be >= ETA. */
+export const getEffectiveExitTime = (exitTimeSec: number | undefined, eta: number): number =>
+  Math.max(exitTimeSec ?? eta, eta);
 import { FLIGHT_PLAN_VERSION } from "../types/flightPlan";
 import { calculateAllLegData } from "./legCalculations";
 
@@ -31,16 +35,20 @@ export const flightPlanUtils = {
     },
     moveTurnPoint: (flightPlan: FlightPlan, index: number, lat: number, lon: number): FlightPlan => {
         const newPoints = [...flightPlan.points];
-        newPoints[index] = { lat, lon, tas: newPoints[index].tas, alt: newPoints[index].alt,
-            fuelFlow: newPoints[index].fuelFlow, windSpeed: newPoints[index].windSpeed, windDir: newPoints[index].windDir,
-            name: newPoints[index].name };
+        newPoints[index] = { ...newPoints[index], lat, lon };
 
         return { ...flightPlan, points: newPoints };
     },
     updateTurnPoint: (flightPlan: FlightPlan, index: number, pointChange: FlightPlanPointChange): FlightPlan => {
         const newPoints = [...flightPlan.points];
         newPoints[index] = { ...newPoints[index], ...pointChange };
-        
+
+        // Clear Push-specific fields when changing type away from Push
+        if (pointChange.waypointType !== undefined && pointChange.waypointType !== 'push') {
+            delete newPoints[index].exitTimeSec;
+            delete newPoints[index].hack;
+        }
+
         return { ...flightPlan, points: newPoints };
     },
     deleteTurnPoint: (flightPlan: FlightPlan, index: number): FlightPlan => {

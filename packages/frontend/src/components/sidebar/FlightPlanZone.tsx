@@ -1,7 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import * as Separator from '@radix-ui/react-separator';
-import type { FlightPlan, LegData } from '../../types/flightPlan';
-import { flightPlanUtils } from '../../utils/flightPlanUtils';
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
+import type { FlightPlan, LegData, WaypointType } from '../../types/flightPlan';
+import { flightPlanUtils, getEffectiveExitTime } from '../../utils/flightPlanUtils';
 import { GenerateDialog } from './GenerateDialog';
 import { DeleteWaypointDialog } from './DeleteWaypointDialog';
 import { ImportFlightPlanDialog } from './ImportFlightPlanDialog';
@@ -277,19 +278,93 @@ const displaySecondsInMinutes = (totalSeconds: number) => {
   return minutes+"+"+seconds
 }
 
+const WAYPOINT_TYPE_LABELS: Record<WaypointType, string> = {
+  normal: 'Normal',
+  push: 'PUSH',
+  ip: 'IP',
+  tgt: 'TGT',
+};
+
+const WAYPOINT_TYPES: WaypointType[] = ['normal', 'push', 'ip', 'tgt'];
+
+const WaypointTypeSelector: React.FC<{
+  currentType: WaypointType;
+  onTypeChange: (type: WaypointType) => void;
+}> = ({ currentType, onTypeChange }) => {
+  const isNormal = currentType === 'normal';
+
+  return (
+    <DropdownMenu.Root>
+      <DropdownMenu.Trigger asChild>
+        <button
+          className={`inline-flex items-center cursor-pointer rounded px-1 py-0.5 transition-colors outline-none ${
+            isNormal
+              ? 'opacity-0 group-hover:opacity-100 hover:bg-gray-100 text-gray-400'
+              : 'text-avio-primary font-semibold hover:bg-gray-100'
+          }`}
+        >
+          <span className="text-sm font-aero-label">
+            {isNormal ? '' : WAYPOINT_TYPE_LABELS[currentType]}
+          </span>
+          <span className="text-[10px] ml-0.5 text-gray-400">
+            ▼
+          </span>
+        </button>
+      </DropdownMenu.Trigger>
+
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content
+          className="bg-white rounded-md p-1 shadow-lg border border-gray-200 min-w-[120px] z-50 animate-in fade-in zoom-in duration-75"
+          sideOffset={5}
+          align="start"
+        >
+          {WAYPOINT_TYPES.map((type) => (
+            <DropdownMenu.Item
+              key={type}
+              className={`
+                flex items-center px-3 py-2 text-sm font-aero-label outline-none cursor-pointer rounded transition-colors
+                ${type === currentType
+                  ? 'bg-avio-panel text-avio-primary font-semibold'
+                  : 'text-gray-700 hover:bg-gray-100'}
+              `}
+              onSelect={() => onTypeChange(type)}
+            >
+              {WAYPOINT_TYPE_LABELS[type]}
+            </DropdownMenu.Item>
+          ))}
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
+  );
+};
+
+const formatHackEta = (hackEtaSec: number): string => {
+  const minutes = Math.trunc(hackEtaSec / 60);
+  const seconds = hackEtaSec % 60;
+  return `+${minutes.toString().padStart(2, '0')}:${seconds.toFixed(0).padStart(2, '0')}`;
+};
+
 const WaypointCard: React.FC<{ flightPlan: FlightPlan, legData: LegData | null, index: number, onFlightPlanUpdate: (flightPlan: FlightPlan) => void }> = ({ flightPlan, legData, index, onFlightPlanUpdate }) => {
   const waypoint = flightPlan.points[index];
-  
+  const waypointType = waypoint.waypointType || 'normal';
+
   // Calculate ETA and EFR for this waypoint
   let eta = flightPlan.initTimeSec;
   let efr = flightPlan.initFob;
+  let hackEta: number | undefined = undefined;
   if (legData) {
     eta = legData.eta;
     efr = legData.efr;
+    hackEta = legData.hackEta;
   }
 
   const handleDelete = () => {
     const updatedFlightPlan = flightPlanUtils.deleteTurnPoint(flightPlan, index);
+    onFlightPlanUpdate(updatedFlightPlan);
+  };
+
+  const handleTypeChange = (type: WaypointType) => {
+    const updatedFlightPlan = flightPlanUtils.updateTurnPoint(flightPlan, index, { waypointType: type });
     onFlightPlanUpdate(updatedFlightPlan);
   };
 
@@ -301,8 +376,13 @@ const WaypointCard: React.FC<{ flightPlan: FlightPlan, legData: LegData | null, 
   return (
     <div className="group bg-white border border-gray-200 rounded p-3">
       <div className="flex items-center justify-between">
-        <span className="text-sm font-aero-label text-gray-900">
-          {index + 1}. <EditableField
+        <span className="text-sm font-aero-label text-gray-900 flex items-center">
+          {index + 1}.{' '}
+          <WaypointTypeSelector
+            currentType={waypointType}
+            onTypeChange={handleTypeChange}
+          />
+          {' '}<EditableField
             value={waypoint.name || `WP${index + 1}`}
             onChange={(value: string) => {
               const updatedFlightPlan = flightPlanUtils.updateTurnPoint(flightPlan, index, { name: value });
@@ -318,25 +398,69 @@ const WaypointCard: React.FC<{ flightPlan: FlightPlan, legData: LegData | null, 
             <span className="text-xs font-aero-mono text-gray-500">
               {lat_deg}°{lat_minutes.toFixed(2)}', {lon_deg}°{lon_minutes.toFixed(2)}'
             </span>
-            <div className="flex items-center space-x-3 mt-1">
-              <div className="flex items-center space-x-1">
-                <span className="font-aero-label text-gray-600 text-xs">ETA</span>
-                <span className="font-aero-mono text-gray-900 text-xs">{secondsToTimeString(eta)}</span>
-              </div>
-              <div className="flex items-center space-x-1">
-                <span className="font-aero-label text-gray-600 text-xs">EFR</span>
-                <span className="font-aero-mono text-gray-900 text-xs">{efr.toFixed(0)}lbs</span>
-              </div>
-            </div>
           </div>
           <div className="-mr-2">
-            <DeleteWaypointDialog 
+            <DeleteWaypointDialog
               waypointNumber={index + 1}
               onConfirm={handleDelete}
             />
           </div>
         </div>
       </div>
+      {/* Push-specific fields + ETA/EFR rows */}
+      {waypointType === 'push' ? (
+        <div className="mt-1 grid grid-cols-[auto_auto_auto] gap-x-3 gap-y-1 justify-end items-center">
+          <div className="flex items-center space-x-1">
+            <span className="font-aero-label text-gray-600 text-xs w-7 text-right">Exit</span>
+            <TimeEditableField
+              timeSec={getEffectiveExitTime(waypoint.exitTimeSec, eta)}
+              onChange={(hour, minute, seconds) => {
+                const exitTimeSec = Math.max(hour * 3600 + minute * 60 + seconds, eta);
+                const updatedFlightPlan = flightPlanUtils.updateTurnPoint(flightPlan, index, { exitTimeSec });
+                onFlightPlanUpdate(updatedFlightPlan);
+              }}
+              className="font-aero-mono text-gray-900 text-xs"
+            />
+          </div>
+          <label className="flex items-center space-x-1 cursor-pointer col-span-2">
+            <span className="font-aero-label text-gray-600 text-xs">HACK</span>
+            <input
+              type="checkbox"
+              checked={waypoint.hack ?? false}
+              onChange={(e) => {
+                const updatedFlightPlan = flightPlanUtils.updateTurnPoint(flightPlan, index, { hack: e.target.checked });
+                onFlightPlanUpdate(updatedFlightPlan);
+              }}
+              className="h-3.5 w-3.5 rounded border-gray-300 text-avio-primary focus:ring-avio-accent cursor-pointer"
+            />
+          </label>
+          <div className="flex items-center space-x-1">
+            <span className="font-aero-label text-gray-600 text-xs w-7 text-right">ETA</span>
+            <span className="font-aero-mono text-gray-900 text-xs px-1 py-0.5">
+              {secondsToTimeString(eta)}
+              {hackEta !== undefined && <span className="text-avio-accent ml-1">{formatHackEta(hackEta)}</span>}
+            </span>
+          </div>
+          <div className="flex items-center space-x-1">
+            <span className="font-aero-label text-gray-600 text-xs">EFR</span>
+            <span className="font-aero-mono text-gray-900 text-xs">{efr.toFixed(0)}lbs</span>
+          </div>
+        </div>
+      ) : (
+        <div className="flex items-center space-x-3 mt-1 justify-end">
+          <div className="flex items-center space-x-1">
+            <span className="font-aero-label text-gray-600 text-xs">ETA</span>
+            <span className="font-aero-mono text-gray-900 text-xs">
+              {secondsToTimeString(eta)}
+              {hackEta !== undefined && <span className="text-avio-accent ml-1">{formatHackEta(hackEta)}</span>}
+            </span>
+          </div>
+          <div className="flex items-center space-x-1">
+            <span className="font-aero-label text-gray-600 text-xs">EFR</span>
+            <span className="font-aero-mono text-gray-900 text-xs">{efr.toFixed(0)}lbs</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import type { FlightPlan, LegData } from "../types/flightPlan";
+import { getEffectiveExitTime } from "./flightPlanUtils";
 import { transform } from "ol/proj";
 
 /**
@@ -463,6 +464,7 @@ export function calculateAllLegData(
   let inboundBearing = 0; // First leg has no inbound bearing
   let previousEta = flightPlan.initTimeSec;
   let previousEfr = flightPlan.initFob;
+  let hackOffsetSec: number | undefined = undefined;
 
   for (let i = 0; i < flightPlan.points.length - 1; i++) {
     const origin = flightPlan.points[i];
@@ -541,21 +543,50 @@ export function calculateAllLegData(
     );
     const distanceNm = (turnDistanceM + straightDistanceM) / 1852;
     const eteSec = Math.round(distanceNm / (destination.tas + destination.windSpeed * Math.cos(Math.PI / 2 - (destination.windDir - course) * Math.PI / 180)) * 3600);
+    const legFuel = eteSec * (destination.fuelFlow / 3600);
+    const arrivalEta = previousEta + eteSec;
+    const arrivalEfr = previousEfr - legFuel;
+
+    // If destination is a Push point, account for wait time fuel burn
+    let waitFuel = 0;
+    if (destination.waypointType === 'push') {
+      const effectiveExit = getEffectiveExitTime(destination.exitTimeSec, arrivalEta);
+      const waitTimeSec = effectiveExit - arrivalEta;
+      waitFuel = waitTimeSec * (destination.fuelFlow / 3600);
+    }
+
+    // Compute hackEta for waypoints after a hack push point
+    let hackEta: number | undefined = undefined;
+    if (hackOffsetSec !== undefined) {
+      hackEta = arrivalEta - hackOffsetSec;
+    }
+
     results.push({
       course,
       distance: distanceNm,
-      legFuel: eteSec * (destination.fuelFlow / 3600),
+      legFuel: legFuel + waitFuel,
       heading,
       ete: eteSec,
-      eta: previousEta + eteSec,
-      efr: previousEfr - eteSec * (destination.fuelFlow / 3600),
+      eta: arrivalEta,
+      efr: arrivalEfr - waitFuel,
+      hackEta,
     });
 
     // Update inbound bearing for next leg
     inboundBearing = heading;
 
-    previousEta += eteSec;
-    previousEfr -= eteSec * (destination.fuelFlow / 3600);
+    // For next leg: if this destination is a Push point, depart from exit time
+    if (destination.waypointType === 'push') {
+      const effectiveExit = getEffectiveExitTime(destination.exitTimeSec, arrivalEta);
+      previousEta = effectiveExit;
+      // HACK ETA reset: set offset so subsequent waypoints get relative ETA
+      if (destination.hack) {
+        hackOffsetSec = effectiveExit;
+      }
+    } else {
+      previousEta = arrivalEta;
+    }
+    previousEfr = arrivalEfr - waitFuel;
   }
 
   return results;

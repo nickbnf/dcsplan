@@ -470,7 +470,8 @@ const installInteractions = (flightPlanLayer: VectorLayer<any>,
     );
 
     const modifyInteraction = new Modify({
-      features: new Collection(waypointFeatures)
+      features: new Collection(waypointFeatures),
+      style: () => [],
     });
 
     // Create Snap interaction for snapping to waypoints

@@ -112,13 +112,22 @@ export const useDrawing = () => {
   const stopDragging = useCallback(() => {
     console.log('stopDragging');
 
-    // Clear preview line
+    // Clear preview lines
     if (previewFeatureRef.current && drawingLayerRef.current) {
       const source = drawingLayerRef.current.getSource();
       if (source) {
         source.removeFeatures(previewFeatureRef.current);
       }
       previewFeatureRef.current = null;
+    }
+
+    // Clear preview waypoint
+    if (previewWptFeatureRef.current && drawingLayerRef.current) {
+      const source = drawingLayerRef.current.getSource();
+      if (source) {
+        source.removeFeature(previewWptFeatureRef.current);
+      }
+      previewWptFeatureRef.current = null;
     }
 
     setDrawingState(prev => ({

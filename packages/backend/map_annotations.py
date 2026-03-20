@@ -10,7 +10,7 @@ from typing import Callable, Tuple, Optional
 from PIL import Image, ImageDraw, ImageFont
 import logging
 import math
-from flight_plan import FlightPlan, FlightPlanData, FlightPlanTurnPoint, LegData, Point
+from flight_plan import FlightPlan, FlightPlanData, FlightPlanTurnPoint, LegData, Point, get_effective_exit_time
 
 # Set up logger
 logger = logging.getLogger(__name__)
@@ -68,46 +68,167 @@ def _load_fonts() -> Tuple[ImageFont.FreeTypeFont, ImageFont.FreeTypeFont, Image
 LARGE_FONT, MEDIUM_FONT, SMALL_FONT = _load_fonts()
 
 
+TURNPOINT_RADIUS = 12
+
 def draw_turnpoint(
     draw: ImageDraw.ImageDraw,
     point: FlightPlanTurnPoint,
     coord_to_pixel: Callable[[float, float], Tuple[float, float]],
     image_width: int,
-    image_height: int
+    image_height: int,
+    inbound_screen_angle: float | None = None,
 ) -> None:
     """
     Draw a turnpoint marker on an image for kneeboard maps.
-    
-    Draws only the outer circle outline (no fill, no center dot) so the underlying
-    map graphics are visible inside the circle.
-    
+
+    Symbol varies by waypoint type:
+    - Normal/Push/None: circle outline
+    - IP: square rotated so the inbound leg joins perpendicular to an edge
+    - TGT: triangle outline
+
     Args:
         draw: The ImageDraw object to draw on (must be RGBA mode for transparency)
         point: The turnpoint to draw
         coord_to_pixel: Function that converts geographic coordinates (lat, lon) to pixel coordinates (x, y)
         image_width: Width of the image (for clamping)
         image_height: Height of the image (for clamping)
+        inbound_screen_angle: Screen-space angle (radians) of the inbound leg
+            (atan2(dy, dx) from previous waypoint to this one in pixel coords).
+            Used to orient the IP square so an edge faces the inbound leg.
     """
     try:
         x_px, y_px = coord_to_pixel(point.lat, point.lon)
-        
+
         # Clamp to image bounds
         def _clamp(val, lo, hi):
             return max(lo, min(val, hi))
         x = _clamp(x_px, 0, image_width - 1)
         y = _clamp(y_px, 0, image_height - 1)
-        
-        # Draw outer circle (radius 12, stroke width 3) - outline only, no fill
-        radius_outer = 12
-        draw.ellipse(
-            (x - radius_outer, y - radius_outer, x + radius_outer, y + radius_outer),
-            outline=OUTLINE_COLOR_RGBA,
-            width=3
-        )
-        
-        logger.debug(f"Drew turnpoint at ({x_px:.1f}, {y_px:.1f})")
+
+        wpt_type = point.waypointType or 'normal'
+        r = TURNPOINT_RADIUS
+        stroke = 3
+
+        if wpt_type == 'ip':
+            # Square rotated so the edge facing the inbound leg is perpendicular to it.
+            # Vertices are placed at distance r from center at angles:
+            #   inbound + π/4 + k·π/2  (k = 0..3)
+            # This puts an edge centered on the direction opposite to inbound.
+            # Fallback: default diamond if no inbound angle is available.
+            base = inbound_screen_angle if inbound_screen_angle is not None else -math.pi / 2
+            square = []
+            for k in range(4):
+                angle = base + math.pi / 4 + k * math.pi / 2
+                square.append((x + r * math.cos(angle), y + r * math.sin(angle)))
+            draw.polygon(square, outline=OUTLINE_COLOR_RGBA, fill=None)
+            for j in range(len(square)):
+                draw.line([square[j], square[(j + 1) % len(square)]], fill=OUTLINE_COLOR_RGBA, width=stroke)
+        elif wpt_type == 'tgt':
+            # Triangle (equilateral, point up)
+            h = r * math.sqrt(3)  # height of equilateral triangle with "radius" r
+            triangle = [
+                (x, y - r),           # top
+                (x + h / 2, y + r / 2),  # bottom right
+                (x - h / 2, y + r / 2),  # bottom left
+            ]
+            draw.polygon(triangle, outline=OUTLINE_COLOR_RGBA, fill=None)
+            for j in range(len(triangle)):
+                draw.line([triangle[j], triangle[(j + 1) % len(triangle)]], fill=OUTLINE_COLOR_RGBA, width=stroke)
+        else:
+            # Normal / Push / None: circle
+            draw.ellipse(
+                (x - r, y - r, x + r, y + r),
+                outline=OUTLINE_COLOR_RGBA,
+                width=stroke
+            )
+
+        logger.debug(f"Drew turnpoint ({wpt_type}) at ({x_px:.1f}, {y_px:.1f})")
     except Exception as e:
         logger.warning(f"Failed to draw turnpoint: {e}")
+
+
+def draw_connected_label(
+    draw: ImageDraw.ImageDraw,
+    waypoint_x: float,
+    waypoint_y: float,
+    label_x: float,
+    label_y: float,
+    text: str,
+    font: ImageFont.FreeTypeFont = None,
+    text_color: Tuple[int, int, int, int] = TEXT_COLOR_RGBA,
+    outline_color: Tuple[int, int, int, int] = OUTLINE_COLOR_RGBA,
+    stroke: int = 3,
+    padding: int = 6,
+) -> Tuple[float, float, float, float]:
+    """
+    Draw a bordered label connected to a waypoint with a line.
+
+    Draws a rectangular box with text at (label_x, label_y) and a connecting
+    line from the waypoint symbol edge to the nearest edge of the box.
+
+    Args:
+        draw: ImageDraw object
+        waypoint_x, waypoint_y: Center of the waypoint symbol (pixel coords)
+        label_x: Left edge of the label box
+        label_y: Top edge of the label box
+        text: Label text
+        font: Font (defaults to MEDIUM_FONT)
+        text_color: Text fill color
+        outline_color: Border and line color
+        stroke: Line width for border and connecting line
+        padding: Padding inside the label box around the text
+
+    Returns:
+        Bounding box of the label (left, top, right, bottom)
+    """
+    if font is None:
+        font = MEDIUM_FONT
+
+    # Measure text
+    bbox = draw.textbbox((0, 0), text, font=font)
+    text_w = bbox[2] - bbox[0]
+    text_h = bbox[3] - bbox[1]
+
+    # Label box
+    box_left = label_x
+    box_top = label_y
+    box_right = box_left + text_w + padding * 2
+    box_bottom = box_top + text_h + padding * 2
+
+    # Background fill
+    bg_color = (255, 255, 255, int(255 * BACKGROUND_OPACITY))
+    draw.rectangle((box_left, box_top, box_right, box_bottom), fill=bg_color)
+
+    # Border
+    draw.rectangle((box_left, box_top, box_right, box_bottom),
+                    outline=outline_color, width=stroke)
+
+    # Connecting line from waypoint edge to the closest point on the box edge.
+    # Target point on box: clamp waypoint_y to the box vertical range,
+    # use the left edge (or right edge if waypoint is to the right of the box).
+    clamp_y = max(box_top, min(waypoint_y, box_bottom))
+    if waypoint_x <= (box_left + box_right) / 2:
+        target_x = box_left
+    else:
+        target_x = box_right
+    target_y = clamp_y
+
+    # Start from waypoint edge (offset by radius toward the target)
+    dx = target_x - waypoint_x
+    dy = target_y - waypoint_y
+    dist = math.sqrt(dx ** 2 + dy ** 2)
+    if dist > TURNPOINT_RADIUS:
+        start_x = waypoint_x + TURNPOINT_RADIUS * dx / dist
+        start_y = waypoint_y + TURNPOINT_RADIUS * dy / dist
+        draw.line([(start_x, start_y), (target_x, target_y)],
+                  fill=outline_color, width=stroke)
+
+    # Draw text centered in box
+    text_x = box_left + padding - bbox[0]
+    text_y = box_top + padding - bbox[1]
+    draw.text((text_x, text_y), text, fill=text_color, font=font)
+
+    return box_left, box_top, box_right, box_bottom
 
 
 def draw_leg(
@@ -225,6 +346,7 @@ def annotate_leg(
     time_at_origin: int,
     leg_data: LegData,
     coord_to_pixel: Callable[[float, float], Tuple[float, float]],
+    hack_offset_sec: int | None = None,
 ) -> None:
     """
     Annotate a leg with the tick marks for time and distance.
@@ -280,7 +402,11 @@ def annotate_leg(
             NO_LABEL_ZONE_PX = 60
             if distance_from_origin_px > NO_LABEL_ZONE_PX and distance_from_dest_px > NO_LABEL_ZONE_PX:
                 # Draw minute number rotated perpendicular to the leg, slightly to the right of the tick
-                label_txt = f"{minute_s // 3600:02d}:{minute_s % 3600 // 60:02d}"
+                if hack_offset_sec is not None:
+                    hack_rel = minute_s - hack_offset_sec
+                    label_txt = f"+{hack_rel // 60:02d}"
+                else:
+                    label_txt = f"{minute_s // 3600:02d}:{minute_s % 3600 // 60:02d}"
                 
                 # Calculate leg angle for text rotation (perpendicular = leg_angle + 90)
                 leg_angle_rad = math.atan2(dx, dy)
@@ -371,13 +497,28 @@ def annotate_turnpoint(
         x = _clamp(x_px, 0, image_width - 1)
         y = _clamp(y_px, 0, image_height - 1)
         
-        # Get ETA from flightPlanData (etaSec is in seconds since midnight)
+        # Build ETA string from flightPlanData
+        wpt_type = point.waypointType or 'normal'
         if index < len(flightPlanData.turnpointData):
-            eta_sec = flightPlanData.turnpointData[index].etaSec
+            tp_data = flightPlanData.turnpointData[index]
+            eta_sec = tp_data.etaSec
             hours = eta_sec // 3600
             minutes = (eta_sec % 3600) // 60
             seconds = eta_sec % 60
-            eta_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+            if tp_data.hackEtaSec is not None and wpt_type != 'push':
+                # After a HACK point: show only the delta
+                hack_min = tp_data.hackEtaSec // 60
+                hack_sec = tp_data.hackEtaSec % 60
+                eta_str = f"+{hack_min:02d}:{hack_sec:02d}"
+            elif wpt_type == 'push' and tp_data.exitTimeSec is not None:
+                # PUSH point: show "ETA - DepartureTime"
+                exit_sec = tp_data.exitTimeSec
+                exit_h = exit_sec // 3600
+                exit_m = (exit_sec % 3600) // 60
+                exit_s = exit_sec % 60
+                eta_str = f"{hours:02d}:{minutes:02d}:{seconds:02d} - D{exit_h:02d}:{exit_m:02d}:{exit_s:02d}"
+            else:
+                eta_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
         else:
             eta_str = "00:00:00"
         
@@ -433,7 +574,20 @@ def annotate_turnpoint(
         # Draw name and ETA (right, stacked, smaller font)
         draw.text((text_x_right, text_y_right_name), turnpoint_name, fill=TEXT_COLOR_RGBA, font=MEDIUM_FONT)
         draw.text((text_x_right, text_y_right_eta), eta_str, fill=TEXT_COLOR_RGBA, font=MEDIUM_FONT)
-        
+
+        # Draw PUSH/HCK label below the annotation, connected to the waypoint
+        if wpt_type == 'push':
+            push_text = "PUSH/HCK" if point.hack else "PUSH"
+            # Position below the foundation box, aligned with its left edge
+            label_gap = 6
+            label_x = foundation[0]
+            label_y = foundation[3] + label_gap
+            draw_connected_label(
+                draw, x, y,
+                label_x, label_y,
+                push_text,
+            )
+
         logger.debug(f"Annotated turnpoint {index + 1} at ({x_px:.1f}, {y_px:.1f}) with ETA {eta_str}")
     except Exception as e:
         logger.warning(f"Failed to annotate turnpoint: {e}")
@@ -1081,6 +1235,14 @@ def annotate_map(
         overlay = Image.new('RGBA', image.size, (0, 0, 0, 0))
         overlay_draw = ImageDraw.Draw(overlay)
         
+        # Compute hack offset for each leg (the origin turnpoint's hackEtaSec tells us if we're in hack mode)
+        def _hack_offset_for_leg(leg_index: int) -> int | None:
+            """Return the hack offset (absolute seconds) for tick labels on this leg, or None."""
+            origin_tp = flight_plan_data.turnpointData[leg_index]
+            if origin_tp.hackEtaSec is not None:
+                return origin_tp.etaSec - origin_tp.hackEtaSec
+            return None
+
         # Draw all legs on the overlay
         for i in range(1, len(flight_plan.points)):
             if i-1 == focus_leg_index:
@@ -1088,12 +1250,24 @@ def annotate_map(
                 continue
             logger.info(f"Drawing leg {i-1}")
             draw_leg(overlay_draw, flight_plan_data.legData[i-1], coord_to_pixel)
-            annotate_leg(overlay_draw, overlay, flight_plan_data.turnpointData[i-1].etaSec, flight_plan_data.legData[i-1], coord_to_pixel)
+            annotate_leg(overlay_draw, overlay, flight_plan_data.turnpointData[i-1].etaSec, flight_plan_data.legData[i-1], coord_to_pixel, _hack_offset_for_leg(i-1))
 
         # Draw the focus leg last
         logger.info(f"Drawing focus leg {focus_leg_index}")
         draw_leg(overlay_draw, flight_plan_data.legData[focus_leg_index], coord_to_pixel)
-        annotate_leg(overlay_draw, overlay, flight_plan_data.turnpointData[focus_leg_index].etaSec, flight_plan_data.legData[focus_leg_index], coord_to_pixel)
+        annotate_leg(overlay_draw, overlay, flight_plan_data.turnpointData[focus_leg_index].etaSec, flight_plan_data.legData[focus_leg_index], coord_to_pixel, _hack_offset_for_leg(focus_leg_index))
+
+        # Compute inbound screen angle for each turnpoint (used to orient IP squares)
+        def _inbound_screen_angle(i: int) -> float | None:
+            if i == 0 or i - 1 >= len(flight_plan_data.legData):
+                return None
+            leg = flight_plan_data.legData[i - 1]
+            sx, sy = coord_to_pixel(leg.straigthening_point.lat, leg.straigthening_point.lon)
+            dx, dy = coord_to_pixel(leg.destination.lat, leg.destination.lon)
+            ddx, ddy = dx - sx, dy - sy
+            if ddx == 0 and ddy == 0:
+                return None
+            return math.atan2(ddy, ddx)
 
         # Draw all turnpoints on the overlay
         for i, point in enumerate(flight_plan.points):
@@ -1101,15 +1275,15 @@ def annotate_map(
                 # Skip the focus leg so we can draw it last
                 continue
             logger.debug(f"Drawing turnpoint {i}")
-            draw_turnpoint(overlay_draw, point, coord_to_pixel, image.width, image.height)
+            draw_turnpoint(overlay_draw, point, coord_to_pixel, image.width, image.height, _inbound_screen_angle(i))
             annotate_turnpoint(overlay_draw, point, i, flight_plan_data, coord_to_pixel, image.width, image.height)
 
         # Draw the focus turnpoints last
         point = flight_plan.points[focus_leg_index]
-        draw_turnpoint(overlay_draw, point, coord_to_pixel, image.width, image.height)
+        draw_turnpoint(overlay_draw, point, coord_to_pixel, image.width, image.height, _inbound_screen_angle(focus_leg_index))
         annotate_turnpoint(overlay_draw, point, focus_leg_index, flight_plan_data, coord_to_pixel, image.width, image.height)
         point = flight_plan.points[focus_leg_index + 1]
-        draw_turnpoint(overlay_draw, point, coord_to_pixel, image.width, image.height)
+        draw_turnpoint(overlay_draw, point, coord_to_pixel, image.width, image.height, _inbound_screen_angle(focus_leg_index + 1))
         annotate_turnpoint(overlay_draw, point, focus_leg_index + 1, flight_plan_data, coord_to_pixel, image.width, image.height)
 
         # Temp: Draw the straigthening point

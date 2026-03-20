@@ -6,7 +6,10 @@ export type LegData = {
   ete: number; // ETE for this leg, in seconds
   eta: number; // ETA at this TP, in seconds since midnight
   efr: number; // EFR at this TP, unitless (typically in lbs)
+  hackEta?: number; // Hack-relative ETA in seconds (present after a hack push point)
 }
+
+export type WaypointType = 'normal' | 'push' | 'ip' | 'tgt';
 
 // A single turn point
 export type FlightPlanTurnPoint = {
@@ -18,6 +21,9 @@ export type FlightPlanTurnPoint = {
   windSpeed: number; // Wind speed at this WP
   windDir: number; // Wind direction (dir the wind is coming from)at this WP
   name?: string; // Name of the turnpoint
+  waypointType?: WaypointType; // defaults to 'normal'
+  exitTimeSec?: number; // Push only: exit time in seconds since midnight
+  hack?: boolean; // Push only: HACK enabled
 }
 
 export type FlightPlanPointChange = {
@@ -27,6 +33,9 @@ export type FlightPlanPointChange = {
   windSpeed?: number;
   windDir?: number;
   name?: string;
+  waypointType?: WaypointType;
+  exitTimeSec?: number;
+  hack?: boolean;
 }
 
 // Main type containing the full flight plan

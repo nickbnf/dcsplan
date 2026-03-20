@@ -18,8 +18,8 @@ interface TaskStatus {
 
 export const GenerateDialog: React.FC<GenerateDialogProps> = ({ flightPlan }) => {
   const [output, setOutput] = useState<'zip' | number>('zip');
-  const [includeFuelCalculations, setIncludeFuelCalculations] = useState(false);
-  const [includeCoordinates, setIncludeCoordinates] = useState(false);
+  const [includeFuelCalculations, setIncludeFuelCalculations] = useState(true);
+  const [includeCoordinates, setIncludeCoordinates] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isOpen, setIsOpen] = useState(false);

@@ -73,7 +73,8 @@ export const AboutContent: React.FC<AboutContentProps> = ({
           */}
           <li>
             <strong className="font-aero-label">Detailed Calculations:</strong> Automatic calculation 
-            of headings, distances, wind, estimated times, fuel consumption, etc.
+            of headings, distances, wind, estimated times, fuel consumption, etc. Supports PUSH points and
+            hacking the clock for precise time keeping.
           </li>
           <li>
             <strong className="font-aero-label">Turn calculation:</strong> Unlike most planners,
