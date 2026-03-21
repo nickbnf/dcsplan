@@ -53,7 +53,7 @@ describe('calculateAllLegData with Push waypoints', () => {
     const legs = calculateAllLegData(plan, projection, navigationMode);
     expect(legs).toHaveLength(2);
 
-    const leg1 = legs[0]; // WP1 -> WP2 (Push)
+    // const leg1 = legs[0]; // WP1 -> WP2 (Push)
     const leg2 = legs[1]; // WP2 (Push) -> WP3
 
     // Leg 2 ETA should be exit time + leg2 ETE (not leg1 ETA + leg2 ETE)
