@@ -373,9 +373,19 @@ def annotate_leg(
 
     try:
         # Draw a tick every minute
-        first_minute_s = (time_at_origin // 60 + 1) * 60
-        last_minute_s = (time_at_origin + leg_data.eteSec) // 60 * 60
-        for minute_s in range(first_minute_s, last_minute_s + 1, 60):
+        # In hack mode, ticks are at exact 1-minute intervals from the hack point;
+        # otherwise, ticks are at absolute whole-minute boundaries.
+        if hack_offset_sec is not None:
+            first_n = math.ceil((time_at_origin - hack_offset_sec) / 60)
+            if first_n < 1:
+                first_n = 1
+            last_n = (time_at_origin + leg_data.eteSec - hack_offset_sec) // 60
+            tick_times = [hack_offset_sec + n * 60 for n in range(first_n, last_n + 1)]
+        else:
+            first_minute_s = (time_at_origin // 60 + 1) * 60
+            last_minute_s = (time_at_origin + leg_data.eteSec) // 60 * 60
+            tick_times = list(range(first_minute_s, last_minute_s + 1, 60))
+        for minute_s in tick_times:
             # Position in pixels along the straight portion of the leg
             dx_per_min = dx / ((leg_data.eteSec - time_to_straightening_s) / 60)
             dy_per_min = dy / ((leg_data.eteSec - time_to_straightening_s) / 60)
@@ -403,8 +413,8 @@ def annotate_leg(
             if distance_from_origin_px > NO_LABEL_ZONE_PX and distance_from_dest_px > NO_LABEL_ZONE_PX:
                 # Draw minute number rotated perpendicular to the leg, slightly to the right of the tick
                 if hack_offset_sec is not None:
-                    hack_rel = minute_s - hack_offset_sec
-                    label_txt = f"+{hack_rel // 60:02d}"
+                    hack_rel = round((minute_s - hack_offset_sec) / 60)
+                    label_txt = f"+{hack_rel:02d}"
                 else:
                     label_txt = f"{minute_s // 3600:02d}:{minute_s % 3600 // 60:02d}"
                 
@@ -1243,6 +1253,13 @@ def annotate_map(
                 return origin_tp.etaSec - origin_tp.hackEtaSec
             return None
 
+        def _time_at_origin(leg_index: int) -> int:
+            """Return the departure time for a leg, accounting for PUSH wait time."""
+            origin_tp = flight_plan_data.turnpointData[leg_index]
+            if origin_tp.exitTimeSec is not None:
+                return origin_tp.exitTimeSec
+            return origin_tp.etaSec
+
         # Draw all legs on the overlay
         for i in range(1, len(flight_plan.points)):
             if i-1 == focus_leg_index:
@@ -1250,12 +1267,12 @@ def annotate_map(
                 continue
             logger.info(f"Drawing leg {i-1}")
             draw_leg(overlay_draw, flight_plan_data.legData[i-1], coord_to_pixel)
-            annotate_leg(overlay_draw, overlay, flight_plan_data.turnpointData[i-1].etaSec, flight_plan_data.legData[i-1], coord_to_pixel, _hack_offset_for_leg(i-1))
+            annotate_leg(overlay_draw, overlay, _time_at_origin(i-1), flight_plan_data.legData[i-1], coord_to_pixel, _hack_offset_for_leg(i-1))
 
         # Draw the focus leg last
         logger.info(f"Drawing focus leg {focus_leg_index}")
         draw_leg(overlay_draw, flight_plan_data.legData[focus_leg_index], coord_to_pixel)
-        annotate_leg(overlay_draw, overlay, flight_plan_data.turnpointData[focus_leg_index].etaSec, flight_plan_data.legData[focus_leg_index], coord_to_pixel, _hack_offset_for_leg(focus_leg_index))
+        annotate_leg(overlay_draw, overlay, _time_at_origin(focus_leg_index), flight_plan_data.legData[focus_leg_index], coord_to_pixel, _hack_offset_for_leg(focus_leg_index))
 
         # Compute inbound screen angle for each turnpoint (used to orient IP squares)
         def _inbound_screen_angle(i: int) -> float | None:
