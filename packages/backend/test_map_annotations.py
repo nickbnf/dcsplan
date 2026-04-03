@@ -1,6 +1,5 @@
 """Tests for coordinate formatting in map_annotations."""
 
-import pytest
 from map_annotations import _format_coord_ddm
 
 
