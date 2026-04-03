@@ -10,7 +10,7 @@ import os
 import math
 import logging
 from PIL import Image, ImageDraw, ImageFont
-from flight_plan import FlightPlan, FlightPlanTurnPoint
+from flight_plan import FlightPlan
 from map_annotations import _format_coord_ddm
 
 logger = logging.getLogger(__name__)
@@ -36,7 +36,7 @@ LINE_WIDTH = 1
 COL_ICON_CENTER = 30    # center of the icon column
 COL_NUMBER = 65         # start of waypoint number
 COL_NAME = 115          # start of waypoint name
-COL_POSITION = 380      # start of lat/lon
+COL_POSITION = 330      # start of lat/lon
 
 # Icon sizing
 ICON_RADIUS = 8
@@ -83,8 +83,6 @@ def _draw_waypoint_icon(draw: ImageDraw.ImageDraw, cx: float, cy: float,
             (cx - r, cy),       # left
         ]
         draw.polygon(diamond, outline=BLACK, fill=None)
-        for j in range(4):
-            draw.line([diamond[j], diamond[(j + 1) % 4]], fill=BLACK, width=stroke)
 
     elif wpt_type == 'tgt':
         # Triangle (point up)
@@ -95,8 +93,6 @@ def _draw_waypoint_icon(draw: ImageDraw.ImageDraw, cx: float, cy: float,
             (cx - h / 2, cy + r / 2),     # bottom left
         ]
         draw.polygon(triangle, outline=BLACK, fill=None)
-        for j in range(3):
-            draw.line([triangle[j], triangle[(j + 1) % 3]], fill=BLACK, width=stroke)
 
     else:
         # Normal: circle outline
