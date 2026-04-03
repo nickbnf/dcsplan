@@ -1,0 +1,186 @@
+"""
+Waypoint list page generator for kneeboard output.
+
+Generates a 768x1024 PNG table listing all waypoints with their
+type icon, number, name, and coordinates in a monospace teletype style.
+"""
+
+import io
+import os
+import math
+import logging
+from PIL import Image, ImageDraw, ImageFont
+from flight_plan import FlightPlan, FlightPlanTurnPoint
+from map_annotations import _format_coord_ddm
+
+logger = logging.getLogger(__name__)
+
+# Page dimensions (same as kneeboard map pages)
+PAGE_WIDTH = 768
+PAGE_HEIGHT = 1024
+
+# Colors
+BLACK = (0, 0, 0, 255)
+WHITE = (255, 255, 255, 255)
+
+# Layout constants
+MARGIN_LEFT = 40
+MARGIN_RIGHT = 40
+MARGIN_TOP = 40
+TITLE_FONT_SIZE = 32
+ROW_FONT_SIZE = 22
+ROW_HEIGHT = 42
+LINE_WIDTH = 1
+
+# Column x-offsets (from left margin)
+COL_ICON_CENTER = 30    # center of the icon column
+COL_NUMBER = 65         # start of waypoint number
+COL_NAME = 115          # start of waypoint name
+COL_POSITION = 380      # start of lat/lon
+
+# Icon sizing
+ICON_RADIUS = 8
+ICON_STROKE = 2
+
+FONTS_DIR = os.path.join(os.path.dirname(__file__), "config", "fonts")
+
+
+def _load_fixed_font(size: int) -> ImageFont.FreeTypeFont:
+    """Load the fixed-width font at the given size."""
+    font_path = os.path.join(FONTS_DIR, "fixed.ttf")
+    try:
+        return ImageFont.truetype(font_path, size)
+    except (IOError, OSError):
+        logger.warning(f"Could not load fixed.ttf, falling back to default")
+        return ImageFont.load_default()
+
+
+def _draw_waypoint_icon(draw: ImageDraw.ImageDraw, cx: float, cy: float,
+                        wpt_type: str, font: ImageFont.FreeTypeFont) -> None:
+    """Draw a small waypoint type icon centered at (cx, cy).
+
+    - normal: small circle outline
+    - push: text "PSH"
+    - ip: small diamond (rotated square) outline
+    - tgt: small triangle outline
+    """
+    r = ICON_RADIUS
+    stroke = ICON_STROKE
+
+    if wpt_type == 'push':
+        # Draw "PSH" text centered
+        bbox = font.getbbox("PSH")
+        tw = bbox[2] - bbox[0]
+        th = bbox[3] - bbox[1]
+        draw.text((cx - tw / 2, cy - th / 2), "PSH", fill=BLACK, font=font)
+
+    elif wpt_type == 'ip':
+        # Diamond (square rotated 45 degrees)
+        diamond = [
+            (cx, cy - r),       # top
+            (cx + r, cy),       # right
+            (cx, cy + r),       # bottom
+            (cx - r, cy),       # left
+        ]
+        draw.polygon(diamond, outline=BLACK, fill=None)
+        for j in range(4):
+            draw.line([diamond[j], diamond[(j + 1) % 4]], fill=BLACK, width=stroke)
+
+    elif wpt_type == 'tgt':
+        # Triangle (point up)
+        h = r * math.sqrt(3)
+        triangle = [
+            (cx, cy - r),                 # top
+            (cx + h / 2, cy + r / 2),     # bottom right
+            (cx - h / 2, cy + r / 2),     # bottom left
+        ]
+        draw.polygon(triangle, outline=BLACK, fill=None)
+        for j in range(3):
+            draw.line([triangle[j], triangle[(j + 1) % 3]], fill=BLACK, width=stroke)
+
+    else:
+        # Normal: circle outline
+        draw.ellipse(
+            (cx - r, cy - r, cx + r, cy + r),
+            outline=BLACK,
+            width=stroke,
+        )
+
+
+def generate_waypoint_list_page(flight_plan: FlightPlan) -> bytes:
+    """Generate a 768x1024 PNG image with a waypoint list table.
+
+    Args:
+        flight_plan: The flight plan containing waypoints.
+
+    Returns:
+        PNG image data as bytes.
+    """
+    img = Image.new("RGBA", (PAGE_WIDTH, PAGE_HEIGHT), WHITE)
+    draw = ImageDraw.Draw(img)
+
+    title_font = _load_fixed_font(TITLE_FONT_SIZE)
+    row_font = _load_fixed_font(ROW_FONT_SIZE)
+
+    table_left = MARGIN_LEFT
+    table_right = PAGE_WIDTH - MARGIN_RIGHT
+
+    # Draw title
+    title = "WAYPOINT LIST"
+    title_bbox = title_font.getbbox(title)
+    title_w = title_bbox[2] - title_bbox[0]
+    title_x = (PAGE_WIDTH - title_w) / 2
+    title_y = MARGIN_TOP
+    draw.text((title_x, title_y), title, fill=BLACK, font=title_font)
+
+    # Horizontal line below title
+    title_bottom = title_y + (title_bbox[3] - title_bbox[1]) + 10
+    draw.line([(table_left, title_bottom), (table_right, title_bottom)],
+              fill=BLACK, width=LINE_WIDTH)
+
+    # Draw waypoint rows
+    current_y = title_bottom + 5
+
+    for i, point in enumerate(flight_plan.points):
+        row_center_y = current_y + ROW_HEIGHT / 2
+        wpt_type = point.waypointType or 'normal'
+
+        # Icon
+        _draw_waypoint_icon(draw, table_left + COL_ICON_CENTER, row_center_y,
+                            wpt_type, row_font)
+
+        # Waypoint number (1-indexed, zero-padded)
+        num_str = f"{i + 1:02d}"
+        num_bbox = row_font.getbbox(num_str)
+        num_h = num_bbox[3] - num_bbox[1]
+        draw.text((table_left + COL_NUMBER, row_center_y - num_h / 2),
+                  num_str, fill=BLACK, font=row_font)
+
+        # Waypoint name
+        name = point.name or ""
+        name_bbox = row_font.getbbox(name) if name else row_font.getbbox("X")
+        name_h = name_bbox[3] - name_bbox[1]
+        draw.text((table_left + COL_NAME, row_center_y - name_h / 2),
+                  name, fill=BLACK, font=row_font)
+
+        # Position (lat/lon)
+        lat_str = _format_coord_ddm(point.lat, "N", "S", deg_width=2)
+        lon_str = _format_coord_ddm(point.lon, "E", "W", deg_width=3)
+        pos_str = f"{lat_str} {lon_str}"
+        pos_bbox = row_font.getbbox(pos_str)
+        pos_h = pos_bbox[3] - pos_bbox[1]
+        draw.text((table_left + COL_POSITION, row_center_y - pos_h / 2),
+                  pos_str, fill=BLACK, font=row_font)
+
+        # Horizontal separator line below this row
+        line_y = current_y + ROW_HEIGHT
+        draw.line([(table_left, line_y), (table_right, line_y)],
+                  fill=BLACK, width=LINE_WIDTH)
+
+        current_y = line_y
+
+    # Convert to RGB (kneeboard pages are RGB PNGs) and save
+    img_rgb = img.convert("RGB")
+    buf = io.BytesIO()
+    img_rgb.save(buf, format="PNG")
+    return buf.getvalue()
