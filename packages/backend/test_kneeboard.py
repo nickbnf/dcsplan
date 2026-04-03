@@ -4,12 +4,14 @@ Unit tests for the kneeboard generation module.
 Tests cover validation, error conditions, and PNG generation.
 """
 
+import io
+import zipfile
 import pytest
 import os
 import json
 from pydantic import ValidationError
 from flight_plan import FlightPlan, FlightPlanTurnPoint
-from kneeboard import generate_kneeboard_single_png, TILES_DIR, TILES_INFO_PATH
+from kneeboard import generate_kneeboard_single_png, generate_kneeboard_zip, TILES_DIR, TILES_INFO_PATH
 
 
 # Test fixtures for valid flight plan data
@@ -512,6 +514,19 @@ class TestIntegration:
         point = FlightPlanTurnPoint(**edge_point)
         assert point.lat == -90.0
         assert point.lon == -180.0
+
+
+def test_zip_contains_waypoint_list_page(mock_tiles_info, valid_flight_plan):
+    """Multi-leg ZIP should include 0wpts.png as first entry."""
+    flight_plan = FlightPlan(**valid_flight_plan)
+    result = generate_kneeboard_zip(flight_plan)
+    with zipfile.ZipFile(io.BytesIO(result)) as zf:
+        names = zf.namelist()
+        assert "0wpts.png" in names
+        assert names[0] == "0wpts.png"
+        # Verify it's a valid PNG
+        wpts_data = zf.read("0wpts.png")
+        assert wpts_data[:8] == b'\x89PNG\r\n\x1a\n'
 
 
 if __name__ == "__main__":

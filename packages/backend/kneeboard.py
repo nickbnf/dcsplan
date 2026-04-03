@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 from pyproj import Transformer
 from map_annotations import annotate_map, draw_info_box
 from flight_plan import FlightPlan, FlightPlanData
+from waypoint_list_page import generate_waypoint_list_page
 
 # Set up logger (logging configuration is handled centrally in main.py)
 logger = logging.getLogger(__name__)
@@ -111,10 +112,17 @@ def generate_kneeboard_zip(flight_plan: FlightPlan, progress_callback: Optional[
         logger.info(f"Leg {i+1}/{len(flightPlanData.legData)} completed: {len(leg_map)} bytes")
 
     logger.info(f"All leg maps generated: {len(leg_maps)} maps")
-    
+
+    # Generate waypoint list page
+    if progress_callback:
+        progress_callback("Generating waypoint list page...")
+    wpts_page = generate_waypoint_list_page(flight_plan)
+    logger.info(f"Waypoint list page generated: {len(wpts_page)} bytes")
+
     # Create ZIP file
     zip_data = io.BytesIO()
     with zipfile.ZipFile(zip_data, 'w', compression=zipfile.ZIP_STORED) as zipf:
+        zipf.writestr("0wpts.png", wpts_page)
         for i, leg_map in enumerate(leg_maps):
             filename = f"leg_{i+1:02d}.png"
             logger.info(f"Adding {filename} to ZIP file")
