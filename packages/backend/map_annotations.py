@@ -1117,13 +1117,20 @@ def draw_mini_doghouse(
         logger.warning(f"Failed to draw mini-doghouse: {e}")
 
 
-def _format_coord_ddm(deg: float, pos_char: str, neg_char: str) -> str:
-    """Format a coordinate in degrees/decimal minutes (e.g. N34°12.55')."""
+def _format_coord_ddm(deg: float, pos_char: str, neg_char: str, deg_width: int = 2) -> str:
+    """Format a coordinate in degrees/decimal minutes (e.g. N34°12.55').
+
+    Args:
+        deg: Decimal degrees value
+        pos_char: Character for positive hemisphere (N or E)
+        neg_char: Character for negative hemisphere (S or W)
+        deg_width: Number of digits for degrees (2 for lat, 3 for lon)
+    """
     hemisphere = pos_char if deg >= 0 else neg_char
     deg = abs(deg)
     d = int(deg)
     m = (deg - d) * 60
-    return f"{hemisphere}{d:02d}\u00b0{m:05.2f}'"
+    return f"{hemisphere}{d:0{deg_width}d}\u00b0{m:05.2f}'"
 
 
 def draw_info_box(
@@ -1149,8 +1156,8 @@ def draw_info_box(
     header_text = f"{dest_index + 1}. {dest_name}"
     rows = []
     if "coords" in details:
-        rows.append(_format_coord_ddm(dest_point.lat, "N", "S"))
-        rows.append(_format_coord_ddm(dest_point.lon, "E", "W"))
+        rows.append(_format_coord_ddm(dest_point.lat, "N", "S", deg_width=2))
+        rows.append(_format_coord_ddm(dest_point.lon, "E", "W", deg_width=3))
     if "efr" in details:
         efr = flight_plan_data.turnpointData[dest_index].efr
         rows.append(f"EFR: {efr:.0f}")
