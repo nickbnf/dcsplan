@@ -29,7 +29,7 @@ MARGIN_RIGHT = 40
 MARGIN_TOP = 40
 TITLE_FONT_SIZE = 32
 ROW_FONT_SIZE = 22
-ROW_HEIGHT = 42
+ROW_HEIGHT = 54
 LINE_WIDTH = 1
 
 # Column x-offsets (from left margin)
@@ -68,11 +68,8 @@ def _draw_waypoint_icon(draw: ImageDraw.ImageDraw, cx: float, cy: float,
     stroke = ICON_STROKE
 
     if wpt_type == 'push':
-        # Draw "PSH" text centered
-        bbox = font.getbbox("PSH")
-        tw = bbox[2] - bbox[0]
-        th = bbox[3] - bbox[1]
-        draw.text((cx - tw / 2, cy - th / 2), "PSH", fill=BLACK, font=font)
+        # Draw "PSH" text centered using anchor="mm" (middle-middle)
+        draw.text((cx, cy), "PSH", fill=BLACK, font=font, anchor="mm")
 
     elif wpt_type == 'ip':
         # Diamond (square rotated 45 degrees)
@@ -145,28 +142,22 @@ def generate_waypoint_list_page(flight_plan: FlightPlan) -> bytes:
         _draw_waypoint_icon(draw, table_left + COL_ICON_CENTER, row_center_y,
                             wpt_type, row_font)
 
-        # Waypoint number (1-indexed, zero-padded)
+        # Waypoint number (1-indexed, zero-padded) — anchor="lm": left-middle
         num_str = f"{i + 1:02d}"
-        num_bbox = row_font.getbbox(num_str)
-        num_h = num_bbox[3] - num_bbox[1]
-        draw.text((table_left + COL_NUMBER, row_center_y - num_h / 2),
-                  num_str, fill=BLACK, font=row_font)
+        draw.text((table_left + COL_NUMBER, row_center_y),
+                  num_str, fill=BLACK, font=row_font, anchor="lm")
 
-        # Waypoint name
+        # Waypoint name — anchor="lm": left-middle
         name = point.name or ""
-        name_bbox = row_font.getbbox(name) if name else row_font.getbbox("X")
-        name_h = name_bbox[3] - name_bbox[1]
-        draw.text((table_left + COL_NAME, row_center_y - name_h / 2),
-                  name, fill=BLACK, font=row_font)
+        draw.text((table_left + COL_NAME, row_center_y),
+                  name, fill=BLACK, font=row_font, anchor="lm")
 
-        # Position (lat/lon)
+        # Position (lat/lon) — right-aligned to table_right, anchor="rm": right-middle
         lat_str = _format_coord_ddm(point.lat, "N", "S", deg_width=2)
         lon_str = _format_coord_ddm(point.lon, "E", "W", deg_width=3)
         pos_str = f"{lat_str} {lon_str}"
-        pos_bbox = row_font.getbbox(pos_str)
-        pos_h = pos_bbox[3] - pos_bbox[1]
-        draw.text((table_left + COL_POSITION, row_center_y - pos_h / 2),
-                  pos_str, fill=BLACK, font=row_font)
+        draw.text((table_right, row_center_y),
+                  pos_str, fill=BLACK, font=row_font, anchor="rm")
 
         # Horizontal separator line below this row
         line_y = current_y + ROW_HEIGHT
