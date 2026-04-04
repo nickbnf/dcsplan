@@ -119,7 +119,7 @@ def generate_waypoint_list_page(flight_plan: FlightPlan) -> bytes:
     table_right = PAGE_WIDTH - MARGIN_RIGHT
 
     # Draw title
-    title = "WAYPOINT LIST"
+    title = "WAYPOINTS"
     title_bbox = title_font.getbbox(title)
     title_w = title_bbox[2] - title_bbox[0]
     title_x = (PAGE_WIDTH - title_w) / 2
@@ -127,12 +127,12 @@ def generate_waypoint_list_page(flight_plan: FlightPlan) -> bytes:
     draw.text((title_x, title_y), title, fill=BLACK, font=title_font)
 
     # Horizontal line below title
-    title_bottom = title_y + (title_bbox[3] - title_bbox[1]) + 10
+    title_bottom = title_y + (title_bbox[3] - title_bbox[1]) + 18
     draw.line([(table_left, title_bottom), (table_right, title_bottom)],
               fill=BLACK, width=LINE_WIDTH)
 
     # Draw waypoint rows
-    current_y = title_bottom + 5
+    current_y = title_bottom + 10
 
     for i, point in enumerate(flight_plan.points):
         row_center_y = current_y + ROW_HEIGHT / 2
