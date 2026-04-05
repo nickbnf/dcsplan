@@ -45,6 +45,7 @@ COPY map_annotations.py .
 COPY task_queue.py .
 COPY main.py .
 COPY logging_config.py .
+COPY waypoint_list_page.py .
 COPY theatres ./theatres
 
 # Create non-root user for security
