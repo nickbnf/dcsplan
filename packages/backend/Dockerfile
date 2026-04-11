@@ -3,13 +3,13 @@ FROM python:3.12-slim as builder
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    g++ \
-    libproj-dev \
-    proj-data \
-    proj-bin \
-    libgeos-dev \
-    && rm -rf /var/lib/apt/lists/*
+  gcc \
+  g++ \
+  libproj-dev \
+  proj-data \
+  proj-bin \
+  libgeos-dev \
+  && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
 WORKDIR /app
@@ -23,9 +23,9 @@ FROM python:3.12-slim
 
 # Install runtime dependencies for PIL and pyproj
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libproj25 \
-    libgeos-c1v5 \
-    && rm -rf /var/lib/apt/lists/*
+  libproj25 \
+  libgeos-c1v5 \
+  && rm -rf /var/lib/apt/lists/*
 
 # Copy Python dependencies from builder
 COPY --from=builder /root/.local /root/.local
@@ -46,12 +46,13 @@ COPY task_queue.py .
 COPY main.py .
 COPY logging_config.py .
 COPY waypoint_list_page.py .
+COPY overview_map_page.py .
 COPY theatres ./theatres
 
 # Create non-root user for security
 RUN useradd -m -u 1000 appuser && \
-    chown -R appuser:appuser /app && \
-    chown -R appuser:appuser /root
+  chown -R appuser:appuser /app && \
+  chown -R appuser:appuser /root
 
 # Switch to non-root user
 USER appuser

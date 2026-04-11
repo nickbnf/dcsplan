@@ -529,6 +529,26 @@ def test_zip_contains_waypoint_list_page(mock_tiles_info, valid_flight_plan):
         assert wpts_data[:8] == b'\x89PNG\r\n\x1a\n'
 
 
+def test_zip_contains_overview_page(mock_tiles_info, valid_flight_plan):
+    """Multi-leg ZIP should include 1overview.png as the second entry."""
+    flight_plan = FlightPlan(**valid_flight_plan)
+    result = generate_kneeboard_zip(flight_plan)
+    with zipfile.ZipFile(io.BytesIO(result)) as zf:
+        names = zf.namelist()
+        assert "1overview.png" in names
+        # Should be the second file (after 0wpts.png)
+        assert names[1] == "1overview.png"
+        # Should be a valid 768x1024 PNG
+        overview_data = zf.read("1overview.png")
+        assert overview_data[:8] == b'\x89PNG\r\n\x1a\n'
+        from PIL import Image
+        img = Image.open(io.BytesIO(overview_data))
+        assert img.width == 768
+        assert img.height == 1024
+        # Leg files should still follow after the overview
+        assert names[2] == "leg_01.png"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
 

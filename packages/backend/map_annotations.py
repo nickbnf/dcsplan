@@ -484,11 +484,12 @@ def annotate_turnpoint(
     flightPlanData: FlightPlanData,
     coord_to_pixel: Callable[[float, float], Tuple[float, float]],
     image_width: int,
-    image_height: int
+    image_height: int,
+    elapsed_from_sec: int | None = None,
 ) -> None:
     """
     Annotate a turnpoint with its number, name, and ETA.
-    
+
     Args:
         draw: The ImageDraw object to draw on (must be RGBA mode for transparency)
         point: The turnpoint to annotate
@@ -497,16 +498,18 @@ def annotate_turnpoint(
         coord_to_pixel: Function that converts geographic coordinates (lat, lon) to pixel coordinates (x, y)
         image_width: Width of the image (for clamping)
         image_height: Height of the image (for clamping)
+        elapsed_from_sec: When set, display elapsed time from this base (seconds) instead
+            of absolute ETA.  Format: "+HH:MM".  Used by the overview map page.
     """
     try:
         x_px, y_px = coord_to_pixel(point.lat, point.lon)
-        
+
         # Clamp to image bounds
         def _clamp(val, lo, hi):
             return max(lo, min(val, hi))
         x = _clamp(x_px, 0, image_width - 1)
         y = _clamp(y_px, 0, image_height - 1)
-        
+
         # Build ETA string from flightPlanData
         wpt_type = point.waypointType or 'normal'
         if index < len(flightPlanData.turnpointData):
@@ -515,7 +518,13 @@ def annotate_turnpoint(
             hours = eta_sec // 3600
             minutes = (eta_sec % 3600) // 60
             seconds = eta_sec % 60
-            if tp_data.hackEtaSec is not None and wpt_type != 'push':
+            if elapsed_from_sec is not None:
+                # Overview mode: show elapsed time from departure
+                elapsed = max(0, eta_sec - elapsed_from_sec)
+                e_h = elapsed // 3600
+                e_m = (elapsed % 3600) // 60
+                eta_str = f"+{e_h:02d}:{e_m:02d}"
+            elif tp_data.hackEtaSec is not None and wpt_type != 'push':
                 # After a HACK point: show only the delta
                 hack_min = tp_data.hackEtaSec // 60
                 hack_sec = tp_data.hackEtaSec % 60
@@ -1376,3 +1385,221 @@ def annotate_map(
         logger.debug(f"Annotated map with {len(flight_plan.points)} turnpoints and {max(0, len(flight_plan.points) - 1)} legs")
     except Exception as e:
         logger.warning(f"Failed to annotate map image: {e}")
+
+
+# ── Overview map helpers ───────────────────────────────────────────────────────
+
+
+def annotate_overview_map(
+    image: Image.Image,
+    flight_plan: FlightPlan,
+    flight_plan_data: FlightPlanData,
+    coord_to_pixel: Callable[[float, float], Tuple[float, float]],
+) -> None:
+    """
+    Annotate the overview map image with all legs and turnpoints.
+
+    Draws every leg (route line + minute marks, but no doghouses) and every
+    turnpoint (symbol + number/name/elapsed-time label).  Uses the same RGBA
+    overlay compositing pattern as annotate_map().
+
+    Args:
+        image: PIL Image to annotate in-place.
+        flight_plan: The flight plan input model.
+        flight_plan_data: Pre-computed leg and turnpoint data.
+        coord_to_pixel: Maps (lat, lon) → (x, y) pixel coords on *image*.
+    """
+    try:
+        if len(flight_plan.points) < 2:
+            return
+
+        overlay = Image.new('RGBA', image.size, (0, 0, 0, 0))
+        overlay_draw = ImageDraw.Draw(overlay)
+
+        # Departure time used as the base for elapsed-time labels.
+        departure_sec = flight_plan_data.turnpointData[0].etaSec
+
+        def _time_at_origin(leg_index: int) -> int:
+            origin_tp = flight_plan_data.turnpointData[leg_index]
+            return origin_tp.exitTimeSec if origin_tp.exitTimeSec is not None else origin_tp.etaSec
+
+        def _hack_offset_for_leg(leg_index: int) -> int | None:
+            origin_tp = flight_plan_data.turnpointData[leg_index]
+            if origin_tp.hackEtaSec is not None:
+                return origin_tp.etaSec - origin_tp.hackEtaSec
+            return None
+
+        # Draw all legs (route line + minute marks, no doghouses).
+        for i, leg in enumerate(flight_plan_data.legData):
+            draw_leg(overlay_draw, leg, coord_to_pixel)
+            annotate_leg(
+                overlay_draw, overlay,
+                _time_at_origin(i), leg, coord_to_pixel,
+                _hack_offset_for_leg(i),
+            )
+
+        # Draw all waypoints (symbol + number / name / elapsed-time label).
+        def _inbound_screen_angle(i: int) -> float | None:
+            if i == 0 or i - 1 >= len(flight_plan_data.legData):
+                return None
+            leg = flight_plan_data.legData[i - 1]
+            sx, sy = coord_to_pixel(leg.straigthening_point.lat, leg.straigthening_point.lon)
+            dx, dy = coord_to_pixel(leg.destination.lat, leg.destination.lon)
+            ddx, ddy = dx - sx, dy - sy
+            if ddx == 0 and ddy == 0:
+                return None
+            return math.atan2(ddy, ddx)
+
+        for i, point in enumerate(flight_plan.points):
+            draw_turnpoint(
+                overlay_draw, point, coord_to_pixel,
+                image.width, image.height,
+                _inbound_screen_angle(i),
+            )
+            annotate_turnpoint(
+                overlay_draw, point, i, flight_plan_data,
+                coord_to_pixel, image.width, image.height,
+                elapsed_from_sec=departure_sec,
+            )
+
+        # Composite overlay onto the image.
+        if image.mode != 'RGBA':
+            image_rgba = image.convert('RGBA')
+            result = Image.alpha_composite(image_rgba, overlay).convert(image.mode)
+            image.paste(result, (0, 0))
+        else:
+            image.paste(Image.alpha_composite(image, overlay), (0, 0))
+
+    except Exception as e:
+        logger.warning(f"Failed to annotate overview map: {e}")
+
+
+def _draw_north_arrow(
+    draw: ImageDraw.ImageDraw,
+    rotation_angle_deg: float,
+    center: Tuple[int, int] = (55, 85),
+    length: int = 38,
+) -> None:
+    """
+    Draw a north arrow at a fixed position on the image.
+
+    The arrow points in the direction of true north given the map's rotation.
+    When rotation_angle_deg=0 (north up) the arrow points straight up.
+    When rotation_angle_deg=90 (CCW, east up) the arrow points to the right.
+
+    Args:
+        draw: ImageDraw object (RGBA).
+        rotation_angle_deg: Map rotation angle in degrees CCW applied to the map.
+        center: Centre of the arrow circle (default: top-left corner area).
+        length: Total arrow length in pixels.
+    """
+    angle_rad = math.radians(rotation_angle_deg)
+    # North direction vector in screen (pixel) space.
+    ndx = math.sin(angle_rad)    # positive = rightward on screen
+    ndy = -math.cos(angle_rad)   # negative = upward on screen
+
+    cx, cy = center
+
+    # Background circle for legibility.
+    bg_r = length // 2 + 8
+    bg_color = (255, 255, 255, 180)
+    draw.ellipse(
+        (cx - bg_r, cy - bg_r, cx + bg_r, cy + bg_r),
+        fill=bg_color, outline=OUTLINE_COLOR_RGBA, width=2,
+    )
+
+    # Arrow shaft from base to just before the arrowhead.
+    head_len = 12
+    shaft_end_x = cx + ndx * (length // 2 - head_len)
+    shaft_end_y = cy + ndy * (length // 2 - head_len)
+    base_x = cx - ndx * (length // 2 - head_len)
+    base_y = cy - ndy * (length // 2 - head_len)
+    draw.line([(base_x, base_y), (shaft_end_x, shaft_end_y)], fill=OUTLINE_COLOR_RGBA, width=3)
+
+    # Filled arrowhead triangle at the north tip.
+    tip_x = cx + ndx * (length // 2)
+    tip_y = cy + ndy * (length // 2)
+    perp_x = -ndy
+    perp_y = ndx
+    half_w = 6
+    arrowhead = [
+        (tip_x, tip_y),
+        (shaft_end_x + perp_x * half_w, shaft_end_y + perp_y * half_w),
+        (shaft_end_x - perp_x * half_w, shaft_end_y - perp_y * half_w),
+    ]
+    draw.polygon(arrowhead, fill=OUTLINE_COLOR_RGBA)
+
+    # "N" label placed just beyond the arrowhead tip.
+    label_offset = 12
+    label_x = tip_x + ndx * label_offset
+    label_y = tip_y + ndy * label_offset
+    bbox = draw.textbbox((0, 0), "N", font=MEDIUM_FONT)
+    w = bbox[2] - bbox[0]
+    h = bbox[3] - bbox[1]
+    draw.text(
+        (label_x - w / 2 - bbox[0], label_y - h / 2 - bbox[1]),
+        "N", fill=OUTLINE_COLOR_RGBA, font=MEDIUM_FONT,
+    )
+
+
+def _draw_route_summary(
+    draw: ImageDraw.ImageDraw,
+    total_nm: float,
+    total_sec: int,
+    image_width: int,
+    image_height: int,
+) -> None:
+    """
+    Draw a total-distance / total-time box in the bottom-right corner.
+
+    Args:
+        draw: ImageDraw object (RGBA).
+        total_nm: Total route distance in nautical miles.
+        total_sec: Total route time in seconds.
+        image_width: Page width in pixels.
+        image_height: Page height in pixels.
+    """
+    h = total_sec // 3600
+    m = (total_sec % 3600) // 60
+    s = total_sec % 60
+
+    nm_str = f"{total_nm:.1f} NM"
+    time_str = f"{h:02d}:{m:02d}:{s:02d}"
+
+    font = MEDIUM_FONT
+    PADDING = 8
+    LINE_H = 28
+    LINE_W = 2
+    MARGIN = 10
+
+    nm_bbox = draw.textbbox((0, 0), nm_str, font=font)
+    time_bbox = draw.textbbox((0, 0), time_str, font=font)
+    max_text_w = max(nm_bbox[2] - nm_bbox[0], time_bbox[2] - time_bbox[0])
+
+    box_w = max_text_w + PADDING * 2
+    box_h = LINE_H * 2 + PADDING * 2
+
+    box_right = image_width - MARGIN
+    box_bottom = image_height - MARGIN
+    box_left = box_right - box_w
+    box_top = box_bottom - box_h
+
+    fill_color = (255, 255, 255, int(255 * BACKGROUND_OPACITY))
+    draw.rectangle(
+        (box_left, box_top, box_right, box_bottom),
+        fill=fill_color, outline=OUTLINE_COLOR_RGBA, width=LINE_W,
+    )
+
+    # NM row
+    nm_x = box_left + (box_w - (nm_bbox[2] - nm_bbox[0])) / 2 - nm_bbox[0]
+    nm_y = box_top + PADDING - nm_bbox[1]
+    draw.text((nm_x, nm_y), nm_str, fill=TEXT_COLOR_RGBA, font=font)
+
+    # Separator line
+    sep_y = box_top + PADDING + LINE_H
+    draw.line([(box_left, sep_y), (box_right, sep_y)], fill=OUTLINE_COLOR_RGBA, width=LINE_W)
+
+    # Time row
+    time_x = box_left + (box_w - (time_bbox[2] - time_bbox[0])) / 2 - time_bbox[0]
+    time_y = sep_y + PADDING - time_bbox[1]
+    draw.text((time_x, time_y), time_str, fill=TEXT_COLOR_RGBA, font=font)

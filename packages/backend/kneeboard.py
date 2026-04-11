@@ -119,10 +119,18 @@ def generate_kneeboard_zip(flight_plan: FlightPlan, progress_callback: Optional[
     wpts_page = generate_waypoint_list_page(flight_plan)
     logger.info(f"Waypoint list page generated: {len(wpts_page)} bytes")
 
+    # Generate overview map page (imported here to avoid circular import)
+    from overview_map_page import generate_overview_map_page
+    if progress_callback:
+        progress_callback("Generating overview map page...")
+    overview_page = generate_overview_map_page(flight_plan, flightPlanData)
+    logger.info(f"Overview map page generated: {len(overview_page)} bytes")
+
     # Create ZIP file
     zip_data = io.BytesIO()
     with zipfile.ZipFile(zip_data, 'w', compression=zipfile.ZIP_STORED) as zipf:
         zipf.writestr("0wpts.png", wpts_page)
+        zipf.writestr("1overview.png", overview_page)
         for i, leg_map in enumerate(leg_maps):
             filename = f"leg_{i+1:02d}.png"
             logger.info(f"Adding {filename} to ZIP file")
