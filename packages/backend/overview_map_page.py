@@ -88,7 +88,7 @@ def generate_overview_map_page(flight_plan: FlightPlan, flight_plan_data: Flight
     # If the route is wider (E-W) than tall (N-S), rotate the map 90° CCW so
     # east becomes "up" and the E-W extent fills the portrait height (1024 px).
     if route_width_m >= route_height_m:
-        rotation_angle = 90   # CCW; east → up; north → right
+        rotation_angle = 90   # CCW; east → up; north → left
         longest_m = route_width_m
         shortest_m = route_height_m
     else:

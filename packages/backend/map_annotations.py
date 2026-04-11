@@ -1495,7 +1495,9 @@ def _draw_north_arrow(
     """
     angle_rad = math.radians(rotation_angle_deg)
     # North direction vector in screen (pixel) space.
-    ndx = math.sin(angle_rad)    # positive = rightward on screen
+    # When the image is rotated CCW by θ, north (originally up=(0,-1)) moves to
+    # the left for θ=90°, giving direction (-sin(θ), -cos(θ)).
+    ndx = -math.sin(angle_rad)   # positive = rightward on screen
     ndy = -math.cos(angle_rad)   # negative = upward on screen
 
     cx, cy = center
