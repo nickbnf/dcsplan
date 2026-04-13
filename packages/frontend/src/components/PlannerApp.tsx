@@ -28,7 +28,7 @@ const PlannerApp: React.FC = () => {
   return (
     <>
       <AboutModal />
-      <div className="flex h-screen w-screen overflow-hidden">
+      <div className="flex flex-1 w-full overflow-hidden">
         <Sidebar
           mouseCoordinate={mouseCoordinate}
           flightPlan={flightPlan}

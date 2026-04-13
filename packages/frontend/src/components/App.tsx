@@ -1,7 +1,10 @@
 import React from 'react';
 import { Routes, Route } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
+import Layout from './Layout';
 import PlannerApp from './PlannerApp';
+import PerformancePage from './PerformancePage';
+import AttackPlanningPage from './AttackPlanningPage';
 import { About } from './About';
 
 const App: React.FC = () => {
@@ -15,7 +18,11 @@ const App: React.FC = () => {
         />
       </Helmet>
       <Routes>
-        <Route path="/" element={<PlannerApp />} />
+        <Route element={<Layout />}>
+          <Route path="/" element={<PlannerApp />} />
+          <Route path="/performance" element={<PerformancePage />} />
+          <Route path="/attack" element={<AttackPlanningPage />} />
+        </Route>
         <Route path="/about" element={<About />} />
       </Routes>
     </>
