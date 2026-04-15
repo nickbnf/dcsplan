@@ -211,12 +211,41 @@ export function calculateAttackProfile(
   const runInDistance = Math.sqrt(bestEoRI[0] ** 2 + bestEoRI[1] ** 2);
   console.log('[AttackPlanning] Step 9: Run-in heading =', runInHeading, '°  Run-in distance =', runInDistance, 'nm');
 
+  // ── Step 9b: IP to PUP time ───────────────────────────────────────────────
+  const dE_ipPup = bestPUP[0] - ipE;
+  const dN_ipPup = bestPUP[1] - ipN;
+  const distIpToPup_nm = Math.sqrt(dE_ipPup ** 2 + dN_ipPup ** 2);
+  const windCompIpTgt = ip.windSpeed * Math.cos(toRad(ip.windDir - iptgtHdgDeg));
+  const gsIpTgt = Math.max(ip.tas - windCompIpTgt, 1);
+  const ipToPupTime = (distIpToPup_nm / gsIpTgt) * 3600;
+  console.log('[AttackPlanning] Step 9b: distIpToPup =', distIpToPup_nm, 'nm  gsIpTgt =', gsIpTgt, '  ipToPupTime =', ipToPupTime, 's');
+
   // ── Step 10: Climb time ───────────────────────────────────────────────────
   const climbSlant_nm = (params.apexAltitude - ingressAlt) / Math.sin(climbAngleRad) / FT_PER_NM;
   const windComp = params.windSpeed * Math.cos(toRad(params.windDir - climbHeadingDeg));
   const gs = Math.max(params.climbTas - windComp, 1);
   const climbTime = (climbSlant_nm / gs) * 3600;
   console.log('[AttackPlanning] Step 10: climbSlant =', climbSlant_nm, 'nm  windComp =', windComp, '  gs =', gs, '  climbTime =', climbTime, 's');
+
+  // ── Step 10b: Drop point and run-in time ──────────────────────────────────
+  const dropHorizDist_nm = (params.apexAltitude - params.dropAltitude) / Math.tan(diveAngleRad) / FT_PER_NM;
+  if (params.dropAltitude >= params.apexAltitude) {
+    console.log('[AttackPlanning] Step 10b: dropAltitude >= apexAltitude → returning null');
+    return null;
+  }
+  if (dropHorizDist_nm > runInDistance) {
+    console.log('[AttackPlanning] Step 10b: drop point would fall past TGT (dropHorizDist =', dropHorizDist_nm, '> runInDistance =', runInDistance, ') → returning null');
+    return null;
+  }
+  const dropSlant_nm = (params.apexAltitude - params.dropAltitude) / Math.sin(diveAngleRad) / FT_PER_NM;
+  const runInHdgVec = headingVec(runInHeading);
+  const dropE = bestEoRI[0] + dropHorizDist_nm * runInHdgVec[0];
+  const dropN = bestEoRI[1] + dropHorizDist_nm * runInHdgVec[1];
+  const [dropLat, dropLon] = fromLocal(dropE, dropN, tgt.lat, tgt.lon);
+  const windCompRunIn = params.windSpeed * Math.cos(toRad(params.windDir - runInHeading));
+  const gsRunIn = Math.max(params.diveTas - windCompRunIn, 1);
+  const runInTime = (dropSlant_nm / gsRunIn) * 3600;
+  console.log('[AttackPlanning] Step 10b: dropHorizDist =', dropHorizDist_nm, 'nm  dropSlant =', dropSlant_nm, 'nm  runInTime =', runInTime, 's');
 
   // ── Step 11: End of Climbing Turn (ECT) ──────────────────────────────────
   // Aircraft at PUP is heading iptgtHdgDeg; it turns to climbHeadingDeg.
@@ -252,7 +281,12 @@ export function calculateAttackProfile(
     runInHeading,
     runInDistance,
     climbDistance: distClimb_nm,
+    ingressAlt,
+    ipToPupTime,
     climbTime,
+    runInTime,
+    dropLat,
+    dropLon,
     endOfRollInLat: eoriLat,
     endOfRollInLon: eoriLon,
     rollInLat,

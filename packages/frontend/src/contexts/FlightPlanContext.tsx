@@ -10,13 +10,30 @@ interface FlightPlanContextValue {
 
 const FlightPlanContext = createContext<FlightPlanContextValue | null>(null);
 
+const omitAttackPlanning = ({ attackPlanning: _, ...rest }: FlightPlan) => rest;
+
 export const FlightPlanProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [flightPlan, setFlightPlan] = usePersistedFlightPlan(() =>
     flightPlanUtils.newFlightPlan()
   );
 
+  const handleFlightPlanUpdate = (newPlan: FlightPlan) => {
+    const baseChanged =
+      JSON.stringify(omitAttackPlanning(newPlan)) !==
+      JSON.stringify(omitAttackPlanning(flightPlan));
+
+    if (baseChanged && newPlan.attackPlanning?.results) {
+      setFlightPlan({
+        ...newPlan,
+        attackPlanning: { params: newPlan.attackPlanning.params },
+      });
+    } else {
+      setFlightPlan(newPlan);
+    }
+  };
+
   return (
-    <FlightPlanContext.Provider value={{ flightPlan, onFlightPlanUpdate: setFlightPlan }}>
+    <FlightPlanContext.Provider value={{ flightPlan, onFlightPlanUpdate: handleFlightPlanUpdate }}>
       {children}
     </FlightPlanContext.Provider>
   );

@@ -2,7 +2,7 @@ import VectorSource from "ol/source/Vector";
 import type { FlightPlan } from "../types/flightPlan";
 import VectorLayer from "ol/layer/Vector";
 import { Point, LineString } from "ol/geom";
-import { Stroke, Style, Circle, Fill, Text, RegularShape } from "ol/style";
+import { Stroke, Style, Circle, Fill, Text, RegularShape, Icon } from "ol/style";
 import Feature from "ol/Feature";
 import { transform } from "ol/proj";
 import { calculateAllLegDrawData, generateArcPoints } from "./legCalculations";
@@ -26,6 +26,17 @@ export const createFlightPlanLayer = (flightPlan: FlightPlan, projection: any, n
             source.addFeature(feature);
         }
     });
+
+    // PUP marker (attack planning result)
+    const attackResults = flightPlan.attackPlanning?.results;
+    if (attackResults) {
+        const [px, py] = transform([attackResults.pupLon, attackResults.pupLat], 'EPSG:4326', projection.getCode());
+        const pupFeature = new Feature({
+            geometry: new Point([px, py]),
+            type: 'pup',
+        });
+        source.addFeature(pupFeature);
+    }
 
     // Calculate all leg data once (sequential calculation)
     const legDrawData = calculateAllLegDrawData(flightPlan, projection, navigationMode);
@@ -178,6 +189,32 @@ export const createFlightPlanLayer = (flightPlan: FlightPlan, projection: any, n
                 }
 
                 return styles;
+            } else if (featureType === 'pup') {
+                // SVG: small empty circle (left) + pull-up arrow (vertical then 45° up-right)
+                // Circle centre at (8,17), anchor fraction = [0.2, 0.5]
+                const pupSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="34" viewBox="0 0 40 34"><circle cx="8" cy="17" r="6" fill="none" stroke="#0066CC" stroke-width="2"/><line x1="20" y1="31" x2="20" y2="17" stroke="#0066CC" stroke-width="2" stroke-linecap="round"/><line x1="20" y1="17" x2="34" y2="3" stroke="#0066CC" stroke-width="2" stroke-linecap="round"/><polyline points="26,3 34,3 34,11" fill="none" stroke="#0066CC" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+                return [
+                    new Style({
+                        image: new Icon({
+                            src: 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(pupSvg),
+                            anchor: [0.2, 0.5],
+                            anchorXUnits: 'fraction',
+                            anchorYUnits: 'fraction',
+                        }),
+                    }),
+                    new Style({
+                        text: new Text({
+                            text: 'PUP',
+                            offsetX: 50,
+                            offsetY: 0,
+                            textAlign: 'left',
+                            textBaseline: 'middle',
+                            fill: new Fill({ color: '#0066CC' }),
+                            stroke: new Stroke({ color: '#ffffff', width: 3 }),
+                            font: 'bold 14px sans-serif',
+                        }),
+                    }),
+                ];
             } else if (featureType === 'flightline') {
                 // Draw the arc+line geometry as-is (no shortening)
                 return new Style({

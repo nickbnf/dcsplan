@@ -24,6 +24,7 @@ const BASE_PARAMS: AttackPlanningParams = {
   windDir: 0,
   windSpeed: 0,
   rollInG: 3,
+  diveTas: 400,
 };
 
 // IP at lat=35.8, lon=36.0; TGT at lat=36.0, lon=36.0
@@ -112,5 +113,61 @@ describe('calculateAttackProfile', () => {
     const result = calculateAttackProfile(PLAN_WITH_IP_TGT, BASE_PARAMS);
     expect(result).not.toBeNull();
     expect(result!.climbTime).toBeGreaterThan(0);
+  });
+
+  it('drop point lies between EoRI and TGT at correct horizontal distance', () => {
+    const result = calculateAttackProfile(PLAN_WITH_IP_TGT, BASE_PARAMS);
+    expect(result).not.toBeNull();
+
+    // Horizontal distance from EoRI to drop = (apexAlt - dropAlt) / tan(diveAngle)
+    const expectedDropHorizDist = (8000 - 3000) / Math.tan(toRad(45)) / FT_PER_NM;
+
+    const tgtLat = 36.0, tgtLon = 36.0;
+
+    // Distance from EoRI to drop point
+    const dLatEoriDrop = result!.dropLat - result!.endOfRollInLat;
+    const dLonEoriDrop = result!.dropLon - result!.endOfRollInLon;
+    const eoriToDropNm = Math.sqrt(
+      (dLatEoriDrop * LAT_NM) ** 2 + (dLonEoriDrop * lonNmPerDeg(tgtLat)) ** 2,
+    );
+    expect(eoriToDropNm).toBeCloseTo(expectedDropHorizDist, 2);
+
+    // Distance from drop to TGT = cone radius - dropHorizDist
+    const R_cone_nm = (8000 - 100) / Math.tan(toRad(45)) / FT_PER_NM;
+    const dLatDropTgt = tgtLat - result!.dropLat;
+    const dLonDropTgt = tgtLon - result!.dropLon;
+    const dropToTgtNm = Math.sqrt(
+      (dLatDropTgt * LAT_NM) ** 2 + (dLonDropTgt * lonNmPerDeg(tgtLat)) ** 2,
+    );
+    expect(dropToTgtNm).toBeCloseTo(R_cone_nm - expectedDropHorizDist, 2);
+  });
+
+  it('run-in time equals slant dive distance divided by diveTas (zero wind)', () => {
+    const result = calculateAttackProfile(PLAN_WITH_IP_TGT, BASE_PARAMS);
+    expect(result).not.toBeNull();
+
+    const slantNm = (8000 - 3000) / Math.sin(toRad(45)) / FT_PER_NM;
+    const expectedRunInTime = (slantNm / 400) * 3600; // diveTas = 400, no wind
+    expect(result!.runInTime).toBeCloseTo(expectedRunInTime, 1);
+  });
+
+  it('run-in time is shorter with tailwind on run-in leg', () => {
+    // First determine the run-in heading from the no-wind result, then pick a
+    // tailwind direction (wind FROM run-in heading, i.e. wind pushes the aircraft
+    // forward along the run-in).
+    // With angleOff=30 and IPTGT heading=0° (due North), climbHeading=30°.
+    // The EoRI is in the NE quadrant, so run-in heading ≈ 230°.
+    // A wind from ~50° (NE) blows toward SW, which is a tailwind for a 230° run-in.
+    const noWind = calculateAttackProfile(PLAN_WITH_IP_TGT, BASE_PARAMS);
+    expect(noWind).not.toBeNull();
+    // Wind FROM the direction the aircraft is flying toward (i.e. from run-in heading)
+    // gives a tailwind. runInHeading ≈ 230°, so wind from 230° is a headwind;
+    // wind from (runInHeading + 180°) ≈ 50° is a tailwind.
+    const tailwindDir = (noWind!.runInHeading + 180) % 360;
+    const paramsWithWind: AttackPlanningParams = { ...BASE_PARAMS, windDir: tailwindDir, windSpeed: 30 };
+    const withWind = calculateAttackProfile(PLAN_WITH_IP_TGT, paramsWithWind);
+    expect(withWind).not.toBeNull();
+    // Tailwind means higher GS → shorter time
+    expect(withWind!.runInTime).toBeLessThan(noWind!.runInTime);
   });
 });

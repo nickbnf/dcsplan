@@ -16,6 +16,7 @@ const DEFAULT_PARAMS: AttackPlanningParams = {
   windDir: 0,
   windSpeed: 20,
   rollInG: 3,
+  diveTas: 400,
 };
 
 const NumericField: React.FC<{
@@ -59,15 +60,24 @@ const formatTime = (seconds: number): string => {
   return `${m}:${s.toString().padStart(2, '0')}`;
 };
 
+const formatHackTime = (seconds: number): string => {
+  const m = Math.trunc(seconds / 60);
+  const s = Math.round(seconds % 60);
+  return `${m.toString().padStart(2, '0')}+${s.toString().padStart(2, '0')}`;
+};
+
 const ResultsPanel: React.FC<{ results: AttackPlanningResults }> = ({ results }) => (
   <div className="p-4 bg-white rounded shadow min-w-[300px]">
     <h3 className="text-sm font-aero-label text-gray-900 mb-3 uppercase">Attack Profile</h3>
     <div className="space-y-1">
+      {results.ingressAlt != null && <ResultRow label="Ingress Alt (AMSL)" value={`${results.ingressAlt.toFixed(0)} ft`} />}
+      {results.ipToPupTime != null && <ResultRow label="IP → PUP" value={formatHackTime(results.ipToPupTime)} />}
       <ResultRow label="Climb Heading" value={`${results.climbHeading.toFixed(0)}°`} />
       <ResultRow label="Run-in Heading" value={`${results.runInHeading.toFixed(0)}°`} />
       <ResultRow label="Run-in Distance" value={`${results.runInDistance.toFixed(2)} nm`} />
-      <ResultRow label="Climb Distance" value={`${results.climbDistance.toFixed(2)} nm`} />
-      <ResultRow label="Climb Time" value={formatTime(results.climbTime)} />
+      {results.climbDistance != null && <ResultRow label="Climb Distance" value={`${results.climbDistance.toFixed(2)} nm`} />}
+      {results.climbTime != null && <ResultRow label="Climb Time" value={formatTime(results.climbTime)} />}
+      {results.runInTime != null && <ResultRow label="Run-in Time" value={formatTime(results.runInTime)} />}
       <div className="border-t border-gray-200 my-2" />
       <ResultRow label="PUP" value={formatLatLon(results.pupLat, results.pupLon)} />
       <ResultRow label="ECT" value={formatLatLon(results.ectLat, results.ectLon)} />
@@ -100,6 +110,15 @@ const AttackPlanningPage: React.FC = () => {
 
   const set = <K extends keyof AttackPlanningParams>(key: K, val: AttackPlanningParams[K]) =>
     setParams(p => ({ ...p, [key]: val }));
+
+  const handleClear = useCallback(() => {
+    onFlightPlanUpdate({
+      ...flightPlan,
+      attackPlanning: flightPlan.attackPlanning
+        ? { params: flightPlan.attackPlanning.params }
+        : undefined,
+    });
+  }, [flightPlan, onFlightPlanUpdate]);
 
   return (
     <div className="flex flex-1 w-full overflow-hidden">
@@ -137,6 +156,7 @@ const AttackPlanningPage: React.FC = () => {
           </div>
 
           <NumericField label="Climb TAS" value={params.climbTas} unit="kts" onChange={v => set('climbTas', v)} />
+          <NumericField label="Dive TAS" value={params.diveTas} unit="kts" onChange={v => set('diveTas', v)} />
           <NumericField label="Climb angle" value={params.climbAngle} unit="°" onChange={v => set('climbAngle', v)} />
           <NumericField label="Dive angle" value={params.diveAngle} unit="°" onChange={v => set('diveAngle', v)} />
           <NumericField label="Apex altitude" value={params.apexAltitude} unit="ft" onChange={v => set('apexAltitude', v)} />
@@ -177,13 +197,22 @@ const AttackPlanningPage: React.FC = () => {
                 : 'Add a TGT waypoint to enable calculation.'}
             </p>
           )}
-          <button
-            onClick={handleCalculate}
-            disabled={!canCalculate}
-            className="w-full py-2 font-aero-label text-sm bg-avio-primary text-white rounded hover:bg-avio-accent transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            Calculate
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={handleCalculate}
+              disabled={!canCalculate}
+              className="flex-1 py-2 font-aero-label text-sm bg-avio-primary text-white rounded hover:bg-avio-accent transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Calculate
+            </button>
+            <button
+              onClick={handleClear}
+              disabled={!results}
+              className="py-2 px-4 font-aero-label text-sm bg-white text-gray-700 border border-gray-300 rounded hover:bg-gray-100 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Clear
+            </button>
+          </div>
         </div>
       </div>
 

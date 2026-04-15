@@ -51,6 +51,7 @@ export type AttackPlanningParams = {
   windDir: number;            // degrees (direction wind is coming from)
   windSpeed: number;          // knots
   rollInG: number;            // g-load for roll-in and PUP turns
+  diveTas: number;            // knots — speed during dive (used for run-in time)
 }
 
 export type AttackPlanningResults = {
@@ -58,7 +59,12 @@ export type AttackPlanningResults = {
   runInHeading: number;       // degrees (bearing EoRI → TGT, computed)
   runInDistance: number;      // nm (horizontal distance EoRI → TGT = cone radius)
   climbDistance: number;      // nm (horizontal distance PUP → roll-in point)
+  ingressAlt: number;         // feet AMSL (altitude of IP→TGT leg, from TGT waypoint)
+  ipToPupTime: number;        // seconds (IP to PUP, based on IP leg TAS/wind)
   climbTime: number;          // seconds (wind-corrected)
+  runInTime: number;          // seconds (wind-corrected, EoRI to drop point)
+  dropLat: number;            // latitude of drop point (for diagram)
+  dropLon: number;            // longitude of drop point (for diagram)
   endOfRollInLat: number;
   endOfRollInLon: number;
   rollInLat: number;

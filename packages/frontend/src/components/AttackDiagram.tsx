@@ -42,7 +42,7 @@ const AttackDiagram: React.FC<AttackDiagramProps> = ({ results, ip, tgt }) => {
   const {
     riArcR_px, riHdgChange,
     pupArcR_px, pupCwAngle,
-    ipSvg, tgtSvg, pupSvg, ectSvg, riSvg, eoriSvg,
+    ipSvg, tgtSvg, pupSvg, ectSvg, riSvg, eoriSvg, dropSvg,
   } = useMemo(() => {
     const pts = {
       ip: toLocal(ip.lat, ip.lon, tgt.lat, tgt.lon),
@@ -82,6 +82,9 @@ const AttackDiagram: React.FC<AttackDiagramProps> = ({ results, ip, tgt }) => {
     const pupChord = Math.sqrt((pts.pup[0] - pts.ect[0]) ** 2 + (pts.pup[1] - pts.ect[1]) ** 2);
     const pupArcR_px = arcRadius(pupChord, pupCwAngle <= 180 ? pupCwAngle : 360 - pupCwAngle, scaleVal);
 
+    // Drop point — outside pts to avoid affecting bounding box
+    const dropSvg = toSvgFn(toLocal(results.dropLat, results.dropLon, tgt.lat, tgt.lon));
+
     return {
       riArcR_px,
       riHdgChange,
@@ -93,6 +96,7 @@ const AttackDiagram: React.FC<AttackDiagramProps> = ({ results, ip, tgt }) => {
       ectSvg: toSvgFn(pts.ect),
       riSvg: toSvgFn(pts.rollIn),
       eoriSvg: toSvgFn(pts.eori),
+      dropSvg,
     };
   }, [results, ip, tgt]);
 
@@ -171,6 +175,10 @@ const AttackDiagram: React.FC<AttackDiagramProps> = ({ results, ip, tgt }) => {
       {/* EoRI */}
       <circle cx={eoriSvg[0]} cy={eoriSvg[1]} r={4} fill="#3b82f6" />
       <text x={eoriSvg[0] + 8} y={eoriSvg[1] + 4} fontSize={11} fontFamily="monospace" fill="#1d4ed8">EoRI</text>
+
+      {/* Drop point */}
+      <circle cx={dropSvg[0]} cy={dropSvg[1]} r={4} fill="#f97316" />
+      <text x={dropSvg[0] + 8} y={dropSvg[1] + 4} fontSize={11} fontFamily="monospace" fill="#ea580c">DROP</text>
 
       {/* TGT triangle */}
       <path d={tri} fill="#ef4444" />
