@@ -6,6 +6,7 @@ import PlannerApp from './PlannerApp';
 import PerformancePage from './PerformancePage';
 import AttackPlanningPage from './AttackPlanningPage';
 import { About } from './About';
+import { FlightPlanProvider } from '../contexts/FlightPlanContext';
 
 const App: React.FC = () => {
   return (
@@ -18,7 +19,7 @@ const App: React.FC = () => {
         />
       </Helmet>
       <Routes>
-        <Route element={<Layout />}>
+        <Route element={<FlightPlanProvider><Layout /></FlightPlanProvider>}>
           <Route path="/" element={<PlannerApp />} />
           <Route path="/performance" element={<PerformancePage />} />
           <Route path="/attack" element={<AttackPlanningPage />} />

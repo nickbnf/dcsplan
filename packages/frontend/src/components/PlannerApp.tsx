@@ -3,16 +3,12 @@ import MapComponent from './Map';
 import { Sidebar } from './Sidebar';
 import { AboutModal } from './AboutModal';
 import type { FlightPlan } from '../types/flightPlan';
-import { flightPlanUtils } from '../utils/flightPlanUtils';
 import { useDrawing } from '../hooks/useDrawing';
-import { usePersistedFlightPlan } from '../hooks/usePersistedFlightPlan';
+import { useFlightPlan } from '../contexts/FlightPlanContext';
 
 const PlannerApp: React.FC = () => {
   const [mouseCoordinate, setMouseCoordinate] = useState<{ lat: number; lon: number; raw_x: number; raw_y: number } | null>(null);
-  const [flightPlan, setFlightPlan] = usePersistedFlightPlan(() => {
-    let plan = flightPlanUtils.newFlightPlan();
-    return plan;
-  });
+  const { flightPlan, onFlightPlanUpdate: setFlightPlan } = useFlightPlan();
   const [mapNavInfo, setMapNavInfo] = useState<{ projection: any; navigationMode: string } | null>(null);
   const { drawingState, startDrawing, stopDrawing, startDragging, stopDragging, addPoint, updatePreviewLine } = useDrawing();
 

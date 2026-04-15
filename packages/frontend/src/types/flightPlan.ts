@@ -38,6 +38,37 @@ export type FlightPlanPointChange = {
   hack?: boolean;
 }
 
+// Attack planning types
+export type AttackPlanningParams = {
+  attackType: 'oblique_popup';
+  angleOff: 30 | 45 | 60;    // degrees, dropdown
+  climbTas: number;           // knots
+  climbAngle: number;         // degrees
+  diveAngle: number;          // degrees
+  apexAltitude: number;       // feet
+  dropAltitude: number;       // feet
+  targetAltitude: number;     // feet
+  windDir: number;            // degrees (direction wind is coming from)
+  windSpeed: number;          // knots
+  rollInG: number;            // g-load for roll-in and PUP turns
+}
+
+export type AttackPlanningResults = {
+  climbHeading: number;       // degrees (IP→TGT heading + angleOff)
+  runInHeading: number;       // degrees (bearing EoRI → TGT, computed)
+  runInDistance: number;      // nm (horizontal distance EoRI → TGT = cone radius)
+  climbDistance: number;      // nm (horizontal distance PUP → roll-in point)
+  climbTime: number;          // seconds (wind-corrected)
+  endOfRollInLat: number;
+  endOfRollInLon: number;
+  rollInLat: number;
+  rollInLon: number;
+  ectLat: number;             // End of Climbing Turn (start of straight climb)
+  ectLon: number;
+  pupLat: number;
+  pupLon: number;
+}
+
 // Main type containing the full flight plan
 export type FlightPlan = {
   theatre: string;
@@ -47,6 +78,10 @@ export type FlightPlan = {
   initTimeSec: number; // Initial time in seconds since midnight
   initFob: number;
   name: string; // Name of the flight plan
+  attackPlanning?: {        // optional; params are user-supplied, results are computed on Calculate
+    params: AttackPlanningParams;
+    results?: AttackPlanningResults;
+  };
 }
 
 export const FLIGHT_PLAN_VERSION = "1.1";
