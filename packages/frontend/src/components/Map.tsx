@@ -18,9 +18,9 @@ import VectorLayer from 'ol/layer/Vector';
 import VectorSource from 'ol/source/Vector';
 import { getApiUrl, getTilesBaseUrl } from '../config/api';
 import { DisplayButton } from './map/DisplayButton';
+import { MapCoordinatesOverlay } from './MapCoordinatesOverlay';
 
 interface MapComponentProps {
-  onCoordinateChange?: (coord: { raw_x: number; raw_y: number; lat: number; lon: number } | null) => void;
   flightPlan: FlightPlan;
   onFlightPlanUpdate: (flightPlan: FlightPlan) => void;
   drawingState: DrawingState;
@@ -31,17 +31,17 @@ interface MapComponentProps {
   onMapNavInfoChange?: (info: { projection: any; navigationMode: string }) => void;
 }
 
-const MapComponent: React.FC<MapComponentProps> = ({ 
-  onCoordinateChange, 
-  flightPlan, 
-  onFlightPlanUpdate, 
-  drawingState, 
+const MapComponent: React.FC<MapComponentProps> = ({
+  flightPlan,
+  onFlightPlanUpdate,
+  drawingState,
   onStartDragging,
   onStopDragging,
   addPoint,
   updatePreviewLine,
   onMapNavInfoChange,
 }) => {
+  const [hoverCoord, setHoverCoord] = useState<{ raw_x: number; raw_y: number; lat: number; lon: number } | null>(null);
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<Map | null>(null);
   const modifyInteractionRef = useRef<Modify | null>(null);
@@ -237,7 +237,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
 
   // Set up mouse move handler for coordinate display
   useEffect(() => {
-    if (!mapInstanceRef.current || !onCoordinateChange) return;
+    if (!mapInstanceRef.current) return;
 
     // Remove existing mouse move handler
     const existingMoveHandler = (mapInstanceRef.current as any).__moveHandler;
@@ -252,7 +252,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
 
       // Update coordinate display
       const geographicCoordinate = transform(coordinate, mapInstanceRef.current!.getView().getProjection().getCode(), 'EPSG:4326');
-      onCoordinateChange({
+      setHoverCoord({
         raw_x: coordinate[0],
         raw_y: coordinate[1],
         lon: geographicCoordinate[0],
@@ -264,10 +264,10 @@ const MapComponent: React.FC<MapComponentProps> = ({
         updatePreviewLine(coordinate);
       }
     };
-    
+
     mapInstanceRef.current.on('pointermove', moveHandler);
     (mapInstanceRef.current as any).__moveHandler = moveHandler;
-  }, [onCoordinateChange, drawingState.isDrawing, updatePreviewLine, mapInfo]);
+  }, [drawingState.isDrawing, updatePreviewLine, mapInfo]);
 
   // Manage Modify and Snap interactions based on drawing state
   useEffect(() => {
@@ -440,6 +440,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
         onGridChange={setGridEnabled}
         onMeasureChange={setMeasureEnabled}
       />
+      <MapCoordinatesOverlay coordinate={hoverCoord} />
     </div>
   );
 };

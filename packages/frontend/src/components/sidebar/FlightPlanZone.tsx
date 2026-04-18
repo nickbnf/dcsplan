@@ -3,6 +3,7 @@ import * as Separator from '@radix-ui/react-separator';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import type { FlightPlan, LegData, WaypointType } from '../../types/flightPlan';
 import { flightPlanUtils, getEffectiveExitTime } from '../../utils/flightPlanUtils';
+import { formatCoordinate } from '../../utils/coordinateUtils';
 import { GenerateDialog } from './GenerateDialog';
 import { DeleteWaypointDialog } from './DeleteWaypointDialog';
 import { ImportFlightPlanDialog } from './ImportFlightPlanDialog';
@@ -368,10 +369,6 @@ const WaypointCard: React.FC<{ flightPlan: FlightPlan, legData: LegData | null, 
     onFlightPlanUpdate(updatedFlightPlan);
   };
 
-  const lat_deg = Math.trunc(waypoint.lat ?? 0);
-  const lat_minutes = ((waypoint.lat ?? 0) - lat_deg) * 60;
-  const lon_deg = Math.trunc(waypoint.lon ?? 0);
-  const lon_minutes = ((waypoint.lon ?? 0) - lon_deg) * 60;
 
   return (
     <div className="group bg-white border border-gray-200 rounded p-3">
@@ -396,7 +393,7 @@ const WaypointCard: React.FC<{ flightPlan: FlightPlan, legData: LegData | null, 
         <div className="flex items-center gap-1">
           <div className="flex flex-col items-end text-right">
             <span className="text-xs font-aero-mono text-gray-500">
-              {lat_deg}°{lat_minutes.toFixed(2)}', {lon_deg}°{lon_minutes.toFixed(2)}'
+              {formatCoordinate(waypoint.lat ?? 0, 'lat')} {formatCoordinate(waypoint.lon ?? 0, 'lon')}
             </span>
           </div>
           <div className="-mr-2">

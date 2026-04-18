@@ -7,14 +7,9 @@ import { useDrawing } from '../hooks/useDrawing';
 import { useFlightPlan } from '../contexts/FlightPlanContext';
 
 const PlannerApp: React.FC = () => {
-  const [mouseCoordinate, setMouseCoordinate] = useState<{ lat: number; lon: number; raw_x: number; raw_y: number } | null>(null);
   const { flightPlan, onFlightPlanUpdate: setFlightPlan } = useFlightPlan();
   const [mapNavInfo, setMapNavInfo] = useState<{ projection: any; navigationMode: string } | null>(null);
   const { drawingState, startDrawing, stopDrawing, startDragging, stopDragging, addPoint, updatePreviewLine } = useDrawing();
-
-  const handleCoordinateChange = (coord: { lat: number; lon: number; raw_x: number; raw_y: number } | null) => {
-    setMouseCoordinate(coord);
-  };
 
   const handleFlightPlanUpdate = (updatedPlan: FlightPlan) => {
     console.log("handleFlightPlanUpdate")
@@ -26,7 +21,6 @@ const PlannerApp: React.FC = () => {
       <AboutModal />
       <div className="flex flex-1 w-full overflow-hidden">
         <Sidebar
-          mouseCoordinate={mouseCoordinate}
           flightPlan={flightPlan}
           drawingState={drawingState}
           projection={mapNavInfo?.projection}
@@ -45,7 +39,6 @@ const PlannerApp: React.FC = () => {
         />
         <div className="flex-grow h-full overflow-hidden">
           <MapComponent
-            onCoordinateChange={handleCoordinateChange}
             flightPlan={flightPlan}
             onFlightPlanUpdate={handleFlightPlanUpdate}
             drawingState={drawingState}

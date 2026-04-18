@@ -9,7 +9,6 @@ import { useTheatres } from '../hooks/useTheatres';
 import { flightPlanUtils } from '../utils/flightPlanUtils';
 
 interface SidebarProps {
-  mouseCoordinate?: { lat: number; lon: number; raw_x: number; raw_y: number } | null;
   flightPlan: FlightPlan;
   drawingState: DrawingState;
   projection?: any;
@@ -22,7 +21,6 @@ interface SidebarProps {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
-  mouseCoordinate,
   flightPlan,
   drawingState,
   projection,
@@ -64,17 +62,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
   return (
     <div className="w-[400px] bg-white border-r border-gray-300 flex flex-col h-full overflow-y-auto">
       {/* Title Zone */}
-      <TitleZone 
+      <TitleZone
         currentTheatreId={flightPlan.theatre}
         availableTheatres={theatres}
         isLoadingTheatres={isLoadingTheatres}
         onTheatreChange={handleTheatreSelect}
-        mouseCoordinates={mouseCoordinate ? {
-          x: mouseCoordinate.raw_x,
-          y: mouseCoordinate.raw_y,
-          lat: mouseCoordinate.lat,
-          lon: mouseCoordinate.lon
-        } : undefined}
       />
       
       {/* Button Zone */}
