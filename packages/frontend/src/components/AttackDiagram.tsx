@@ -119,9 +119,9 @@ const AttackDiagram: React.FC<AttackDiagramProps> = ({ results, ip, tgt }) => {
   const pupSweep = pupCwAngle <= 180 ? 1 : 0; // right turn = CW geographic = sweep=1
   const pupArcPath = `M ${pupSvg[0]} ${pupSvg[1]} A ${pupArcR_px} ${pupArcR_px} 0 ${pupLargeArc} ${pupSweep} ${ectSvg[0]} ${ectSvg[1]}`;
 
-  // TGT triangle (downward-pointing)
+  // TGT triangle (upward-pointing)
   const [tx, ty] = tgtSvg;
-  const tri = `M ${tx} ${ty + 12} L ${tx - 8} ${ty - 4} L ${tx + 8} ${ty - 4} Z`;
+  const tri = `M ${tx} ${ty - 12} L ${tx - 8} ${ty + 4} L ${tx + 8} ${ty + 4} Z`;
 
   return (
     <svg width={SVG_W} height={SVG_H} className="bg-white rounded shadow">
@@ -153,8 +153,11 @@ const AttackDiagram: React.FC<AttackDiagramProps> = ({ results, ip, tgt }) => {
       {/* Roll-in arc */}
       <path d={riArcPath} fill="none" stroke="#3b82f6" strokeWidth={2} />
 
-      {/* Run-in: EoRI → TGT */}
-      <line x1={eoriSvg[0]} y1={eoriSvg[1]} x2={tgtSvg[0]} y2={tgtSvg[1]} stroke="#ef4444" strokeWidth={2} />
+      {/* Run-in: EoRI → DROP (solid) */}
+      <line x1={eoriSvg[0]} y1={eoriSvg[1]} x2={dropSvg[0]} y2={dropSvg[1]} stroke="#ef4444" strokeWidth={2} />
+
+      {/* Run-in: DROP → TGT (dashed) */}
+      <line x1={dropSvg[0]} y1={dropSvg[1]} x2={tgtSvg[0]} y2={tgtSvg[1]} stroke="#ef4444" strokeWidth={2} strokeDasharray="6,4" />
 
       {/* IP marker */}
       <circle cx={ipSvg[0]} cy={ipSvg[1]} r={5} fill="white" stroke="#9ca3af" strokeWidth={1.5} />

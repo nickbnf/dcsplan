@@ -46,19 +46,14 @@ const ResultRow: React.FC<{ label: string; value: string }> = ({ label, value })
   </div>
 );
 
-const formatLatLon = (lat: number, lon: number): string => {
-  const latDeg = Math.trunc(lat);
-  const latMin = Math.abs((lat - latDeg) * 60);
-  const lonDeg = Math.trunc(lon);
-  const lonMin = Math.abs((lon - lonDeg) * 60);
-  return `${latDeg}°${latMin.toFixed(2)}' / ${lonDeg}°${lonMin.toFixed(2)}'`;
-};
 
 const formatTime = (seconds: number): string => {
   const m = Math.trunc(seconds / 60);
   const s = Math.round(seconds % 60);
   return `${m}:${s.toString().padStart(2, '0')}`;
 };
+
+const formatHdg = (deg: number): string => Math.round(deg).toString().padStart(3, '0') + '°';
 
 const formatHackTime = (seconds: number): string => {
   const m = Math.trunc(seconds / 60);
@@ -67,22 +62,13 @@ const formatHackTime = (seconds: number): string => {
 };
 
 const ResultsPanel: React.FC<{ results: AttackPlanningResults }> = ({ results }) => (
-  <div className="p-4 bg-white rounded shadow min-w-[300px]">
+  <div className="p-4 bg-white rounded shadow min-w-[440px]">
     <h3 className="text-sm font-aero-label text-gray-900 mb-3 uppercase">Attack Profile</h3>
     <div className="space-y-1">
-      {results.ingressAlt != null && <ResultRow label="Ingress Alt (AMSL)" value={`${results.ingressAlt.toFixed(0)} ft`} />}
-      {results.ipToPupTime != null && <ResultRow label="IP → PUP" value={formatHackTime(results.ipToPupTime)} />}
-      <ResultRow label="Climb Heading" value={`${results.climbHeading.toFixed(0)}°`} />
-      <ResultRow label="Run-in Heading" value={`${results.runInHeading.toFixed(0)}°`} />
-      <ResultRow label="Run-in Distance" value={`${results.runInDistance.toFixed(2)} nm`} />
-      {results.climbDistance != null && <ResultRow label="Climb Distance" value={`${results.climbDistance.toFixed(2)} nm`} />}
-      {results.climbTime != null && <ResultRow label="Climb Time" value={formatTime(results.climbTime)} />}
-      {results.runInTime != null && <ResultRow label="Run-in Time" value={formatTime(results.runInTime)} />}
-      <div className="border-t border-gray-200 my-2" />
-      <ResultRow label="PUP" value={formatLatLon(results.pupLat, results.pupLon)} />
-      <ResultRow label="ECT" value={formatLatLon(results.ectLat, results.ectLon)} />
-      <ResultRow label="Roll-in" value={formatLatLon(results.rollInLat, results.rollInLon)} />
-      <ResultRow label="EoRI" value={formatLatLon(results.endOfRollInLat, results.endOfRollInLon)} />
+      <ResultRow label="Ingress (hdg / alt / TAS)" value={`${formatHdg(results.ingressHeading)}  ${results.ingressAlt.toFixed(0)} ft  ${results.ingressTas.toFixed(0)} kt`} />
+      <ResultRow label="IP → PUP time" value={formatHackTime(results.ipToPupTime)} />
+      <ResultRow label="Climb (hdg / time / dist / apex)" value={`${formatHdg(results.climbHeading)}  ${formatTime(results.climbTime)}  ${results.climbDistance.toFixed(1)} nm  ${results.apexAlt.toFixed(0)} ft`} />
+      <ResultRow label="Run-in (hdg / time / dist)" value={`${formatHdg(results.runInHeading)}  ${formatTime(results.runInTime)}  ${results.runInDistance.toFixed(1)} nm`} />
     </div>
   </div>
 );

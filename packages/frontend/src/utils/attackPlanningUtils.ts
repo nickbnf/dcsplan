@@ -277,11 +277,14 @@ export function calculateAttackProfile(
   console.log('[AttackPlanning] Converted: EoRI =', [eoriLat, eoriLon], '  RollIn =', [rollInLat, rollInLon], '  ECT =', [ectLat, ectLon], '  PUP =', [pupLat, pupLon]);
 
   return {
+    ingressHeading: iptgtHdgDeg,
+    ingressTas: ip.tas,
     climbHeading: climbHeadingDeg,
     runInHeading,
     runInDistance,
     climbDistance: distClimb_nm,
     ingressAlt,
+    apexAlt: params.apexAltitude,
     ipToPupTime,
     climbTime,
     runInTime,
