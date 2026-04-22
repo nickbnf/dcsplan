@@ -13,7 +13,7 @@ const BASE_PLAN: FlightPlan = {
 };
 
 const BASE_PARAMS: AttackPlanningParams = {
-  attackType: 'oblique_popup',
+  attackType: 'oblique_popup', // right turn
   angleOff: 30,
   climbTas: 300,
   climbAngle: 20,
@@ -25,6 +25,11 @@ const BASE_PARAMS: AttackPlanningParams = {
   windSpeed: 0,
   rollInG: 3,
   diveTas: 400,
+};
+
+const BASE_PARAMS_LEFT: AttackPlanningParams = {
+  ...BASE_PARAMS,
+  attackType: 'oblique_popup_l', // left turn
 };
 
 // IP at lat=35.8, lon=36.0; TGT at lat=36.0, lon=36.0
@@ -169,5 +174,62 @@ describe('calculateAttackProfile', () => {
     expect(withWind).not.toBeNull();
     // Tailwind means higher GS → shorter time
     expect(withWind!.runInTime).toBeLessThan(noWind!.runInTime);
+  });
+
+  // ── Left-turn (oblique_popup_l) tests ─────────────────────────────────────
+
+  it('left turn: computes climb heading as IPTGT heading - angleOff', () => {
+    // IPTGT = 0°, angleOff = 30 → climbHeading = 330°
+    const result = calculateAttackProfile(PLAN_WITH_IP_TGT, BASE_PARAMS_LEFT);
+    expect(result).not.toBeNull();
+    expect(result!.climbHeading).toBeCloseTo(330, 1);
+  });
+
+  it('left turn: places EoRI on the cone circle', () => {
+    const result = calculateAttackProfile(PLAN_WITH_IP_TGT, BASE_PARAMS_LEFT);
+    expect(result).not.toBeNull();
+    const R_cone_nm = (8000 - 100) / Math.tan(toRad(45)) / FT_PER_NM;
+    const tgtLat = 36.0, tgtLon = 36.0;
+    const dLat = result!.endOfRollInLat - tgtLat;
+    const dLon = result!.endOfRollInLon - tgtLon;
+    const eoriDistNm = Math.sqrt((dLat * LAT_NM) ** 2 + (dLon * lonNmPerDeg(tgtLat)) ** 2);
+    expect(eoriDistNm).toBeCloseTo(R_cone_nm, 2);
+  });
+
+  it('left turn: places PUP on the IP→TGT line', () => {
+    // For a N-S ingress (IP due south of TGT), PUP should be on the same meridian
+    const result = calculateAttackProfile(PLAN_WITH_IP_TGT, BASE_PARAMS_LEFT);
+    expect(result).not.toBeNull();
+    expect(result!.pupLon).toBeCloseTo(36.0, 3);
+  });
+
+  it('left turn: places PUP south of TGT (before TGT on IPTGT line)', () => {
+    const result = calculateAttackProfile(PLAN_WITH_IP_TGT, BASE_PARAMS_LEFT);
+    expect(result).not.toBeNull();
+    expect(result!.pupLat).toBeLessThan(36.0);
+  });
+
+  it('left turn: EoRI is in the NW quadrant (mirror of right-turn NE)', () => {
+    // Right turn produces EoRI east of TGT; left turn should produce EoRI west of TGT
+    const resultR = calculateAttackProfile(PLAN_WITH_IP_TGT, BASE_PARAMS);
+    const resultL = calculateAttackProfile(PLAN_WITH_IP_TGT, BASE_PARAMS_LEFT);
+    expect(resultR).not.toBeNull();
+    expect(resultL).not.toBeNull();
+    const tgtLon = 36.0;
+    expect(resultR!.endOfRollInLon).toBeGreaterThan(tgtLon); // NE → east
+    expect(resultL!.endOfRollInLon).toBeLessThan(tgtLon);    // NW → west
+  });
+
+  it('left/right symmetry: identical distances and times at zero wind', () => {
+    const resultR = calculateAttackProfile(PLAN_WITH_IP_TGT, BASE_PARAMS);
+    const resultL = calculateAttackProfile(PLAN_WITH_IP_TGT, BASE_PARAMS_LEFT);
+    expect(resultR).not.toBeNull();
+    expect(resultL).not.toBeNull();
+    expect(resultL!.climbDistance).toBeCloseTo(resultR!.climbDistance, 3);
+    expect(resultL!.runInDistance).toBeCloseTo(resultR!.runInDistance, 3);
+    expect(resultL!.climbTime).toBeCloseTo(resultR!.climbTime, 2);
+    expect(resultL!.runInTime).toBeCloseTo(resultR!.runInTime, 2);
+    expect(resultL!.ipToPupTime).toBeCloseTo(resultR!.ipToPupTime, 2);
+    expect(resultL!.pupToTgtDistance).toBeCloseTo(resultR!.pupToTgtDistance, 3);
   });
 });

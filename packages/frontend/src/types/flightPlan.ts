@@ -40,7 +40,7 @@ export type FlightPlanPointChange = {
 
 // Attack planning types
 export type AttackPlanningParams = {
-  attackType: 'oblique_popup';
+  attackType: 'oblique_popup' | 'oblique_popup_l';
   angleOff: 30 | 45 | 60;    // degrees, dropdown
   climbTas: number;           // knots
   climbAngle: number;         // degrees
@@ -76,6 +76,8 @@ export type AttackPlanningResults = {
   ectLon: number;
   pupLat: number;
   pupLon: number;
+  pupToTgtDistance: number;     // nm (straight-line PUP → TGT)
+  pupToTgtTime: number;         // seconds (straight-line at diveTas, no wind)
 }
 
 // Main type containing the full flight plan

@@ -23,6 +23,12 @@ function rightPerp(hdgDeg: number): [number, number] {
   return [Math.cos(r), -Math.sin(r)];
 }
 
+/** 90° side-perpendicular: sign=+1 is right, sign=-1 is left */
+function sidePerp(hdgDeg: number, sign: 1 | -1): [number, number] {
+  const [e, n] = rightPerp(hdgDeg);
+  return [sign * e, sign * n];
+}
+
 /**
  * Convert lat/lon to local [East_nm, North_nm] centred at refLat/refLon.
  */
@@ -71,6 +77,9 @@ export function calculateAttackProfile(
   params: AttackPlanningParams,
 ): AttackPlanningResults | null {
 
+  // ── Turn direction ────────────────────────────────────────────────────────
+  const turnSign: 1 | -1 = params.attackType === 'oblique_popup_l' ? -1 : 1;
+
   // ── Step 1: Find IP and TGT waypoints ────────────────────────────────────
   const ipIdx = plan.points.findIndex(p => p.waypointType === 'ip');
   if (ipIdx === -1) {
@@ -94,8 +103,8 @@ export function calculateAttackProfile(
   console.log('[AttackPlanning] Step 2: IP local =', [ipE, ipN], ' IPTGT heading =', iptgtHdgDeg, '°');
 
   // ── Step 3: Climb heading ─────────────────────────────────────────────────
-  const climbHeadingDeg = norm360(iptgtHdgDeg + params.angleOff);
-  console.log('[AttackPlanning] Step 3: Climb heading =', climbHeadingDeg, '° (CCW roll-in case)');
+  const climbHeadingDeg = norm360(iptgtHdgDeg + turnSign * params.angleOff);
+  console.log('[AttackPlanning] Step 3: Climb heading =', climbHeadingDeg, '° (turnSign =', turnSign, ')');
 
   // ── Step 4: Turn radius ───────────────────────────────────────────────────
   const V_ft_s = params.climbTas * KTS_TO_FT_S;
@@ -123,9 +132,9 @@ export function calculateAttackProfile(
   const alpha = Math.atan2(R_nm, R_cone_nm);
   console.log('[AttackPlanning] Step 8a: R_eff =', R_eff, ' alpha =', toDeg(alpha), '°');
 
-  // Climb heading unit vector and right-perpendicular
+  // Climb heading unit vector and side-perpendicular (right for R turn, left for L turn)
   const ch_vec = headingVec(climbHeadingDeg);
-  const ch_rp = rightPerp(climbHeadingDeg);
+  const ch_rp = sidePerp(climbHeadingDeg, turnSign);
 
   // Centre C of the roll-in arc in local coords (relative to TGT at origin)
   const C_E = R_nm * ch_rp[0] - distClimb_nm * ch_vec[0];
@@ -166,8 +175,10 @@ export function calculateAttackProfile(
     // Orbital centre O (centre of the imaginary circle of radius R_eff)
     const O: [number, number] = [R_eff * Math.sin(psi), R_eff * Math.cos(psi)];
 
-    // EoRI angle on cone circle
-    const phi = psi - alpha;
+    // EoRI angle on cone circle.
+    // CCW roll-in (R): phi = psi - alpha
+    // CW roll-in  (L): phi = psi + alpha
+    const phi = psi - turnSign * alpha;
     const EoRI: [number, number] = [R_cone_nm * Math.sin(phi), R_cone_nm * Math.cos(phi)];
 
     // Roll-in point P = O + R * rightPerp(CH)
@@ -179,9 +190,10 @@ export function calculateAttackProfile(
     // t = dot(PUP, u_IPTGT); keep only t < 0 (PUP before TGT on the IPTGT line)
     const t = dot2(PUP, u_iptgt);
 
-    // Reject if the CCW roll-in arc would exceed 180° (i.e. loop back on itself)
+    // Reject if the roll-in arc would exceed 180° (i.e. loop back on itself).
+    // For right turn (CCW roll-in) check CCW angle; for left turn (CW roll-in) check CW angle.
     const runInHdg = localBearing(EoRI[0], EoRI[1], 0, 0);
-    const riHdgChange = norm360(climbHeadingDeg - runInHdg);
+    const riHdgChange = norm360(turnSign * (climbHeadingDeg - runInHdg));
 
     console.log('[AttackPlanning] Step 8e: psi =', toDeg(psi), '°  O =', O, '  EoRI =', EoRI, '  P =', P, '  PUP =', PUP, '  t =', t, '  riHdgChange =', riHdgChange);
 
@@ -269,6 +281,11 @@ export function calculateAttackProfile(
   }
   console.log('[AttackPlanning] Step 11: cwAnglePup =', cwAnglePup, '°  pupTurnRight =', pupTurnRight, '  ECT =', ECT);
 
+  // ── Step 11b: PUP to TGT straight-line distance and time ─────────────────
+  const pupToTgtDistance = Math.sqrt(bestPUP[0] ** 2 + bestPUP[1] ** 2);
+  const pupToTgtTime = (pupToTgtDistance / params.diveTas) * 3600;
+  console.log('[AttackPlanning] Step 11b: pupToTgtDistance =', pupToTgtDistance, 'nm  pupToTgtTime =', pupToTgtTime, 's');
+
   // ── Convert local coords back to lat/lon ──────────────────────────────────
   const [eoriLat, eoriLon] = fromLocal(bestEoRI[0], bestEoRI[1], tgt.lat, tgt.lon);
   const [rollInLat, rollInLon] = fromLocal(bestRollIn[0], bestRollIn[1], tgt.lat, tgt.lon);
@@ -298,5 +315,7 @@ export function calculateAttackProfile(
     ectLon,
     pupLat,
     pupLon,
+    pupToTgtDistance,
+    pupToTgtTime,
   };
 }

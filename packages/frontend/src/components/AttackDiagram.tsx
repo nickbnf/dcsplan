@@ -7,6 +7,7 @@ interface AttackDiagramProps {
   results: AttackPlanningResults;
   ip: Point;
   tgt: Point;
+  attackType: 'oblique_popup' | 'oblique_popup_l';
 }
 
 const LAT_NM = 60;
@@ -38,7 +39,7 @@ const PADDING = 48;
 const SVG_W = 480;
 const SVG_H = 480;
 
-const AttackDiagram: React.FC<AttackDiagramProps> = ({ results, ip, tgt }) => {
+const AttackDiagram: React.FC<AttackDiagramProps> = ({ results, ip, tgt, attackType }) => {
   const {
     riArcR_px, riHdgChange,
     pupArcR_px, pupCwAngle,
@@ -71,8 +72,11 @@ const AttackDiagram: React.FC<AttackDiagramProps> = ({ results, ip, tgt }) => {
       SVG_H - PADDING - (N - minN) * scaleVal,
     ];
 
-    // Roll-in arc: CCW heading change from climbHeading to runInHeading
-    const riHdgChange = normalizeHdg(results.climbHeading - results.runInHeading);
+    // Roll-in arc: heading change measured in the correct direction for the turn.
+    // R turn (CCW roll-in): normalizeHdg(climbHdg - runInHdg)
+    // L turn (CW roll-in): normalizeHdg(runInHdg - climbHdg)
+    const turnSign = attackType === 'oblique_popup_l' ? -1 : 1;
+    const riHdgChange = normalizeHdg(turnSign * (results.climbHeading - results.runInHeading));
     const riChord = Math.sqrt((pts.rollIn[0] - pts.eori[0]) ** 2 + (pts.rollIn[1] - pts.eori[1]) ** 2);
     const riArcR_px = arcRadius(riChord, riHdgChange, scaleVal);
 
@@ -98,7 +102,7 @@ const AttackDiagram: React.FC<AttackDiagramProps> = ({ results, ip, tgt }) => {
       eoriSvg: toSvgFn(pts.eori),
       dropSvg,
     };
-  }, [results, ip, tgt]);
+  }, [results, ip, tgt, attackType]);
 
   // Extend IP→TGT dashed line across the full diagram
   const iptgtDx = tgtSvg[0] - ipSvg[0];
@@ -110,13 +114,16 @@ const AttackDiagram: React.FC<AttackDiagramProps> = ({ results, ip, tgt }) => {
   const courseX2 = tgtSvg[0] + (iptgtDx / iptgtLen) * extend;
   const courseY2 = tgtSvg[1] + (iptgtDy / iptgtLen) * extend;
 
-  // Roll-in arc: CCW (left) turn → sweep=0 in SVG
+  // Roll-in arc: CCW (left) for R turn → sweep=0; CW (right) for L turn → sweep=1
+  const riSweep = attackType === 'oblique_popup_l' ? 1 : 0;
   const riLargeArc = riHdgChange > 180 ? 1 : 0;
-  const riArcPath = `M ${riSvg[0]} ${riSvg[1]} A ${riArcR_px} ${riArcR_px} 0 ${riLargeArc} 0 ${eoriSvg[0]} ${eoriSvg[1]}`;
+  const riArcPath = `M ${riSvg[0]} ${riSvg[1]} A ${riArcR_px} ${riArcR_px} 0 ${riLargeArc} ${riSweep} ${eoriSvg[0]} ${eoriSvg[1]}`;
 
-  // PUP arc: CW (right) turn for positive angleOff → sweep=1 in SVG
-  const pupLargeArc = pupCwAngle > 180 ? 1 : 0;
-  const pupSweep = pupCwAngle <= 180 ? 1 : 0; // right turn = CW geographic = sweep=1
+  // PUP arc: the actual turn angle is always ≤ 180° (angleOff is 30/45/60).
+  // For R turn: pupCwAngle = angleOff (e.g. 30°, CW sweep=1)
+  // For L turn: pupCwAngle = 360 - angleOff (e.g. 330°), actual angle = 360 - pupCwAngle = 30°
+  const pupLargeArc = 0; // actual PUP turn is always < 180°
+  const pupSweep = pupCwAngle <= 180 ? 1 : 0; // R: CW (sweep=1), L: CCW (sweep=0)
   const pupArcPath = `M ${pupSvg[0]} ${pupSvg[1]} A ${pupArcR_px} ${pupArcR_px} 0 ${pupLargeArc} ${pupSweep} ${ectSvg[0]} ${ectSvg[1]}`;
 
   // TGT triangle (upward-pointing)

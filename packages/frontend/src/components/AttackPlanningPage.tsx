@@ -65,6 +65,7 @@ const ResultsPanel: React.FC<{ results: AttackPlanningResults }> = ({ results })
   <div className="p-4 bg-white rounded shadow min-w-[440px]">
     <h3 className="text-sm font-aero-label text-gray-900 mb-3 uppercase">Attack Profile</h3>
     <div className="space-y-1">
+      <ResultRow label="PUP from TGT" value={`${results.pupToTgtDistance.toFixed(1)} nm  (${formatHackTime(results.pupToTgtTime)})`} />
       <ResultRow label="Ingress (hdg / alt / TAS)" value={`${formatHdg(results.ingressHeading)}  ${results.ingressAlt.toFixed(0)} ft  ${results.ingressTas.toFixed(0)} kt`} />
       <ResultRow label="IP → PUP time" value={formatHackTime(results.ipToPupTime)} />
       <ResultRow label="Climb (hdg / time / dist / apex)" value={`${formatHdg(results.climbHeading)}  ${formatTime(results.climbTime)}  ${results.climbDistance.toFixed(1)} nm  ${results.apexAlt.toFixed(0)} ft`} />
@@ -97,6 +98,17 @@ const AttackPlanningPage: React.FC = () => {
   const set = <K extends keyof AttackPlanningParams>(key: K, val: AttackPlanningParams[K]) =>
     setParams(p => ({ ...p, [key]: val }));
 
+  const handleAttackTypeChange = useCallback((newType: AttackPlanningParams['attackType']) => {
+    const newParams = { ...params, attackType: newType };
+    setParams(newParams);
+    if (flightPlan.attackPlanning?.results) {
+      onFlightPlanUpdate({
+        ...flightPlan,
+        attackPlanning: { params: newParams },
+      });
+    }
+  }, [flightPlan, params, onFlightPlanUpdate]);
+
   const handleClear = useCallback(() => {
     onFlightPlanUpdate({
       ...flightPlan,
@@ -120,10 +132,11 @@ const AttackPlanningPage: React.FC = () => {
             <span className="text-xs font-aero-label text-gray-600 w-32">Attack type</span>
             <select
               value={params.attackType}
-              onChange={e => set('attackType', e.target.value as 'oblique_popup')}
+              onChange={e => handleAttackTypeChange(e.target.value as AttackPlanningParams['attackType'])}
               className="text-sm font-aero-label border border-gray-300 rounded px-2 py-0.5 bg-white focus:outline-none focus:border-gray-500"
             >
-              <option value="oblique_popup">Oblique pop-up</option>
+              <option value="oblique_popup">Oblique pop-up (R)</option>
+              <option value="oblique_popup_l">Oblique pop-up (L)</option>
             </select>
           </div>
 
@@ -210,6 +223,7 @@ const AttackPlanningPage: React.FC = () => {
               results={results}
               ip={flightPlan.points.find(p => p.waypointType === 'ip')!}
               tgt={flightPlan.points.find(p => p.waypointType === 'tgt')!}
+              attackType={params.attackType}
             />
             <ResultsPanel results={results} />
           </>

@@ -190,14 +190,18 @@ export const createFlightPlanLayer = (flightPlan: FlightPlan, projection: any, n
 
                 return styles;
             } else if (featureType === 'pup') {
-                // SVG: small empty circle (left) + pull-up arrow (vertical then 45° up-right)
-                // Circle centre at (8,17), anchor fraction = [0.2, 0.5]
-                const pupSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="34" viewBox="0 0 40 34"><circle cx="8" cy="17" r="6" fill="none" stroke="#0066CC" stroke-width="2"/><line x1="20" y1="31" x2="20" y2="17" stroke="#0066CC" stroke-width="2" stroke-linecap="round"/><line x1="20" y1="17" x2="34" y2="3" stroke="#0066CC" stroke-width="2" stroke-linecap="round"/><polyline points="26,3 34,3 34,11" fill="none" stroke="#0066CC" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+                const isLeftTurn = flightPlan.attackPlanning?.params?.attackType === 'oblique_popup_l';
+                // R: circle on left (cx=8), arrow goes up-right to (34,3)
+                // L: circle on right (cx=32), arrow goes up-left to (6,3) — mirrored
+                const pupSvg = isLeftTurn
+                    ? `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="34" viewBox="0 0 40 34"><circle cx="32" cy="17" r="6" fill="none" stroke="#0066CC" stroke-width="2"/><line x1="20" y1="31" x2="20" y2="17" stroke="#0066CC" stroke-width="2" stroke-linecap="round"/><line x1="20" y1="17" x2="6" y2="3" stroke="#0066CC" stroke-width="2" stroke-linecap="round"/><polyline points="14,3 6,3 6,11" fill="none" stroke="#0066CC" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`
+                    : `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="34" viewBox="0 0 40 34"><circle cx="8" cy="17" r="6" fill="none" stroke="#0066CC" stroke-width="2"/><line x1="20" y1="31" x2="20" y2="17" stroke="#0066CC" stroke-width="2" stroke-linecap="round"/><line x1="20" y1="17" x2="34" y2="3" stroke="#0066CC" stroke-width="2" stroke-linecap="round"/><polyline points="26,3 34,3 34,11" fill="none" stroke="#0066CC" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+                const pupAnchor: [number, number] = isLeftTurn ? [0.8, 0.5] : [0.2, 0.5];
                 return [
                     new Style({
                         image: new Icon({
                             src: 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(pupSvg),
-                            anchor: [0.2, 0.5],
+                            anchor: pupAnchor,
                             anchorXUnits: 'fraction',
                             anchorYUnits: 'fraction',
                         }),
