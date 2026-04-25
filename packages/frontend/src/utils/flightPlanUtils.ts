@@ -6,6 +6,9 @@ export const getEffectiveExitTime = (exitTimeSec: number | undefined, eta: numbe
 import { FLIGHT_PLAN_VERSION } from "../types/flightPlan";
 import { calculateAllLegData } from "./legCalculations";
 
+export const slugifyPlanName = (name: string): string =>
+    name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+
 const defaultTas = 400;
 const defaultAlt = 3000;
 const defaultFuelFlow = 6000;
@@ -128,16 +131,9 @@ export const flightPlanUtils = {
         
         // Generate filename from plan name or use default
         let filename = 'flightplan.json';
-        const planName = flightPlan.name;
-        if (planName) {
-            // Sanitize plan name for filename
-            const sanitized = planName
-                .toLowerCase()
-                .replace(/[^a-z0-9]+/g, '-')
-                .replace(/^-+|-+$/g, '');
-            if (sanitized) {
-                filename = `${sanitized}.json`;
-            }
+        if (flightPlan.name) {
+            const sanitized = slugifyPlanName(flightPlan.name);
+            if (sanitized) filename = `${sanitized}.json`;
         }
         
         // Trigger download

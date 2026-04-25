@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import type { FlightPlan } from '../../types/flightPlan';
+import { slugifyPlanName } from '../../utils/flightPlanUtils';
 import { getApiUrl } from '../../config/api';
 import { trackEvent } from '../../utils/plausible';
 
@@ -114,7 +115,12 @@ export const GenerateDialog: React.FC<GenerateDialogProps> = ({ flightPlan }) =>
         // For ZIP files, download to disk
         const a = document.createElement('a');
         a.href = url;
-        a.download = 'flight_plan.zip';
+        let zipFilename = 'flight_plan.zip';
+        if (flightPlan?.name) {
+          const sanitized = slugifyPlanName(flightPlan.name);
+          if (sanitized) zipFilename = `${sanitized}.zip`;
+        }
+        a.download = zipFilename;
         document.body.appendChild(a);
         a.click();
         window.URL.revokeObjectURL(url);

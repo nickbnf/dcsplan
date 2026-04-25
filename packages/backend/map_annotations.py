@@ -342,8 +342,15 @@ def draw_leg(
                 halo_w = line_width + 4
                 halo_alpha = int(color[3] * 0.4)
                 halo_color = (255, 255, 255, halo_alpha)
+                # Pillow draws arc strokes inward from the bounding box, so expand
+                # the halo bounding box by (halo_w - line_width)/2 to keep the halo
+                # centered on the same circle as the main arc.
+                halo_expand = (halo_w - line_width) / 2
                 draw.arc(
-                    (center_x_px - turn_radius_px, center_y_px - turn_radius_px, center_x_px + turn_radius_px, center_y_px + turn_radius_px),
+                    (center_x_px - turn_radius_px - halo_expand,
+                     center_y_px - turn_radius_px - halo_expand,
+                     center_x_px + turn_radius_px + halo_expand,
+                     center_y_px + turn_radius_px + halo_expand),
                     start=angle_start,
                     end=angle_end,
                     fill=halo_color,
@@ -1375,9 +1382,12 @@ def annotate_map(
                 return None
             return math.atan2(ddy, ddx)
 
+        # What do we draw? (context, adjacent, focus)
+        tiers_to_draw = {'adjacent', 'focus'}
+
         # ── Pass 1: all halos (legs then turnpoints, back-to-front) ──────────
         # Drawn first so no halo ever overwrites a colored line or symbol.
-        for tier in ('context', 'adjacent', 'focus'):
+        for tier in tiers_to_draw:
             for i in range(len(flight_plan_data.legData)):
                 if _leg_tier(i) != tier:
                     continue
@@ -1387,7 +1397,7 @@ def annotate_map(
                     line_width=TIER_LINE_WIDTH[tier],
                     halo=True, halo_only=True,
                 )
-        for tier in ('context', 'adjacent', 'focus'):
+        for tier in tiers_to_draw:
             for i, point in enumerate(flight_plan.points):
                 if _tp_tier(i) != tier:
                     continue
@@ -1400,7 +1410,7 @@ def annotate_map(
                 )
 
         # ── Pass 2: all content (legs then turnpoints, back-to-front) ────────
-        for tier in ('context', 'adjacent', 'focus'):
+        for tier in tiers_to_draw:
             for i in range(len(flight_plan_data.legData)):
                 if _leg_tier(i) != tier:
                     continue
@@ -1417,7 +1427,7 @@ def annotate_map(
                         coord_to_pixel, _hack_offset_for_leg(i),
                     )
 
-        for tier in ('context', 'adjacent', 'focus'):
+        for tier in tiers_to_draw:
             for i, point in enumerate(flight_plan.points):
                 if _tp_tier(i) != tier:
                     continue
