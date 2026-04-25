@@ -15,7 +15,7 @@ client = TestClient(app)
 def valid_flight_plan_data():
     """Create a valid flight plan data structure."""
     return {
-        "theatre": "syria_old",
+        "theatre": "syria",
         "points": [
             {
                 "lat": 34.0,

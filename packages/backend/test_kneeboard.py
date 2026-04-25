@@ -132,7 +132,7 @@ def valid_turn_point():
 def valid_flight_plan():
     """Create a valid flight plan for testing."""
     return {
-        "theatre": "syria_old",
+        "theatre": "syria",
         "points": [
             {
                 "lat": 34.0,
@@ -173,7 +173,7 @@ def valid_flight_plan():
 def minimal_flight_plan():
     """Create a minimal flight plan with just 2 waypoints."""
     return {
-        "theatre": "syria_old",
+        "theatre": "syria",
         "points": [
             {"lat": 34.0, "lon": 36.0, "tas": 400, "alt": 3000, "fuelFlow": 6000, "windSpeed": 20, "windDir": 270},
             {"lat": 35.0, "lon": 37.0, "tas": 400, "alt": 3000, "fuelFlow": 6000, "windSpeed": 20, "windDir": 270}

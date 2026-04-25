@@ -20,7 +20,7 @@ def _make_point(lat, lon, **kwargs):
 
 def _make_plan(points, **kwargs):
     base = {
-        "theatre": "syria_old",
+        "theatre": "syria",
         "declination": 6.0,
         "bankAngle": 30.0,
         "initTimeSec": 36000,

@@ -61,7 +61,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
       setIsLoading(true);
       setError(null);
       
-      const theatre = flightPlan.theatre || "syria_old";
+      const theatre = flightPlan.theatre || "syria";
       const response = await fetch(getApiUrl(`theatres/${theatre}.json`), {
         method: 'GET',
         headers: {
@@ -135,7 +135,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
     const mapProjectionCenter = calculateTransverseMercatorCenter(regionBounds, mapProjection);
 
     // Create tile layer and grid layer
-    const tileLayer = createTileLayer(mapInfo, mapProjection, getTilesBaseUrl(flightPlan.theatre || "syria_old"));
+    const tileLayer = createTileLayer(mapInfo, mapProjection, getTilesBaseUrl(flightPlan.theatre || "syria"));
     const gridLayer = createGridLayer(regionBounds, mapProjection);
     gridLayer.set('name', 'grid');
     gridLayerRef.current = gridLayer;

@@ -63,7 +63,7 @@ function loadFlightPlan(): FlightPlan | null {
       
       // Ensure theatre exists (required in 1.1)
       if (flightPlanData && typeof flightPlanData === 'object' && !flightPlanData.theatre) {
-        flightPlanData.theatre = "syria_old";
+        flightPlanData.theatre = "syria";
       }
       
       // Additional migration steps for future versions would go here

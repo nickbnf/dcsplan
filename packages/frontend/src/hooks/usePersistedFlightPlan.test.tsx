@@ -6,7 +6,7 @@ import type { FlightPlan } from '../types/flightPlan';
 const STORAGE_KEY = 'dcsplan-flightplan';
 
 const defaultPlan: FlightPlan = {
-  theatre: 'syria_old',
+  theatre: 'syria',
   points: [],
   declination: 0,
   bankAngle: 45,
@@ -41,7 +41,7 @@ describe('usePersistedFlightPlan migration', () => {
     // The hook returns FlightPlan, not VersionedFlightPlan
     // @ts-expect-error - version does not exist on FlightPlan
     expect(result.current[0].version).toBeUndefined();
-    expect(result.current[0].theatre).toBe('syria_old');
+    expect(result.current[0].theatre).toBe('syria');
     expect(result.current[0].name).toBe('Legacy Plan');
     expect(result.current[0].declination).toBe(12.5);
     expect(console.info).toHaveBeenCalledWith(
@@ -66,7 +66,7 @@ describe('usePersistedFlightPlan migration', () => {
 
     const { result } = renderHook(() => usePersistedFlightPlan(() => defaultPlan));
 
-    expect(result.current[0].theatre).toBe('syria_old');
+    expect(result.current[0].theatre).toBe('syria');
     expect(result.current[0].name).toBe('V1.0 Plan');
     expect(result.current[0].declination).toBe(8.2);
     expect(console.info).toHaveBeenCalledWith(

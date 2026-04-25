@@ -28,7 +28,7 @@ def make_point(lat=34.0, lon=36.0, tas=400, alt=3000, fuelFlow=6000,
     return FlightPlanTurnPoint(**kwargs)
 
 
-def make_plan(points, initTimeSec=43200, initFob=12000, theatre="syria_old"):
+def make_plan(points, initTimeSec=43200, initFob=12000, theatre="syria"):
     return FlightPlan(
         theatre=theatre,
         points=points,

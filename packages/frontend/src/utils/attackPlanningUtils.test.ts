@@ -3,7 +3,7 @@ import { calculateAttackProfile } from './attackPlanningUtils';
 import type { FlightPlan, AttackPlanningParams } from '../types/flightPlan';
 
 const BASE_PLAN: FlightPlan = {
-  theatre: 'syria_old',
+  theatre: 'syria',
   points: [],
   declination: 0,
   bankAngle: 45,
