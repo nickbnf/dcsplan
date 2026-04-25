@@ -17,9 +17,19 @@ logger = logging.getLogger(__name__)
 
 # Frontend color: #0066CC = RGB(0, 102, 204)
 # Using alpha ~200 (78% opacity)
-OUTLINE_COLOR_RGBA = (0, 102, 204, 200) # Blue with a bit of transparency
-TEXT_COLOR_RGBA = (0, 102, 204, 255)    # Solid blue
+OUTLINE_COLOR_RGBA = (0, 50, 130, 200) # Blue with a bit of transparency
+TEXT_COLOR_RGBA = (0, 50, 130, 255)    # Solid blue
 RED_COLOR_RGBA = (204, 0, 0, 200)
+
+# Tier colors for leg emphasis on kneeboard pages
+FOCUS_LINE_COLOR     = (0, 50, 130, 240)    # Dark navy blue, very opaque
+FOCUS_TEXT_COLOR     = (0, 50, 130, 255)    # Solid dark navy
+ADJACENT_LINE_COLOR  = (0, 50, 130, 200)   # Standard blue, semi-transparent
+ADJACENT_TEXT_COLOR  = (0, 50, 130, 220)   # Standard blue for labels
+CONTEXT_LINE_COLOR   = (0, 50, 130, 120)    # Standard blue, mostly transparent
+CONTEXT_TEXT_COLOR   = (0, 50, 130, 160)   # Standard blue for labels
+
+# Halo alpha is computed proportionally from the line's own alpha (see draw_leg)
 
 BACKGROUND_OPACITY = 0.5  # Opacity for annotation backgrounds
 
@@ -77,6 +87,9 @@ def draw_turnpoint(
     image_width: int,
     image_height: int,
     inbound_screen_angle: float | None = None,
+    outline_color: Tuple[int, int, int, int] = None,
+    halo: bool = False,
+    halo_only: bool = False,
 ) -> None:
     """
     Draw a turnpoint marker on an image for kneeboard maps.
@@ -95,6 +108,7 @@ def draw_turnpoint(
         inbound_screen_angle: Screen-space angle (radians) of the inbound leg
             (atan2(dy, dx) from previous waypoint to this one in pixel coords).
             Used to orient the IP square so an edge faces the inbound leg.
+        halo: When True, draw a white halo behind the symbol (alpha proportional to line alpha).
     """
     try:
         x_px, y_px = coord_to_pixel(point.lat, point.lon)
@@ -108,39 +122,51 @@ def draw_turnpoint(
         wpt_type = point.waypointType or 'normal'
         r = TURNPOINT_RADIUS
         stroke = 3
+        color = outline_color if outline_color is not None else OUTLINE_COLOR_RGBA
+        halo_stroke = stroke + 4
+        halo_color = (255, 255, 255, int(color[3] * 0.4)) if halo else None
 
         if wpt_type == 'ip':
-            # Square rotated so the edge facing the inbound leg is perpendicular to it.
-            # Vertices are placed at distance r from center at angles:
-            #   inbound + π/4 + k·π/2  (k = 0..3)
-            # This puts an edge centered on the direction opposite to inbound.
-            # Fallback: default diamond if no inbound angle is available.
             base = inbound_screen_angle if inbound_screen_angle is not None else -math.pi / 2
             square = []
             for k in range(4):
                 angle = base + math.pi / 4 + k * math.pi / 2
                 square.append((x + r * math.cos(angle), y + r * math.sin(angle)))
-            draw.polygon(square, outline=OUTLINE_COLOR_RGBA, fill=None)
-            for j in range(len(square)):
-                draw.line([square[j], square[(j + 1) % len(square)]], fill=OUTLINE_COLOR_RGBA, width=stroke)
+            if halo_color:
+                for j in range(len(square)):
+                    draw.line([square[j], square[(j + 1) % len(square)]], fill=halo_color, width=halo_stroke)
+            if not halo_only:
+                draw.polygon(square, outline=color, fill=None)
+                for j in range(len(square)):
+                    draw.line([square[j], square[(j + 1) % len(square)]], fill=color, width=stroke)
         elif wpt_type == 'tgt':
-            # Triangle (equilateral, point up)
-            h = r * math.sqrt(3)  # height of equilateral triangle with "radius" r
+            h = r * math.sqrt(3)
             triangle = [
-                (x, y - r),           # top
-                (x + h / 2, y + r / 2),  # bottom right
-                (x - h / 2, y + r / 2),  # bottom left
+                (x, y - r),
+                (x + h / 2, y + r / 2),
+                (x - h / 2, y + r / 2),
             ]
-            draw.polygon(triangle, outline=OUTLINE_COLOR_RGBA, fill=None)
-            for j in range(len(triangle)):
-                draw.line([triangle[j], triangle[(j + 1) % len(triangle)]], fill=OUTLINE_COLOR_RGBA, width=stroke)
+            if halo_color:
+                for j in range(len(triangle)):
+                    draw.line([triangle[j], triangle[(j + 1) % len(triangle)]], fill=halo_color, width=halo_stroke)
+            if not halo_only:
+                draw.polygon(triangle, outline=color, fill=None)
+                for j in range(len(triangle)):
+                    draw.line([triangle[j], triangle[(j + 1) % len(triangle)]], fill=color, width=stroke)
         else:
             # Normal / Push / None: circle
-            draw.ellipse(
-                (x - r, y - r, x + r, y + r),
-                outline=OUTLINE_COLOR_RGBA,
-                width=stroke
-            )
+            if halo_color:
+                draw.ellipse(
+                    (x - r - 2, y - r - 2, x + r + 2, y + r + 2),
+                    outline=halo_color,
+                    width=halo_stroke,
+                )
+            if not halo_only:
+                draw.ellipse(
+                    (x - r, y - r, x + r, y + r),
+                    outline=color,
+                    width=stroke
+                )
 
         logger.debug(f"Drew turnpoint ({wpt_type}) at ({x_px:.1f}, {y_px:.1f})")
     except Exception as e:
@@ -235,6 +261,10 @@ def draw_leg(
     draw: ImageDraw.ImageDraw,
     leg_data: LegData,
     coord_to_pixel: Callable[[float, float], Tuple[float, float]],
+    line_color: Tuple[int, int, int, int] = None,
+    line_width: int = 3,
+    halo: bool = False,
+    halo_only: bool = False,
 ) -> None:
     """
     Draw a leg line between two waypoints on an image.
@@ -255,6 +285,7 @@ def draw_leg(
         sx, sy = coord_to_pixel(leg_data.straigthening_point.lat, leg_data.straigthening_point.lon)
         dx, dy = coord_to_pixel(leg_data.destination.lat, leg_data.destination.lon)
         center_x_px, center_y_px = coord_to_pixel(leg_data.turn_data.center.lat, leg_data.turn_data.center.lon)
+        color = line_color if line_color is not None else OUTLINE_COLOR_RGBA
         
         # Turnpoint circle radius in pixels
         circle_radius = 12
@@ -262,12 +293,14 @@ def draw_leg(
         # Draw the turning arc (only if the straightening point is outside the turnpoint circle)
         if math.sqrt((sx - ox)**2 + (sy - oy)**2) > circle_radius:
             turn_radius_px = math.sqrt((sx - center_x_px)**2 + (sy - center_y_px)**2)
+            logger.debug(f"turn_radius_px: {turn_radius_px:.1f}")
             
             # Calculate angles from turn center to intersection point and straightening point
             # Pillow's draw.arc uses: 0° = 3 o'clock (east), angles increase counterclockwise
             angle_start = math.degrees(math.atan2(oy - center_y_px, ox - center_x_px)) % 360
             angle_end = math.degrees(math.atan2(sy - center_y_px, sx - center_x_px)) % 360
-            
+            logger.debug(f"angle_start: {angle_start:.1f}, angle_end: {angle_end:.1f}")
+
             # Pillow draws arcs counterclockwise. If start > end, it still goes counterclockwise
             # which means it takes the long way. To get the shorter arc, we need to ensure
             # the angular difference is <= 180 degrees.
@@ -275,7 +308,8 @@ def draw_leg(
             diff_forward = (angle_end - angle_start) % 360
             diff_backward = (angle_start - angle_end) % 360
             
-            tpcircle_angle = math.degrees(math.asin(circle_radius / turn_radius_px))
+            ratio = min(1, circle_radius / turn_radius_px)
+            tpcircle_angle = math.degrees(math.asin(ratio))
             logger.debug(f"Turnpoint circle angle: {tpcircle_angle:.1f}")
 
             logger.debug(f"Diff forward: {diff_forward:.1f}, Diff backward: {diff_backward:.1f}")
@@ -304,32 +338,48 @@ def draw_leg(
             angle_end = round(angle_end, 1) % 360
             logger.debug(f"Angle start before 2: {angle_start}")
             logger.debug(f"Angle start: {angle_start:.1f}, Angle end: {angle_end:.1f}")
-            draw.arc(
-                (center_x_px - turn_radius_px, center_y_px - turn_radius_px, center_x_px + turn_radius_px, center_y_px + turn_radius_px),
-                start=angle_start,
-                end=angle_end,
-                fill=OUTLINE_COLOR_RGBA,
-                width=3
-            )
+            if halo:
+                halo_w = line_width + 4
+                halo_alpha = int(color[3] * 0.4)
+                halo_color = (255, 255, 255, halo_alpha)
+                draw.arc(
+                    (center_x_px - turn_radius_px, center_y_px - turn_radius_px, center_x_px + turn_radius_px, center_y_px + turn_radius_px),
+                    start=angle_start,
+                    end=angle_end,
+                    fill=halo_color,
+                    width=halo_w,
+                )
+            if not halo_only:
+                draw.arc(
+                    (center_x_px - turn_radius_px, center_y_px - turn_radius_px, center_x_px + turn_radius_px, center_y_px + turn_radius_px),
+                    start=angle_start,
+                    end=angle_end,
+                    fill=color,
+                    width=line_width
+                )
 
         # Calculate direction vector and length
         leg_dx = dx - sx
         leg_dy = dy - sy
         leg_length = math.sqrt(leg_dx**2 + leg_dy**2)
-        
+
         # Shorten the line at both ends by the circle radius
         if leg_length > 2 * circle_radius:
             # Normalize direction vector
             leg_dir_x = leg_dx / leg_length
             leg_dir_y = leg_dy / leg_length
-            
+
             # Calculate shortened endpoints
             shortened_dx = dx - leg_dir_x * circle_radius
             shortened_dy = dy - leg_dir_y * circle_radius
-            
-            # Draw line with blue color (#0066CC), width 3, and transparency
-            line_width = 3  # Medium thickness
-            draw.line([(sx, sy), (shortened_dx, shortened_dy)], fill=OUTLINE_COLOR_RGBA, width=line_width)
+
+            if halo:
+                halo_w = line_width + 4
+                halo_alpha = int(color[3] * 0.4)
+                halo_color = (255, 255, 255, halo_alpha)
+                draw.line([(sx, sy), (shortened_dx, shortened_dy)], fill=halo_color, width=halo_w)
+            if not halo_only:
+                draw.line([(sx, sy), (shortened_dx, shortened_dy)], fill=color, width=line_width)
             logger.debug(f"Drew straight leg line from ({sx:.1f}, {sy:.1f}) to ({shortened_dx:.1f}, {shortened_dy:.1f})")
         else:
             # If the leg is too short, don't draw it
@@ -337,7 +387,7 @@ def draw_leg(
         
         logger.debug(f"Drew leg overlay on image: O=({ox:.1f},{oy:.1f}) D=({dx:.1f},{dy:.1f})")
     except Exception as e:
-        logger.warning(f"Failed to draw leg overlay on image: {e}")
+        logger.warning(f"Failed to draw leg overlay on image: {e} {ox} {oy} {sx} {sy} {dx} {dy} {center_x_px} {center_y_px}")
 
 
 def annotate_leg(
@@ -486,6 +536,8 @@ def annotate_turnpoint(
     image_width: int,
     image_height: int,
     elapsed_from_sec: int | None = None,
+    text_color: Tuple[int, int, int, int] = None,
+    show_details: bool = True,
 ) -> None:
     """
     Annotate a turnpoint with its number, name, and ETA.
@@ -509,6 +561,8 @@ def annotate_turnpoint(
             return max(lo, min(val, hi))
         x = _clamp(x_px, 0, image_width - 1)
         y = _clamp(y_px, 0, image_height - 1)
+
+        t_color = text_color if text_color is not None else TEXT_COLOR_RGBA
 
         # Build ETA string from flightPlanData
         wpt_type = point.waypointType or 'normal'
@@ -540,43 +594,51 @@ def annotate_turnpoint(
                 eta_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
         else:
             eta_str = "00:00:00"
-        
+
         # Position text slightly to the right of the turnpoint
         # The turnpoint marker has radius 12, so offset by ~20 pixels
         offset_x = 20
-        
+
         # Draw turnpoint number on the left (bigger font)
         turnpoint_number = str(index + 1)  # 1-based for display
         text_x_left = x + offset_x
-        
+
         # Get text bounding box to calculate height for vertical centering
         bbox_large = draw.textbbox((0, 0), turnpoint_number, font=LARGE_FONT)
         text_height_large = bbox_large[3] - bbox_large[1]
         text_y_left = y - text_height_large // 2  # Center vertically with turnpoint
-        
+
+        # Draw number (left, bigger font)
+        draw.text((text_x_left, text_y_left), turnpoint_number, fill=t_color, font=LARGE_FONT)
+
+        if not show_details:
+            # Context tier: only show the turnpoint number, skip name/ETA/PUSH labels
+            logger.debug(f"Annotated turnpoint {index + 1} (context, number only) at ({x_px:.1f}, {y_px:.1f})")
+            return
+
         # Draw turnpoint name and ETA on the right (superposed/stacked)
         turnpoint_name = point.name if point.name else f"WP{index + 1}"
         text_x_right = text_x_left + 30  # Offset further right for name/ETA
-        
+
         # Get text bounding boxes for name and ETA to center the stack vertically
         bbox_name = draw.textbbox((0, 0), turnpoint_name, font=MEDIUM_FONT)
         bbox_eta = draw.textbbox((0, 0), eta_str, font=MEDIUM_FONT)
         text_height_name = bbox_name[3] - bbox_name[1]
         text_height_eta = bbox_eta[3] - bbox_eta[1]
-        
+
         # Calculate spacing between name and ETA (stack them with a small gap)
         spacing = 4
         total_height = text_height_name + spacing + text_height_eta
-        
+
         # Center the entire stack vertically with the turnpoint
         # Name goes above center, ETA goes below center
         text_y_right_name = y - total_height // 2
         text_y_right_eta = y - total_height // 2 + text_height_name + spacing
-        
+
         # Calculate bounding box for name and ETA only (exclude the number)
         bbox_name_actual = draw.textbbox((text_x_right, text_y_right_name), turnpoint_name, font=MEDIUM_FONT)
         bbox_eta_actual = draw.textbbox((text_x_right, text_y_right_eta), eta_str, font=MEDIUM_FONT)
-        
+
         # Draw transparent white foundation behind name and ETA
         pad = 4
         foundation = (
@@ -586,13 +648,10 @@ def annotate_turnpoint(
             max(bbox_name_actual[3], bbox_eta_actual[3]) + pad,
         )
         draw.rectangle(foundation, fill=(255, 255, 255, int(255 * BACKGROUND_OPACITY)))
-        
-        # Draw number (left, bigger font)
-        draw.text((text_x_left, text_y_left), turnpoint_number, fill=TEXT_COLOR_RGBA, font=LARGE_FONT)
-        
+
         # Draw name and ETA (right, stacked, smaller font)
-        draw.text((text_x_right, text_y_right_name), turnpoint_name, fill=TEXT_COLOR_RGBA, font=MEDIUM_FONT)
-        draw.text((text_x_right, text_y_right_eta), eta_str, fill=TEXT_COLOR_RGBA, font=MEDIUM_FONT)
+        draw.text((text_x_right, text_y_right_name), turnpoint_name, fill=t_color, font=MEDIUM_FONT)
+        draw.text((text_x_right, text_y_right_eta), eta_str, fill=t_color, font=MEDIUM_FONT)
 
         # Draw PUSH/HCK label below the annotation, connected to the waypoint
         if wpt_type == 'push':
@@ -1276,19 +1335,33 @@ def annotate_map(
                 return origin_tp.exitTimeSec
             return origin_tp.etaSec
 
-        # Draw all legs on the overlay
-        for i in range(1, len(flight_plan.points)):
-            if i-1 == focus_leg_index:
-                # Skip the focus leg so we can draw it last
-                continue
-            logger.info(f"Drawing leg {i-1}")
-            draw_leg(overlay_draw, flight_plan_data.legData[i-1], coord_to_pixel)
-            annotate_leg(overlay_draw, overlay, _time_at_origin(i-1), flight_plan_data.legData[i-1], coord_to_pixel, _hack_offset_for_leg(i-1))
+        def _leg_tier(i: int) -> str:
+            """Classify a leg index as 'focus', 'adjacent', or 'context'."""
+            if i == focus_leg_index:
+                return 'focus'
+            if abs(i - focus_leg_index) == 1:
+                return 'adjacent'
+            return 'context'
 
-        # Draw the focus leg last
-        logger.info(f"Drawing focus leg {focus_leg_index}")
-        draw_leg(overlay_draw, flight_plan_data.legData[focus_leg_index], coord_to_pixel)
-        annotate_leg(overlay_draw, overlay, _time_at_origin(focus_leg_index), flight_plan_data.legData[focus_leg_index], coord_to_pixel, _hack_offset_for_leg(focus_leg_index))
+        def _tp_tier(i: int) -> str:
+            """Classify a turnpoint index using the highest tier of its adjacent legs."""
+            if i == focus_leg_index or i == focus_leg_index + 1:
+                return 'focus'
+            if i == focus_leg_index - 1 or i == focus_leg_index + 2:
+                return 'adjacent'
+            return 'context'
+
+        TIER_LINE_COLOR = {
+            'focus':    FOCUS_LINE_COLOR,
+            'adjacent': ADJACENT_LINE_COLOR,
+            'context':  CONTEXT_LINE_COLOR,
+        }
+        TIER_LINE_WIDTH = {'focus': 3, 'adjacent': 2, 'context': 1}
+        TIER_TEXT_COLOR = {
+            'focus':    FOCUS_TEXT_COLOR,
+            'adjacent': ADJACENT_TEXT_COLOR,
+            'context':  CONTEXT_TEXT_COLOR,
+        }
 
         # Compute inbound screen angle for each turnpoint (used to orient IP squares)
         def _inbound_screen_angle(i: int) -> float | None:
@@ -1302,24 +1375,67 @@ def annotate_map(
                 return None
             return math.atan2(ddy, ddx)
 
-        # Draw all turnpoints on the overlay
-        for i, point in enumerate(flight_plan.points):
-            if i == focus_leg_index or i == focus_leg_index + 1:
-                # Skip the focus leg so we can draw it last
-                continue
-            logger.debug(f"Drawing turnpoint {i}")
-            draw_turnpoint(overlay_draw, point, coord_to_pixel, image.width, image.height, _inbound_screen_angle(i))
-            annotate_turnpoint(overlay_draw, point, i, flight_plan_data, coord_to_pixel, image.width, image.height)
+        # ── Pass 1: all halos (legs then turnpoints, back-to-front) ──────────
+        # Drawn first so no halo ever overwrites a colored line or symbol.
+        for tier in ('context', 'adjacent', 'focus'):
+            for i in range(len(flight_plan_data.legData)):
+                if _leg_tier(i) != tier:
+                    continue
+                draw_leg(
+                    overlay_draw, flight_plan_data.legData[i], coord_to_pixel,
+                    line_color=TIER_LINE_COLOR[tier],
+                    line_width=TIER_LINE_WIDTH[tier],
+                    halo=True, halo_only=True,
+                )
+        for tier in ('context', 'adjacent', 'focus'):
+            for i, point in enumerate(flight_plan.points):
+                if _tp_tier(i) != tier:
+                    continue
+                draw_turnpoint(
+                    overlay_draw, point, coord_to_pixel,
+                    image.width, image.height,
+                    _inbound_screen_angle(i),
+                    outline_color=TIER_LINE_COLOR[tier],
+                    halo=True, halo_only=True,
+                )
 
-        # Draw the focus turnpoints last
-        point = flight_plan.points[focus_leg_index]
-        draw_turnpoint(overlay_draw, point, coord_to_pixel, image.width, image.height, _inbound_screen_angle(focus_leg_index))
-        annotate_turnpoint(overlay_draw, point, focus_leg_index, flight_plan_data, coord_to_pixel, image.width, image.height)
-        point = flight_plan.points[focus_leg_index + 1]
-        draw_turnpoint(overlay_draw, point, coord_to_pixel, image.width, image.height, _inbound_screen_angle(focus_leg_index + 1))
-        annotate_turnpoint(overlay_draw, point, focus_leg_index + 1, flight_plan_data, coord_to_pixel, image.width, image.height)
+        # ── Pass 2: all content (legs then turnpoints, back-to-front) ────────
+        for tier in ('context', 'adjacent', 'focus'):
+            for i in range(len(flight_plan_data.legData)):
+                if _leg_tier(i) != tier:
+                    continue
+                logger.info(f"Drawing leg {i} (tier={tier})")
+                draw_leg(
+                    overlay_draw, flight_plan_data.legData[i], coord_to_pixel,
+                    line_color=TIER_LINE_COLOR[tier],
+                    line_width=TIER_LINE_WIDTH[tier],
+                )
+                if tier == 'focus':
+                    annotate_leg(
+                        overlay_draw, overlay,
+                        _time_at_origin(i), flight_plan_data.legData[i],
+                        coord_to_pixel, _hack_offset_for_leg(i),
+                    )
 
-        # Temp: Draw the straigthening point
+        for tier in ('context', 'adjacent', 'focus'):
+            for i, point in enumerate(flight_plan.points):
+                if _tp_tier(i) != tier:
+                    continue
+                logger.debug(f"Drawing turnpoint {i} (tier={tier})")
+                draw_turnpoint(
+                    overlay_draw, point, coord_to_pixel,
+                    image.width, image.height,
+                    _inbound_screen_angle(i),
+                    outline_color=TIER_LINE_COLOR[tier],
+                )
+                annotate_turnpoint(
+                    overlay_draw, point, i, flight_plan_data,
+                    coord_to_pixel, image.width, image.height,
+                    text_color=TIER_TEXT_COLOR[tier],
+                    show_details=(tier != 'context'),
+                )
+
+        # Add the doghouses for this leg
         leg_data = flight_plan_data.legData[focus_leg_index]
         # logger.info(f"Centre point: {leg_data.turn_data.center.lat}, {leg_data.turn_data.center.lon}")
         # logger.info(f"Straigthening point: {leg_data.straigthening_point.lat}, {leg_data.straigthening_point.lon}")
@@ -1399,7 +1515,7 @@ def annotate_overview_map(
     """
     Annotate the overview map image with all legs and turnpoints.
 
-    Draws every leg (route line + minute marks, but no doghouses) and every
+    Draws every leg (route line only, no tick marks or doghouses) and every
     turnpoint (symbol + number/name/elapsed-time label).  Uses the same RGBA
     overlay compositing pattern as annotate_map().
 
@@ -1429,14 +1545,9 @@ def annotate_overview_map(
                 return origin_tp.etaSec - origin_tp.hackEtaSec
             return None
 
-        # Draw all legs (route line + minute marks, no doghouses).
+        # Draw all legs (route line only, no tick marks or time labels on overview).
         for i, leg in enumerate(flight_plan_data.legData):
             draw_leg(overlay_draw, leg, coord_to_pixel)
-            annotate_leg(
-                overlay_draw, overlay,
-                _time_at_origin(i), leg, coord_to_pixel,
-                _hack_offset_for_leg(i),
-            )
 
         # Draw all waypoints (symbol + number / name / elapsed-time label).
         def _inbound_screen_angle(i: int) -> float | None:

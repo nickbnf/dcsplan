@@ -562,7 +562,7 @@ def _rotate_image(image: Image.Image, angle_deg: float, center: Tuple[int, int])
     """
     # Rotate with expand=True to ensure no clipping
     # This creates a larger image that contains the rotated content
-    rotated = image.rotate(angle_deg, center=center, expand=True, fillcolor='black')
+    rotated = image.rotate(angle_deg, center=center, expand=True, fillcolor='black', resample=Image.Resampling.BICUBIC)
     return rotated
 
 

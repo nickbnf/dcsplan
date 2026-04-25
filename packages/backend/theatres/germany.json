@@ -71,6 +71,13 @@
       "nb_tiles_h": 64,
       "width_px": 20480,
       "height_px": 16384
+    },
+    {
+      "zoom": 8,
+      "nb_tiles_w": 160,
+      "nb_tiles_h": 128,
+      "width_px": 40960,
+      "height_px": 32768
     }
   ]
 }
