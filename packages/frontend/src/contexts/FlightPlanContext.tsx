@@ -1,4 +1,4 @@
-import React, { createContext, useContext } from 'react';
+import React, { createContext, useContext, useState, useCallback } from 'react';
 import type { FlightPlan } from '../types/flightPlan';
 import { usePersistedFlightPlan } from '../hooks/usePersistedFlightPlan';
 import { flightPlanUtils } from '../utils/flightPlanUtils';
@@ -6,6 +6,8 @@ import { flightPlanUtils } from '../utils/flightPlanUtils';
 interface FlightPlanContextValue {
   flightPlan: FlightPlan;
   onFlightPlanUpdate: (flightPlan: FlightPlan) => void;
+  fitToFlightPlanTrigger: number;
+  requestFitToFlightPlan: () => void;
 }
 
 const FlightPlanContext = createContext<FlightPlanContextValue | null>(null);
@@ -16,6 +18,15 @@ export const FlightPlanProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const [flightPlan, setFlightPlan] = usePersistedFlightPlan(() =>
     flightPlanUtils.newFlightPlan()
   );
+
+  // Start at 1 if the persisted flight plan already has points (page reload with saved plan)
+  const [fitTrigger, setFitTrigger] = useState<number>(
+    () => flightPlan.points.length > 0 ? 1 : 0
+  );
+
+  const requestFitToFlightPlan = useCallback(() => {
+    setFitTrigger(prev => prev + 1);
+  }, []);
 
   const handleFlightPlanUpdate = (newPlan: FlightPlan) => {
     const baseChanged =
@@ -33,7 +44,12 @@ export const FlightPlanProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   };
 
   return (
-    <FlightPlanContext.Provider value={{ flightPlan, onFlightPlanUpdate: handleFlightPlanUpdate }}>
+    <FlightPlanContext.Provider value={{
+      flightPlan,
+      onFlightPlanUpdate: handleFlightPlanUpdate,
+      fitToFlightPlanTrigger: fitTrigger,
+      requestFitToFlightPlan,
+    }}>
       {children}
     </FlightPlanContext.Provider>
   );

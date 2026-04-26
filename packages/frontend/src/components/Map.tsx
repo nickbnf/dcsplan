@@ -8,7 +8,7 @@ import Snap from 'ol/interaction/Snap';
 import Collection from 'ol/Collection';
 import { createMapProjection, transformBoundsToTransverseMercator, calculateTransverseMercatorCenter } from '../utils/projectionUtils';
 import { createGridLayer } from '../utils/latLonGrid';
-import { createTileLayer } from '../utils/tileLayer';
+import { createTileLayer, calculateResolutions } from '../utils/tileLayer';
 import type { MapInfo } from '../utils/tileLayer';
 import type { FlightPlan } from '../types/flightPlan';
 import { flightPlanUtils } from '../utils/flightPlanUtils';
@@ -19,6 +19,7 @@ import VectorSource from 'ol/source/Vector';
 import { getApiUrl, getTilesBaseUrl } from '../config/api';
 import { DisplayButton } from './map/DisplayButton';
 import { MapCoordinatesOverlay } from './MapCoordinatesOverlay';
+import { saveMapViewState, getMapViewState, fitMapToFlightPlan } from '../utils/mapViewState';
 
 interface MapComponentProps {
   flightPlan: FlightPlan;
@@ -29,6 +30,7 @@ interface MapComponentProps {
   addPoint: (coordinate: [number, number]) => void;
   updatePreviewLine: (coordinate: [number, number]) => void;
   onMapNavInfoChange?: (info: { projection: any; navigationMode: string }) => void;
+  fitToFlightPlanTrigger?: number;
 }
 
 const MapComponent: React.FC<MapComponentProps> = ({
@@ -40,6 +42,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
   addPoint,
   updatePreviewLine,
   onMapNavInfoChange,
+  fitToFlightPlanTrigger = 0,
 }) => {
   const [hoverCoord, setHoverCoord] = useState<{ raw_x: number; raw_y: number; lat: number; lon: number } | null>(null);
   const mapRef = useRef<HTMLDivElement>(null);
@@ -54,6 +57,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
   const [gridEnabled, setGridEnabled] = useState(false);
   const [measureEnabled, setMeasureEnabled] = useState(false);
   const navigationModeRef = useRef<string>("geographic");
+  const lastFitTriggerRef = useRef<number>(fitToFlightPlanTrigger);
 
   // Safe function to fetch and parse tile info JSON
   const fetchMapInfo = async (): Promise<MapInfo | null> => {
@@ -134,6 +138,9 @@ const MapComponent: React.FC<MapComponentProps> = ({
     // Calculate center in transverse Mercator coordinates
     const mapProjectionCenter = calculateTransverseMercatorCenter(regionBounds, mapProjection);
 
+    // Calculate resolutions once — shared by TileGrid and View so zoom levels align exactly
+    const tileResolutions = calculateResolutions(mapInfo, mapProjection);
+
     // Create tile layer and grid layer
     const tileLayer = createTileLayer(mapInfo, mapProjection, getTilesBaseUrl(flightPlan.theatre || "syria"));
     const gridLayer = createGridLayer(regionBounds, mapProjection);
@@ -150,8 +157,11 @@ const MapComponent: React.FC<MapComponentProps> = ({
     });
     drawingLayer.set('name', 'drawing');
 
+    const savedState = getMapViewState(flightPlan.theatre);
+
     mapInstanceRef.current = new Map({
       target: mapRef.current,
+      pixelRatio: 1,
       layers: [
         tileLayer,
         gridLayer,
@@ -160,15 +170,21 @@ const MapComponent: React.FC<MapComponentProps> = ({
       ],
       view: new View({
         projection: mapProjection as any,
-        center: mapProjectionCenter,
-        zoom: 2,
-        maxZoom: (mapInfo?.zoom_info?.length || 1) - 1,
+        center: savedState ? savedState.center : mapProjectionCenter,
+        zoom: savedState ? savedState.zoom : 2,
+        resolutions: tileResolutions,  // Must match TileGrid resolutions for 1:1 tile pixels
         minZoom: 1,
         // extent: transverseMercatorExtent, // Constraint the view to the map only
         constrainResolution: true,  // Snap to zoom levels
         multiWorld: false
       })
     });
+
+    // Auto-zoom to fit the flight plan if no saved view state and trigger is active
+    if (!savedState && fitToFlightPlanTrigger > 0 && flightPlan.points.length > 0) {
+      fitMapToFlightPlan(mapInstanceRef.current, flightPlan, mapProjection);
+      lastFitTriggerRef.current = fitToFlightPlanTrigger;
+    }
 
     // Expose map instance to window for access from sidebar
     (window as any).mapInstance = mapInstanceRef.current;
@@ -187,6 +203,14 @@ const MapComponent: React.FC<MapComponentProps> = ({
 
     return () => {
       if (mapInstanceRef.current) {
+        // Save current view state before unmounting (for tab switch restore)
+        const view = mapInstanceRef.current.getView();
+        const center = view.getCenter();
+        const zoom = view.getZoom();
+        if (center && zoom !== undefined) {
+          saveMapViewState(center as [number, number], zoom, flightPlan.theatre);
+        }
+
         // Remove click handler if it exists
         const clickHandler = (mapInstanceRef.current as any).__clickHandler;
         if (clickHandler) {
@@ -399,6 +423,14 @@ const MapComponent: React.FC<MapComponentProps> = ({
       gridLayerRef.current.setVisible(gridEnabled);
     }
   }, [gridEnabled]);
+
+  // Fit map to flight plan when the trigger increments (e.g. after import)
+  useEffect(() => {
+    if (!mapInstanceRef.current) return;
+    if (fitToFlightPlanTrigger <= lastFitTriggerRef.current) return;
+    lastFitTriggerRef.current = fitToFlightPlanTrigger;
+    fitMapToFlightPlan(mapInstanceRef.current, flightPlan, mapInstanceRef.current.getView().getProjection());
+  }, [fitToFlightPlanTrigger]);
 
   // Show loading state
   if (isLoading) {

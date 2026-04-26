@@ -7,7 +7,7 @@ import { useDrawing } from '../hooks/useDrawing';
 import { useFlightPlan } from '../contexts/FlightPlanContext';
 
 const PlannerApp: React.FC = () => {
-  const { flightPlan, onFlightPlanUpdate: setFlightPlan } = useFlightPlan();
+  const { flightPlan, onFlightPlanUpdate: setFlightPlan, fitToFlightPlanTrigger } = useFlightPlan();
   const [mapNavInfo, setMapNavInfo] = useState<{ projection: any; navigationMode: string } | null>(null);
   const { drawingState, startDrawing, stopDrawing, startDragging, stopDragging, addPoint, updatePreviewLine } = useDrawing();
 
@@ -47,6 +47,7 @@ const PlannerApp: React.FC = () => {
             addPoint={addPoint}
             updatePreviewLine={updatePreviewLine}
             onMapNavInfoChange={setMapNavInfo}
+            fitToFlightPlanTrigger={fitToFlightPlanTrigger}
           />
         </div>
       </div>

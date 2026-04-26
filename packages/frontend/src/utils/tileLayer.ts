@@ -29,15 +29,13 @@ export interface MapInfo {
 }
 
 /**
- * Creates a custom tile grid for transverse Mercator projection
+ * Calculates resolutions for each zoom level in transverse Mercator meters per pixel.
+ * Must be used for both the TileGrid and the View so they share the same resolution set.
  */
-export const createTileGrid = (
+export const calculateResolutions = (
   mapInfo: MapInfo,
   projection: any
-) => {
-  const tileSize = mapInfo?.tileSize ?? 256;
-  
-  // Calculate distance for resolution calculation
+): number[] => {
   const cornerNW = [mapInfo.origin_lon, mapInfo.origin_lat];
   const cornerNE = [mapInfo.ref_corner_ne_lon, mapInfo.ref_corner_ne_lat];
   const projCode = projection.getCode();
@@ -45,16 +43,29 @@ export const createTileGrid = (
   const cornerNETransverseMercator = transform(cornerNE, 'EPSG:4326', projCode);
   const line = new LineString([cornerNWTransverseMercator, cornerNETransverseMercator]);
   const xDistance = line.getLength();
-  
-  // Calculate resolutions for zoom levels using transverse Mercator meters
-  const resolutions: number[] = [];
-  const sizes: Size[] = [];
-  
-  for (const zoomInfo of mapInfo?.zoom_info || []) {
-    const resolution = xDistance / zoomInfo.width_px;
-    resolutions.push(resolution);
-    sizes.push([zoomInfo.nb_tiles_w, zoomInfo.nb_tiles_h]);
-  }
+
+  return (mapInfo?.zoom_info || []).map(
+    (zoomInfo) => xDistance / zoomInfo.width_px
+  );
+};
+
+/**
+ * Creates a custom tile grid for transverse Mercator projection
+ */
+export const createTileGrid = (
+  mapInfo: MapInfo,
+  projection: any
+) => {
+  const tileSize = mapInfo?.tileSize ?? 256;
+
+  const cornerNW = [mapInfo.origin_lon, mapInfo.origin_lat];
+  const projCode = projection.getCode();
+  const cornerNWTransverseMercator = transform(cornerNW, 'EPSG:4326', projCode);
+
+  const resolutions = calculateResolutions(mapInfo, projection);
+  const sizes: Size[] = (mapInfo?.zoom_info || []).map(
+    (zoomInfo) => [zoomInfo.nb_tiles_w, zoomInfo.nb_tiles_h] as Size
+  );
 
   console.log("Resolutions:", resolutions.length, "levels", resolutions);
 

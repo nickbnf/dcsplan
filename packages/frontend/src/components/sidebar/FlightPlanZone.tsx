@@ -7,6 +7,7 @@ import { formatCoordinate } from '../../utils/coordinateUtils';
 import { GenerateDialog } from './GenerateDialog';
 import { DeleteWaypointDialog } from './DeleteWaypointDialog';
 import { ImportFlightPlanDialog } from './ImportFlightPlanDialog';
+import { useFlightPlan } from '../../contexts/FlightPlanContext';
 
 interface FlightPlanZoneProps {
   flightPlan: FlightPlan;
@@ -605,6 +606,7 @@ export const FlightPlanZone: React.FC<FlightPlanZoneProps> = ({
   projection,
   navigationMode
 }) => {
+  const { requestFitToFlightPlan } = useFlightPlan();
   const fligthPlanZoneContent = useMemo(() => {
     const legData = projection
       ? flightPlanUtils.calculateAllLegData(flightPlan, projection, navigationMode)
@@ -641,7 +643,10 @@ export const FlightPlanZone: React.FC<FlightPlanZoneProps> = ({
             </button>
             {/* Upload icon */}
             <ImportFlightPlanDialog
-              onImport={(importedFlightPlan) => onFlightPlanUpdate(importedFlightPlan)}
+              onImport={(importedFlightPlan) => {
+                onFlightPlanUpdate(importedFlightPlan);
+                requestFitToFlightPlan();
+              }}
             />
           </div>
         </div>
@@ -731,7 +736,7 @@ export const FlightPlanZone: React.FC<FlightPlanZoneProps> = ({
       <GenerateDialog flightPlan={flightPlan} />
     </div>
   );
-}, [flightPlan, onFlightPlanUpdate, projection, navigationMode]);
+}, [flightPlan, onFlightPlanUpdate, projection, navigationMode, requestFitToFlightPlan]);
 
 return fligthPlanZoneContent
 };
