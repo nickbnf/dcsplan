@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import * as Separator from '@radix-ui/react-separator';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import type { FlightPlan, LegData, WaypointType } from '../../types/flightPlan';
@@ -8,6 +8,7 @@ import { GenerateDialog } from './GenerateDialog';
 import { DeleteWaypointDialog } from './DeleteWaypointDialog';
 import { ImportFlightPlanDialog } from './ImportFlightPlanDialog';
 import { useFlightPlan } from '../../contexts/FlightPlanContext';
+import { useWaypointSelection } from '../../contexts/WaypointSelectionContext';
 
 interface FlightPlanZoneProps {
   flightPlan: FlightPlan;
@@ -349,6 +350,16 @@ const formatHackEta = (hackEtaSec: number): string => {
 const WaypointCard: React.FC<{ flightPlan: FlightPlan, legData: LegData | null, index: number, onFlightPlanUpdate: (flightPlan: FlightPlan) => void }> = ({ flightPlan, legData, index, onFlightPlanUpdate }) => {
   const waypoint = flightPlan.points[index];
   const waypointType = waypoint.waypointType || 'normal';
+  const { selectedIndex, setSelectedIndex, coordEntry } = useWaypointSelection();
+  const isSelected = selectedIndex === index;
+  const isEnteringCoords = isSelected && coordEntry !== null;
+  const cardRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (isSelected && cardRef.current) {
+      cardRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [isSelected]);
 
   // Calculate ETA and EFR for this waypoint
   let eta = flightPlan.initTimeSec;
@@ -372,7 +383,11 @@ const WaypointCard: React.FC<{ flightPlan: FlightPlan, legData: LegData | null, 
 
 
   return (
-    <div className="group bg-white border border-gray-200 rounded p-3">
+    <div
+      ref={cardRef}
+      onClick={() => setSelectedIndex(index)}
+      className={`group bg-white border rounded p-3 cursor-pointer ${isSelected ? 'border-[#FFB300] ring-1 ring-[#FFB300]' : 'border-gray-200'}`}
+    >
       <div className="flex items-center justify-between">
         <span className="text-sm font-aero-label text-gray-900 flex items-center">
           {index + 1}.{' '}
@@ -393,9 +408,16 @@ const WaypointCard: React.FC<{ flightPlan: FlightPlan, legData: LegData | null, 
         </span>
         <div className="flex items-center gap-1">
           <div className="flex flex-col items-end text-right">
-            <span className="text-xs font-aero-mono text-gray-500">
-              {formatCoordinate(waypoint.lat ?? 0, 'lat')} {formatCoordinate(waypoint.lon ?? 0, 'lon')}
-            </span>
+            {isEnteringCoords ? (
+              <span className="text-xs font-aero-mono text-gray-400 opacity-60">
+                <span className="text-[#FFB300] opacity-100 not-italic">✎ </span>
+                {formatCoordinate(waypoint.lat ?? 0, 'lat')} {formatCoordinate(waypoint.lon ?? 0, 'lon')}
+              </span>
+            ) : (
+              <span className="text-xs font-aero-mono text-gray-500">
+                {formatCoordinate(waypoint.lat ?? 0, 'lat')} {formatCoordinate(waypoint.lon ?? 0, 'lon')}
+              </span>
+            )}
           </div>
           <div className="-mr-2">
             <DeleteWaypointDialog

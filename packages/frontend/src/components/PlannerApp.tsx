@@ -5,11 +5,12 @@ import { AboutModal } from './AboutModal';
 import type { FlightPlan } from '../types/flightPlan';
 import { useDrawing } from '../hooks/useDrawing';
 import { useFlightPlan } from '../contexts/FlightPlanContext';
+import { WaypointSelectionProvider } from '../contexts/WaypointSelectionContext';
 
 const PlannerApp: React.FC = () => {
   const { flightPlan, onFlightPlanUpdate: setFlightPlan, fitToFlightPlanTrigger } = useFlightPlan();
   const [mapNavInfo, setMapNavInfo] = useState<{ projection: any; navigationMode: string } | null>(null);
-  const { drawingState, startDrawing, stopDrawing, startDragging, stopDragging, addPoint, updatePreviewLine } = useDrawing();
+  const { drawingState, startDrawing, stopDrawing, startDragging, stopDragging, addPoint, confirmKeyboardWaypoint, updatePreviewLine } = useDrawing();
 
   const handleFlightPlanUpdate = (updatedPlan: FlightPlan) => {
     console.log("handleFlightPlanUpdate")
@@ -17,7 +18,7 @@ const PlannerApp: React.FC = () => {
   };
 
   return (
-    <>
+    <WaypointSelectionProvider>
       <AboutModal />
       <div className="flex flex-1 w-full overflow-hidden">
         <Sidebar
@@ -45,13 +46,14 @@ const PlannerApp: React.FC = () => {
             onStartDragging={startDragging}
             onStopDragging={stopDragging}
             addPoint={addPoint}
+            confirmKeyboardWaypoint={confirmKeyboardWaypoint}
             updatePreviewLine={updatePreviewLine}
             onMapNavInfoChange={setMapNavInfo}
             fitToFlightPlanTrigger={fitToFlightPlanTrigger}
           />
         </div>
       </div>
-    </>
+    </WaypointSelectionProvider>
   );
 };
 

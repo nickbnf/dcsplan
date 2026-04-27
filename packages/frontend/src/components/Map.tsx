@@ -20,6 +20,8 @@ import { getApiUrl, getTilesBaseUrl } from '../config/api';
 import { DisplayButton } from './map/DisplayButton';
 import { MapCoordinatesOverlay } from './MapCoordinatesOverlay';
 import { saveMapViewState, getMapViewState, fitMapToFlightPlan } from '../utils/mapViewState';
+import { useWaypointSelection } from '../contexts/WaypointSelectionContext';
+import { initCoordEntry, applyKey, parseCoordEntry, formatTemplate } from '../utils/coordEntryUtils';
 
 interface MapComponentProps {
   flightPlan: FlightPlan;
@@ -28,6 +30,7 @@ interface MapComponentProps {
   onStartDragging: (map: any, waypointIndex: number, prevWpPos: [number, number] | null, nextWpPos: [number, number] | null) => void;
   onStopDragging: () => void;
   addPoint: (coordinate: [number, number]) => void;
+  confirmKeyboardWaypoint: (lat: number, lon: number) => void;
   updatePreviewLine: (coordinate: [number, number]) => void;
   onMapNavInfoChange?: (info: { projection: any; navigationMode: string }) => void;
   fitToFlightPlanTrigger?: number;
@@ -40,11 +43,14 @@ const MapComponent: React.FC<MapComponentProps> = ({
   onStartDragging,
   onStopDragging,
   addPoint,
+  confirmKeyboardWaypoint,
   updatePreviewLine,
   onMapNavInfoChange,
   fitToFlightPlanTrigger = 0,
 }) => {
+  const { selectedIndex, setSelectedIndex, coordEntry, setCoordEntry } = useWaypointSelection();
   const [hoverCoord, setHoverCoord] = useState<{ raw_x: number; raw_y: number; lat: number; lon: number } | null>(null);
+  const hoverCoordRef = useRef<{ raw_x: number; raw_y: number } | null>(null);
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<Map | null>(null);
   const modifyInteractionRef = useRef<Modify | null>(null);
@@ -249,15 +255,31 @@ const MapComponent: React.FC<MapComponentProps> = ({
       const coordinate = event.coordinate;
       if (!coordinate) return;
 
+      // Hit-test waypoint features first; hitTolerance extends click zone around circle
+      let hitWaypointIndex: number | null = null;
+      mapInstanceRef.current?.forEachFeatureAtPixel(event.pixel, (feature: any) => {
+        if (feature.get('type') === 'turnpoint') {
+          hitWaypointIndex = feature.get('waypointIndex');
+          return true; // stop iteration
+        }
+      }, { hitTolerance: 8 });
+
+      if (hitWaypointIndex !== null) {
+        setSelectedIndex(hitWaypointIndex);
+        return;
+      }
+
       if (drawingState.isDrawing === 'NEW_POINT') {
-        // In drawing mode, add points to the current drawing
         addPoint(coordinate);
+      } else {
+        // Click on empty map → deselect
+        setSelectedIndex(null);
       }
     };
     
     mapInstanceRef.current.on('click', clickHandler);
     (mapInstanceRef.current as any).__clickHandler = clickHandler;
-  }, [drawingState.isDrawing === 'NEW_POINT', addPoint, flightPlan, onFlightPlanUpdate]);
+  }, [drawingState.isDrawing === 'NEW_POINT', addPoint, flightPlan, onFlightPlanUpdate, setSelectedIndex]);
 
   // Set up mouse move handler for coordinate display
   useEffect(() => {
@@ -276,6 +298,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
 
       // Update coordinate display
       const geographicCoordinate = transform(coordinate, mapInstanceRef.current!.getView().getProjection().getCode(), 'EPSG:4326');
+      hoverCoordRef.current = { raw_x: coordinate[0], raw_y: coordinate[1] };
       setHoverCoord({
         raw_x: coordinate[0],
         raw_y: coordinate[1],
@@ -361,7 +384,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
     }
 
     // Create a new flight plan layer with current data
-    const newFlightPlanLayer = createFlightPlanLayer(flightPlan, mapInstanceRef.current.getView().getProjection(), navigationModeRef.current, drawingState.draggedWaypointIndex ?? undefined);
+    const newFlightPlanLayer = createFlightPlanLayer(flightPlan, mapInstanceRef.current.getView().getProjection(), navigationModeRef.current, drawingState.draggedWaypointIndex ?? undefined, selectedIndex ?? undefined);
     newFlightPlanLayer.set('name', 'flightplan');
     
     // Add the new layer to the map
@@ -386,7 +409,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
         mapInstanceRef.current.removeInteraction(snapInteractionRef.current);
       }
     }
-  }, [flightPlan, isLoading, drawingState.isDrawing === 'DRAG_POINT']);
+  }, [flightPlan, isLoading, drawingState.isDrawing === 'DRAG_POINT', selectedIndex]);
 
   // Ensure interactions are properly installed when transitioning from drawing to normal mode
   useEffect(() => {
@@ -414,6 +437,107 @@ const MapComponent: React.FC<MapComponentProps> = ({
           isUpdatingFromModifyRef,
           flightPlan);
       }
+    }
+  }, [drawingState.isDrawing]);
+
+  // Global keydown handler: selection cycling, Escape, coord entry mode
+  useEffect(() => {
+    const isInputFocused = () => {
+      const el = document.activeElement;
+      return el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement;
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // --- Coord entry mode active ---
+      if (coordEntry !== null) {
+        e.preventDefault();
+
+        if (e.key === 'Escape') {
+          // Cancel entry; waypoint stays selected
+          setCoordEntry(null);
+          return;
+        }
+
+        if (e.key === 'Enter') {
+          // In lat phase: advance cursor; in lon phase: try to commit
+          const inLonPhase = coordEntry.cursor === 'lonDeg' || coordEntry.cursor === 'lonMin';
+          if (!inLonPhase) {
+            const next = applyKey(coordEntry, 'Enter');
+            setCoordEntry(next);
+          } else {
+            const coords = parseCoordEntry(coordEntry);
+            if (!coords) { setCoordEntry({ ...coordEntry, hasError: true }); return; }
+
+            if (selectedIndex !== null) {
+              // Move existing waypoint
+              const updated = flightPlanUtils.moveTurnPoint(flightPlan, selectedIndex, coords.lat, coords.lon);
+              onFlightPlanUpdate(updated);
+              setCoordEntry(null);
+            } else if (drawingState.isDrawing === 'NEW_POINT') {
+              // Create new waypoint, keep drawing mode
+              const updated = flightPlanUtils.addTurnPoint(flightPlan, coords.lat, coords.lon);
+              onFlightPlanUpdate(updated);
+              // Update the drawing anchor synchronously so the preview line starts
+              // from the new waypoint on the very next updatePreviewLine call.
+              confirmKeyboardWaypoint(coords.lat, coords.lon);
+              if (hoverCoordRef.current) {
+                updatePreviewLine([hoverCoordRef.current.raw_x, hoverCoordRef.current.raw_y]);
+              }
+              setCoordEntry(null);
+            }
+          }
+          return;
+        }
+
+        const next = applyKey(coordEntry, e.key);
+        setCoordEntry(next);
+        return;
+      }
+
+      // --- No active coord entry ---
+      if (isInputFocused()) return;
+
+      const key = e.key;
+
+      // Coord entry triggers: N, S, or digit, when waypoint selected or drawing new point
+      if ((key === 'N' || key === 'S' || /^\d$/.test(key)) &&
+          (selectedIndex !== null || drawingState.isDrawing === 'NEW_POINT')) {
+        e.preventDefault();
+        setCoordEntry(initCoordEntry(key));
+        return;
+      }
+
+      // Selection cycling
+      if (key === '+' || key === '=') {
+        e.preventDefault();
+        const count = flightPlan.points.length;
+        if (count === 0) return;
+        setSelectedIndex(selectedIndex === null ? 0 : (selectedIndex + 1) % count);
+        return;
+      }
+      if (key === '-') {
+        e.preventDefault();
+        const count = flightPlan.points.length;
+        if (count === 0) return;
+        setSelectedIndex(selectedIndex === null ? 0 : (selectedIndex - 1 + count) % count);
+        return;
+      }
+
+      // Escape deselects
+      if (key === 'Escape' && selectedIndex !== null) {
+        e.preventDefault();
+        setSelectedIndex(null);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [coordEntry, selectedIndex, flightPlan, drawingState.isDrawing, setCoordEntry, setSelectedIndex, onFlightPlanUpdate]);
+
+  // Cancel coord entry when drag ends
+  useEffect(() => {
+    if (drawingState.isDrawing === 'NO_DRAWING' && coordEntry !== null) {
+      setCoordEntry(null);
     }
   }, [drawingState.isDrawing]);
 
@@ -472,7 +596,11 @@ const MapComponent: React.FC<MapComponentProps> = ({
         onGridChange={setGridEnabled}
         onMeasureChange={setMeasureEnabled}
       />
-      <MapCoordinatesOverlay coordinate={hoverCoord} />
+      <MapCoordinatesOverlay
+        coordinate={hoverCoord}
+        entryTemplate={coordEntry ? formatTemplate(coordEntry) : null}
+        entryHasError={coordEntry?.hasError ?? false}
+      />
     </div>
   );
 };

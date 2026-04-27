@@ -9,7 +9,7 @@ import { calculateAllLegDrawData, generateArcPoints } from "./legCalculations";
 
 // Create a vector layer from the flight plan
 // excludeWaypointIndex is the index of the waypoint to exclude (i.e. because it is being dragged)
-export const createFlightPlanLayer = (flightPlan: FlightPlan, projection: any, navigationMode: string, excludedWaypointIndex?: number) => {
+export const createFlightPlanLayer = (flightPlan: FlightPlan, projection: any, navigationMode: string, excludedWaypointIndex?: number, selectedWaypointIndex?: number) => {
     const source = new VectorSource();
     
     // Add point features for turn points
@@ -140,6 +140,16 @@ export const createFlightPlanLayer = (flightPlan: FlightPlan, projection: any, n
                         image: new Circle({
                             radius: 12,
                             stroke: new Stroke({ color: '#0066CC', width: 2 })
+                        })
+                    }));
+                }
+
+                // Selected waypoint highlight ring
+                if (waypointIndex === selectedWaypointIndex) {
+                    styles.push(new Style({
+                        image: new Circle({
+                            radius: 20,
+                            stroke: new Stroke({ color: '#FFB300', width: 2.5 })
                         })
                     }));
                 }

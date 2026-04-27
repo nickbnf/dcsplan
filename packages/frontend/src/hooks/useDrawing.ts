@@ -21,6 +21,9 @@ export const useDrawing = () => {
   const previewWptFeatureRef = useRef<Feature<Point> | null>(null);
   const drawingLayerRef = useRef<any>(null);
   const mapProjectionRef = useRef<any>(null);
+  // Synchronous ref so updatePreviewLine always reads the latest confirmed point
+  // without waiting for the React state update cycle.
+  const lastConfirmedPointRef = useRef<Point | null>(null);
 
   const [drawingState, setDrawingState] = useState<DrawingState>({
     isDrawing: 'NO_DRAWING',
@@ -47,10 +50,11 @@ export const useDrawing = () => {
     mapProjectionRef.current = map.getView().getProjection();
     
     // Start with the last point of the existing flight plan if available
-    const initialPoint = existingFlightPlan && existingFlightPlan.points.length > 0 
+    const initialPoint = existingFlightPlan && existingFlightPlan.points.length > 0
       ? new Point([existingFlightPlan.points[existingFlightPlan.points.length - 1].lon, existingFlightPlan.points[existingFlightPlan.points.length - 1].lat])
       : null;
-    
+
+    lastConfirmedPointRef.current = initialPoint;
     setDrawingState({
       isDrawing: 'NEW_POINT',
       currentPoint: initialPoint,
@@ -143,11 +147,22 @@ export const useDrawing = () => {
 
     const [lon, lat] = transform(coordinate, mapProjectionRef.current.getCode(), 'EPSG:4326');
     const newPoint: Point = new Point([lon, lat]);
-    
+    lastConfirmedPointRef.current = newPoint;
     setDrawingState(prev => ({
       ...prev,
       currentPoint: newPoint,
-      lastConfirmedPoint: newPoint // Update the last confirmed point when a new point is added
+      lastConfirmedPoint: newPoint,
+    }));
+  }, []);
+
+  /** Called after a keyboard-entered coordinate is committed. Updates the ref synchronously
+   *  so the next updatePreviewLine call immediately draws from the new waypoint. */
+  const confirmKeyboardWaypoint = useCallback((lat: number, lon: number) => {
+    const newPoint = new Point([lon, lat]);
+    lastConfirmedPointRef.current = newPoint;
+    setDrawingState(prev => ({
+      ...prev,
+      lastConfirmedPoint: newPoint,
     }));
   }, []);
 
@@ -201,8 +216,8 @@ export const useDrawing = () => {
     if (source) {
       console.log('addFeature', drawingState.isDrawing);
       if (drawingState.isDrawing === 'NEW_POINT') {
-        // Use lastConfirmedPoint if available, otherwise use currentPoint
-        const lastPoint = drawingState.lastConfirmedPoint || drawingState.currentPoint;
+        // Read from ref so keyboard commits are reflected immediately without waiting for re-render
+        const lastPoint = lastConfirmedPointRef.current || drawingState.currentPoint;
 
         if (lastPoint !== null) {
           const lastPointCoord = transform(lastPoint.getCoordinates() || [0, 0], 'EPSG:4326', mapProjectionRef.current.getCode());
@@ -290,6 +305,7 @@ export const useDrawing = () => {
     startDragging,
     stopDragging,
     addPoint,
+    confirmKeyboardWaypoint,
     updatePreviewLine,
   };
 };
