@@ -27,99 +27,99 @@ interface EditableFieldProps {
   numericOnly?: boolean; // If true, only allows numbers; if false, allows any text
 }
 
-const EditableField: React.FC<EditableFieldProps> = ({ 
-  value, 
-  onChange, 
+const EditableField: React.FC<EditableFieldProps> = ({
+  value,
+  onChange,
   placeholder = "Click to edit",
   className = "",
   maxLength,
   unit = "",
   numericOnly = true
 }) => {
-  const [isEditing, setIsEditing] = useState(false);
-  const [editValue, setEditValue] = useState(value.replace(unit, '').trim());
+  const [editValue, setEditValue] = useState(() => value.replace(unit, '').trim());
+  const [isFocused, setIsFocused] = useState(false);
+
+  useEffect(() => {
+    if (!isFocused) {
+      setEditValue(value.replace(unit, '').trim());
+    }
+  }, [value, unit, isFocused]);
 
   const handleSave = () => {
-    const newValue = unit ? `${editValue} ${unit}` : editValue;
+    const newValue = unit ? `${editValue}${unit}` : editValue;
     onChange(newValue);
-    setIsEditing(false);
-  };
-
-  const handleCancel = () => {
-    setEditValue(value.replace(unit, '').trim());
-    setIsEditing(false);
+    setIsFocused(false);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
-      handleSave();
+      (e.target as HTMLInputElement).blur();
     } else if (e.key === 'Escape') {
-      handleCancel();
+      setEditValue(value.replace(unit, '').trim());
+      (e.target as HTMLInputElement).blur();
     }
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const inputValue = e.target.value;
     if (numericOnly) {
-      // Only allow numbers and decimal point
       if (/^\d*\.?\d*$/.test(inputValue)) {
         if (!maxLength || inputValue.length <= maxLength) {
           setEditValue(inputValue);
         }
       }
     } else {
-      // Allow any text
       if (!maxLength || inputValue.length <= maxLength) {
         setEditValue(inputValue);
       }
     }
   };
 
-  if (isEditing) {
-    // Calculate input width based on maxLength
-    const getInputWidth = () => {
-      if (numericOnly) {
-        // For numeric fields, use fixed widths based on common patterns
-        return maxLength === 3 ? 'w-8' : maxLength === 5 ? 'w-12' : 'w-8';
-      } else {
-        // For text fields, calculate width based on maxLength
-        // Approximate: each character needs ~0.6rem, add some padding
-        if (maxLength) {
-          if (maxLength <= 10) return 'w-24';
-          if (maxLength <= 15) return 'w-40';
-          if (maxLength <= 20) return 'w-52';
-          if (maxLength <= 25) return 'w-64';
-          if (maxLength <= 30) return 'w-72';
-          return 'w-80';
-        }
-        return 'w-32'; // Default fallback
+  const getInputWidth = () => {
+    if (numericOnly) {
+      return maxLength === 3 ? 'w-8' : maxLength === 5 ? 'w-12' : 'w-8';
+    } else {
+      if (maxLength) {
+        if (maxLength <= 10) return 'w-24';
+        if (maxLength <= 15) return 'w-40';
+        if (maxLength <= 20) return 'w-52';
+        if (maxLength <= 25) return 'w-64';
+        if (maxLength <= 30) return 'w-72';
+        return 'w-80';
       }
-    };
-    const inputWidth = getInputWidth();
-    return (
-      <div className="flex items-center">
-        <input
-          type="text"
-          value={editValue}
-          onChange={handleInputChange}
-          onBlur={handleSave}
-          onKeyDown={handleKeyDown}
-          className={`bg-transparent border-b border-gray-400 focus:border-gray-600 outline-none text-sm ${inputWidth} ${className}`}
-          autoFocus
-          maxLength={maxLength}
-        />
-        {unit && <span className="ml-1 text-sm">{unit}</span>}
-      </div>
-    );
-  }
+      return 'w-32';
+    }
+  };
+
+  const inputWidth = getInputWidth();
+  // When not focused, embed the unit in the displayed value (matches original span appearance).
+  // When focused, show only the editable part so the unit doesn't interfere with typing.
+  const displayValue = isFocused ? editValue : `${editValue}${unit}`;
 
   return (
-    <span
-      onClick={() => setIsEditing(true)}
-      className={`cursor-pointer hover:bg-gray-100 px-1 py-0.5 rounded text-sm ${className}`}
-    >
-      {value || placeholder}
-    </span>
+    <input
+      type="text"
+      value={displayValue}
+      onChange={handleInputChange}
+      onFocus={(e) => {
+        const target = e.target;
+        setIsFocused(true);
+        // Select after React re-renders with the unit-stripped value
+        requestAnimationFrame(() => target.select());
+      }}
+      onBlur={handleSave}
+      onKeyDown={handleKeyDown}
+      placeholder={placeholder}
+      maxLength={maxLength}
+      // Compact ch-based width when not focused to match the original span footprint;
+      // fixed Tailwind width when focused to give room for editing.
+      style={!isFocused ? { width: `calc(${Math.max(displayValue.length + 1, 2)}ch + 0.5rem)` } : undefined}
+      className={`bg-transparent outline-none text-sm ${className} ${
+        isFocused
+          ? `${inputWidth} border-b border-gray-400 focus:border-gray-600 cursor-text`
+          : 'cursor-pointer hover:bg-gray-100 px-1 py-0.5 rounded'
+      }`}
+    />
   );
 };
 

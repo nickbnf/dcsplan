@@ -49,9 +49,9 @@
 
 ## 9. Integration Testing
 
-- [ ] 9.1 Verify full flow: select waypoint via click → type `N4512.30E03430.00` → Return → waypoint moves on map and card shows updated coords
-- [ ] 9.2 Verify full flow: select waypoint → press `+` / `-` → different card highlighted and scrolled into view
-- [ ] 9.3 Verify Add Wpts flow: activate drawing mode → type `N4512.30` → `Space` → `E03430.00` → Return → waypoint created, template resets
-- [ ] 9.4 Verify Escape chain: in coord entry → Escape (entry cancelled, waypoint still selected) → Escape again (deselected)
-- [ ] 9.5 Verify global key guard: focus the altitude field → press `+` → selection does not change
+- [x] 9.1 Verify full flow: select waypoint via click → type `N4512.30E03430.00` → Return → waypoint moves on map and card shows updated coords
+- [x] 9.2 Verify full flow: select waypoint → press `+` / `-` → different card highlighted and scrolled into view
+- [x] 9.3 Verify Add Wpts flow: activate drawing mode → type `N4512.30` → `Space` → `E03430.00` → Return → waypoint created, template resets
+- [x] 9.4 Verify Escape chain: in coord entry → Escape (entry cancelled, waypoint still selected) → Escape again (deselected)
+- [x] 9.5 Verify global key guard: focus the altitude field → press `+` → selection does not change
 <!-- Integration tests 9.1–9.5 require manual UI verification -->
