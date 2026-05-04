@@ -17,7 +17,7 @@ import json
 import logging
 from pydantic import BaseModel, Field
 from pyproj import Transformer
-from map_annotations import annotate_map, draw_info_box
+from map_annotations import annotate_map, draw_info_box, draw_comment_strip
 from flight_plan import FlightPlan, FlightPlanData
 from waypoint_list_page import generate_waypoint_list_page
 
@@ -876,15 +876,25 @@ def generate_leg_map(
             logger.info(f"Resizing cropped image from {cropped.width}x{cropped.height} to {MAP_WIDTH}x{MAP_HEIGHT}")
             cropped = cropped.resize((MAP_WIDTH, MAP_HEIGHT), Image.Resampling.LANCZOS)
     
-    # Draw the info box on the final cropped image (fixed position, not geo-referenced)
-    if details:
+    # Draw the info box and comment strip in a single overlay pass so the
+    # comment strip can be positioned alongside the info box.
+    dest_comment = flight_plan.points[leg_index + 1].comment
+    has_comment = bool(dest_comment and dest_comment.strip())
+    if details or has_comment:
         from PIL import ImageDraw
         if cropped.mode != 'RGBA':
             cropped = cropped.convert('RGBA')
-        info_overlay = Image.new('RGBA', cropped.size, (0, 0, 0, 0))
-        info_draw = ImageDraw.Draw(info_overlay)
-        draw_info_box(info_draw, flight_plan, flight_plan_data, leg_index, details, cropped.width, cropped.height)
-        cropped = Image.alpha_composite(cropped, info_overlay)
+        overlay = Image.new('RGBA', cropped.size, (0, 0, 0, 0))
+        overlay_draw = ImageDraw.Draw(overlay)
+
+        info_box_geom = None
+        if details:
+            info_box_geom = draw_info_box(overlay_draw, flight_plan, flight_plan_data, leg_index, details, cropped.width, cropped.height)
+
+        if has_comment:
+            draw_comment_strip(overlay_draw, dest_comment.strip(), cropped.width, cropped.height, info_box_geom)
+
+        cropped = Image.alpha_composite(cropped, overlay)
         cropped = cropped.convert('RGB')
 
     # Save cropped image as PNG

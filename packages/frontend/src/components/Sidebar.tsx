@@ -37,7 +37,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const handleTheatreSelect = (theatreId: string) => {
     if (theatreId === flightPlan.theatre) return;
-    
+
     // If flight plan has points, ask for confirmation
     if (flightPlan.points.length > 0) {
       setPendingTheatreId(theatreId);
@@ -60,7 +60,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const pendingTheatreName = theatres.find(t => t.id === pendingTheatreId)?.name || "";
 
   return (
-    <div className="w-[400px] bg-white border-r border-gray-300 flex flex-col h-full overflow-y-auto">
+    <div className="w-[450px] bg-white border-r border-gray-300 flex flex-col h-full overflow-y-auto">
       {/* Title Zone */}
       <TitleZone
         currentTheatreId={flightPlan.theatre}
@@ -68,9 +68,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
         isLoadingTheatres={isLoadingTheatres}
         onTheatreChange={handleTheatreSelect}
       />
-      
+
       {/* Button Zone */}
-      <ButtonZone 
+      <ButtonZone
         drawingState={drawingState}
         flightPlan={flightPlan}
         onUndo={onUndo}
@@ -79,7 +79,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         onStopDrawing={onStopDrawing}
         onFlightPlanUpdate={onFlightPlanUpdate}
       />
-      
+
       {/* Flight Plan Zone */}
       <FlightPlanZone
         flightPlan={flightPlan}
@@ -88,7 +88,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         navigationMode={navigationMode}
       />
 
-      <ChangeTheatreDialog 
+      <ChangeTheatreDialog
         isOpen={isConfirmDialogOpen}
         onOpenChange={setIsConfirmDialogOpen}
         onConfirm={handleConfirmTheatreChange}

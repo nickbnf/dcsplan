@@ -24,6 +24,7 @@ export type FlightPlanTurnPoint = {
   waypointType?: WaypointType; // defaults to 'normal'
   exitTimeSec?: number; // Push only: exit time in seconds since midnight
   hack?: boolean; // Push only: HACK enabled
+  comment?: string; // Optional free-text note for the kneeboard
 }
 
 export type FlightPlanPointChange = {
@@ -36,6 +37,7 @@ export type FlightPlanPointChange = {
   waypointType?: WaypointType;
   exitTimeSec?: number;
   hack?: boolean;
+  comment?: string;
 }
 
 // Attack planning types

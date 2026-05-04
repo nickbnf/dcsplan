@@ -354,6 +354,9 @@ const WaypointCard: React.FC<{ flightPlan: FlightPlan, legData: LegData | null, 
   const isSelected = selectedIndex === index;
   const isEnteringCoords = isSelected && coordEntry !== null;
   const cardRef = useRef<HTMLDivElement>(null);
+  const [isEditingComment, setIsEditingComment] = useState(false);
+  const [commentDraft, setCommentDraft] = useState('');
+  const hasComment = !!(waypoint.comment && waypoint.comment.trim());
 
   useEffect(() => {
     if (isSelected && cardRef.current) {
@@ -381,6 +384,31 @@ const WaypointCard: React.FC<{ flightPlan: FlightPlan, legData: LegData | null, 
     onFlightPlanUpdate(updatedFlightPlan);
   };
 
+  const openCommentEditor = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setCommentDraft(waypoint.comment || '');
+    setIsEditingComment(true);
+  };
+
+  const saveComment = () => {
+    const trimmed = commentDraft.trim();
+    const updatedFlightPlan = flightPlanUtils.updateTurnPoint(flightPlan, index, { comment: trimmed || undefined });
+    onFlightPlanUpdate(updatedFlightPlan);
+    setIsEditingComment(false);
+  };
+
+  const discardComment = () => {
+    setIsEditingComment(false);
+  };
+
+  const handleCommentKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      saveComment();
+    } else if (e.key === 'Escape') {
+      discardComment();
+    }
+  };
 
   return (
     <div
@@ -419,6 +447,20 @@ const WaypointCard: React.FC<{ flightPlan: FlightPlan, legData: LegData | null, 
               </span>
             )}
           </div>
+          {/* Comment icon: ghost on hover when no comment, always visible+colored when comment exists */}
+          <button
+            onClick={openCommentEditor}
+            title={hasComment ? 'Edit note' : 'Add note'}
+            className={`p-1 rounded transition-opacity ${
+              hasComment
+                ? 'text-avio-primary opacity-100'
+                : 'text-gray-400 opacity-0 group-hover:opacity-100'
+            } hover:bg-gray-100`}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M7 8h10M7 12h6m-6 4h4M5 4h14a2 2 0 012 2v10a2 2 0 01-2 2H7l-4 4V6a2 2 0 012-2z" />
+            </svg>
+          </button>
           <div className="-mr-2">
             <DeleteWaypointDialog
               waypointNumber={index + 1}
@@ -481,6 +523,29 @@ const WaypointCard: React.FC<{ flightPlan: FlightPlan, legData: LegData | null, 
           </div>
         </div>
       )}
+      {/* Comment section: inline textarea when editing, truncated preview when set */}
+      {isEditingComment ? (
+        <textarea
+          autoFocus
+          value={commentDraft}
+          onChange={(e) => setCommentDraft(e.target.value)}
+          onBlur={saveComment}
+          onKeyDown={handleCommentKeyDown}
+          onClick={(e) => e.stopPropagation()}
+          maxLength={150}
+          rows={3}
+          className="mt-2 w-full text-xs font-aero-label text-gray-700 bg-gray-50 border border-gray-300 rounded px-2 py-1 outline-none focus:border-gray-500 resize-none"
+          placeholder="Add a note for the kneeboard…"
+        />
+      ) : hasComment ? (
+        <p
+          onClick={openCommentEditor}
+          className="mt-1 text-xs font-aero-label text-gray-500 truncate cursor-pointer hover:text-gray-700"
+          title={waypoint.comment}
+        >
+          {waypoint.comment}
+        </p>
+      ) : null}
     </div>
   );
 }

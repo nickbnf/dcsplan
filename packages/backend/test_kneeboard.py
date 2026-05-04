@@ -451,9 +451,24 @@ class TestGenerateKneeboardPNG:
         """Test PNG generation with insufficient waypoints."""
         valid_flight_plan["points"] = [valid_flight_plan["points"][0]]
         plan = FlightPlan(**valid_flight_plan)
-        
+
         with pytest.raises(ValueError, match="at least 2 waypoints"):
             generate_kneeboard_single_png(plan, 0)
+
+    def test_generate_png_with_destination_comment(self, minimal_flight_plan, mock_tiles_info):
+        """Test that PNG generation succeeds when the destination waypoint has a comment."""
+        minimal_flight_plan["points"][1]["comment"] = "Check AWACS freq 251.0 before push"
+        plan = FlightPlan(**minimal_flight_plan)
+        png_data = generate_kneeboard_single_png(plan, 0)
+        assert isinstance(png_data, bytes)
+        assert png_data[:8] == b'\x89PNG\r\n\x1a\n'
+
+    def test_generate_png_without_comment_unchanged(self, minimal_flight_plan, mock_tiles_info):
+        """Test that PNG generation succeeds and is unaffected when no comment is set."""
+        plan = FlightPlan(**minimal_flight_plan)
+        png_data = generate_kneeboard_single_png(plan, 0)
+        assert isinstance(png_data, bytes)
+        assert png_data[:8] == b'\x89PNG\r\n\x1a\n'
 
 
 class TestIntegration:

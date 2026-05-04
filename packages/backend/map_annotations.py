@@ -1216,12 +1216,15 @@ def draw_info_box(
     details: set[str],
     image_width: int,
     image_height: int
-) -> None:
+) -> tuple[int, int, int, int] | None:
     """
     Draw an info box at the bottom-left of the kneeboard page.
 
     Shows destination waypoint details (name, coordinates, EFR) depending on
     which detail keys are requested.
+
+    Returns (box_left, box_top, box_width, total_height) for sibling elements
+    to align alongside, or None if nothing was drawn.
     """
     dest_index = focus_leg_index + 1
     dest_point = flight_plan.points[dest_index]
@@ -1238,7 +1241,7 @@ def draw_info_box(
         rows.append(f"EFR: {efr:.0f}")
 
     if not rows:
-        return
+        return None
 
     # Measure text to determine box width
     font = SMALL_FONT
@@ -1295,6 +1298,105 @@ def draw_info_box(
     )
 
     logger.debug(f"Drew info box at ({box_left}, {box_top})")
+    return (box_left, box_top, box_width, total_height)
+
+
+def _wrap_text_pixels(
+    draw: ImageDraw.ImageDraw,
+    text: str,
+    font: ImageFont.FreeTypeFont,
+    max_width: int,
+) -> list[str]:
+    """Word-wrap text so each line fits within max_width pixels."""
+    words = text.split()
+    lines: list[str] = []
+    current_words: list[str] = []
+    space_w = draw.textlength(" ", font=font)
+
+    for word in words:
+        candidate = current_words + [word]
+        line_str = " ".join(candidate)
+        if draw.textlength(line_str, font=font) <= max_width:
+            current_words = candidate
+        else:
+            if current_words:
+                lines.append(" ".join(current_words))
+            current_words = [word]
+
+    if current_words:
+        lines.append(" ".join(current_words))
+
+    return lines
+
+
+def draw_comment_strip(
+    draw: ImageDraw.ImageDraw,
+    comment: str,
+    image_width: int,
+    image_height: int,
+    info_box_geometry: tuple[int, int, int, int] | None = None,
+) -> None:
+    """
+    Draw a comment box alongside the info box (to its right) when geometry is
+    provided, or at the bottom of the page otherwise.
+
+    info_box_geometry is (box_left, box_top, box_width, total_height) as
+    returned by draw_info_box().
+    """
+    margin = 10
+    padding = 8
+    font = SMALL_FONT
+    line_height_px = 16
+    max_lines = 2
+    gap = 8  # horizontal gap between info box and comment box
+
+    if info_box_geometry is not None:
+        ib_left, ib_top, ib_width, ib_height = info_box_geometry
+        strip_left = ib_left + ib_width + gap
+        strip_width = image_width - strip_left - margin
+        # Height is content-driven; pin bottom edge to match the info box bottom.
+        ib_bottom = ib_top + ib_height
+    else:
+        # Fallback: full-width strip at bottom (no info box present)
+        strip_left = margin
+        strip_width = image_width - 2 * margin
+        ib_bottom = image_height - margin
+
+    if strip_width <= 0:
+        return
+
+    text_max_w = strip_width - padding * 2
+    lines = _wrap_text_pixels(draw, comment, font, text_max_w)
+    if not lines:
+        return
+
+    if len(lines) > max_lines:
+        # Truncate last kept line with ellipsis
+        last = lines[max_lines - 1]
+        while last and draw.textlength(last + "…", font=font) > text_max_w:
+            last = last[:-1]
+        lines = lines[:max_lines - 1] + [last + "…"]
+
+    strip_height = len(lines) * line_height_px + padding * 2
+    strip_top = ib_bottom - strip_height
+
+    fill_color = (255, 255, 255, int(255 * BACKGROUND_OPACITY))
+    overhang = 4
+    draw.rectangle(
+        (strip_left - overhang, strip_top - overhang,
+         strip_left + strip_width + overhang, strip_top + strip_height + overhang),
+        fill=fill_color
+    )
+    draw.rectangle(
+        (strip_left, strip_top, strip_left + strip_width, strip_top + strip_height),
+        outline=OUTLINE_COLOR_RGBA, width=1
+    )
+
+    text_start_y = strip_top + padding
+    for i, line in enumerate(lines):
+        draw.text((strip_left + padding, text_start_y + i * line_height_px), line, fill=TEXT_COLOR_RGBA, font=font)
+
+    logger.debug(f"Drew comment strip at ({strip_left}, {strip_top}): {comment[:40]!r}")
 
 
 def annotate_map(

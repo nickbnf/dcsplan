@@ -31,6 +31,7 @@ class FlightPlanTurnPoint(BaseModel):
     waypointType: str | None = Field(default=None, description="Waypoint type: normal, push, ip, tgt")
     exitTimeSec: int | None = Field(default=None, ge=0, le=86399, description="Push only: exit time")
     hack: bool | None = Field(default=None, description="Push only: HACK enabled")
+    comment: str | None = Field(default=None, description="Optional kneeboard note for this waypoint")
 
 
 class FlightPlan(BaseModel):
