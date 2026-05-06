@@ -1,4 +1,4 @@
-import type { FlightPlan, LegData } from "../types/flightPlan";
+import type { FlightPlan, LegData, Regime, Wind, LegSegmentsResult } from "../types/flightPlan";
 import { getEffectiveExitTime } from "./flightPlanUtils";
 import { transform } from "ol/proj";
 
@@ -323,6 +323,135 @@ function calculateHeading(
   return heading % 360;
 }
 
+// --- Regime-aware leg segment computation ---
+
+// Re-export types from flightPlan.ts for consumers that import from legCalculations
+export type { Wind, LegSegmentsLevel, LegSegmentsSegmented, LegSegmentsWarning, LegSegmentsResult } from '../types/flightPlan';
+
+/** Returns ground speed (knots) given TAS and wind for a given course. */
+export function applyWind(tas: number, windSpeed: number, windDir: number, course: number): number {
+  const windAngleRad = ((((windDir + 180) % 360) - course + 360) % 360) * (Math.PI / 180);
+  return tas + windSpeed * Math.cos(windAngleRad);
+}
+
+/**
+ * Compute the leg segment breakdown for a regime-driven leg.
+ * Returns a level result (use stored tas/ff), segmented result (transition + cruise), or a
+ * warning when the transition cannot complete within the available leg distance.
+ */
+export function computeLegSegments(
+  input: {
+    prevAlt: number;
+    legAlt: number;
+    distance: number; // nm
+    course: number;   // degrees magnetic
+    windA: Wind;      // wind at origin (used for transition segment)
+    windB: Wind;      // wind at destination (used for cruise segment)
+    tas: number;      // fallback TAS (waypoint value, used for level path)
+    ff: number;       // fallback FF (waypoint value, used for level path)
+  },
+  regime?: Regime
+): LegSegmentsResult {
+  const { prevAlt, legAlt, distance, course, windA, windB, tas, ff } = input;
+  const altDelta = legAlt - prevAlt;
+
+  // Level-leg path: fall back to stored tas/ff (today's behaviour)
+  if (
+    altDelta === 0 ||
+    !regime ||
+    (altDelta > 0 && !regime.climb) ||
+    (altDelta < 0 && !regime.descent)
+  ) {
+    return { kind: 'level', tas, ff };
+  }
+
+  const phaseRoc = altDelta > 0 ? regime.climb!.roc : regime.descent!.rod;
+  const phaseTas = altDelta > 0 ? regime.climb!.tas : regime.descent!.tas;
+  const phaseFf = altDelta > 0 ? regime.climb!.ff : regime.descent!.ff;
+  const phaseLabel: 'climb' | 'descent' = altDelta > 0 ? 'climb' : 'descent';
+
+  // 1. Time to transition altitude (minutes)
+  const transitionTime = Math.abs(altDelta) / phaseRoc;
+
+  // 2. Ground speed during transition (using origin wind per design §4)
+  const transitionGroundSpeed = applyWind(phaseTas, windA.windSpeed, windA.windDir, course);
+  const transitionDistance = transitionGroundSpeed * (transitionTime / 60);
+
+  // 3. Warning when transition can't fit
+  if (transitionDistance > distance) {
+    const reachableTransitionTime = (distance / transitionGroundSpeed) * 60;
+    const reachableAltDelta = Math.sign(altDelta) * phaseRoc * reachableTransitionTime;
+    // Fallback: compute time/fuel as if the entire leg were in transition
+    const fallbackTimeSec = Math.round(transitionTime * 60);
+    const fallbackFuel = phaseFf * (transitionTime / 60);
+    return {
+      kind: 'warning',
+      reason: 'transition-too-long',
+      reachableAltDelta,
+      transitionDistance,
+      fallbackTimeSec,
+      fallbackFuel,
+    };
+  }
+
+  // 4. Cruise covers the remainder
+  const cruiseDistance = distance - transitionDistance;
+  const cruiseGroundSpeed = applyWind(regime.cruise.tas, windB.windSpeed, windB.windDir, course);
+  const cruiseTime = (cruiseDistance / cruiseGroundSpeed) * 60;
+
+  return {
+    kind: 'segmented',
+    transition: {
+      phase: phaseLabel,
+      time: transitionTime,
+      distance: transitionDistance,
+      fuel: phaseFf * (transitionTime / 60),
+    },
+    cruise: {
+      time: cruiseTime,
+      distance: cruiseDistance,
+      fuel: regime.cruise.ff * (cruiseTime / 60),
+    },
+  };
+}
+
+/**
+ * Compute a point at fraction `f` (0..1) along the great-circle path from (lat1,lon1) to (lat2,lon2).
+ * In projected mode uses linear interpolation; in geographic mode uses the spherical formula.
+ */
+export function intermediatePointOnLeg(
+  lat1: number, lon1: number,
+  lat2: number, lon2: number,
+  f: number,
+  navigationMode: string,
+  projection?: any
+): [number, number] {
+  if (navigationMode === 'projected' && projection) {
+    const [x1, y1] = projectPoint(lat1, lon1, projection);
+    const [x2, y2] = projectPoint(lat2, lon2, projection);
+    return unprojectPoint(x1 + f * (x2 - x1), y1 + f * (y2 - y1), projection);
+  }
+  // Spherical intermediate point formula
+  const lat1R = lat1 * Math.PI / 180;
+  const lon1R = lon1 * Math.PI / 180;
+  const lat2R = lat2 * Math.PI / 180;
+  const lon2R = lon2 * Math.PI / 180;
+  const d = 2 * Math.asin(Math.sqrt(
+    Math.sin((lat2R - lat1R) / 2) ** 2 +
+    Math.cos(lat1R) * Math.cos(lat2R) * Math.sin((lon2R - lon1R) / 2) ** 2
+  ));
+  if (d < 1e-10) return [lat1, lon1];
+  const a = Math.sin((1 - f) * d) / Math.sin(d);
+  const b = Math.sin(f * d) / Math.sin(d);
+  const x = a * Math.cos(lat1R) * Math.cos(lon1R) + b * Math.cos(lat2R) * Math.cos(lon2R);
+  const y = a * Math.cos(lat1R) * Math.sin(lon1R) + b * Math.cos(lat2R) * Math.sin(lon2R);
+  const z = a * Math.sin(lat1R) + b * Math.sin(lat2R);
+  return [
+    Math.atan2(z, Math.sqrt(x * x + y * y)) * 180 / Math.PI,
+    Math.atan2(y, x) * 180 / Math.PI,
+  ];
+}
+
 /**
  * Leg calculation result for drawing.
  */
@@ -542,10 +671,40 @@ export function calculateAllLegData(
       navigationMode, projection
     );
     const distanceNm = (turnDistanceM + straightDistanceM) / 1852;
-    const eteSec = Math.round(distanceNm / (destination.tas + destination.windSpeed * Math.cos(Math.PI / 2 - (destination.windDir - course) * Math.PI / 180)) * 3600);
-    const legFuel = eteSec * (destination.fuelFlow / 3600);
+
+    // Regime-aware ETE and fuel computation
+    const regime = destination.regimeId
+      ? flightPlan.regimes?.find(r => r.id === destination.regimeId)
+      : undefined;
+    const segResult = computeLegSegments(
+      {
+        prevAlt: origin.alt,
+        legAlt: destination.alt,
+        distance: distanceNm,
+        course,
+        windA: { windSpeed: origin.windSpeed, windDir: origin.windDir },
+        windB: { windSpeed: destination.windSpeed, windDir: destination.windDir },
+        tas: destination.tas,
+        ff: destination.fuelFlow,
+      },
+      regime
+    );
+
+    let eteSec: number;
+    let legFuelBase: number;
+    if (segResult.kind === 'level') {
+      eteSec = Math.round(distanceNm / applyWind(segResult.tas, destination.windSpeed, destination.windDir, course) * 3600);
+      legFuelBase = eteSec * (segResult.ff / 3600);
+    } else if (segResult.kind === 'segmented') {
+      eteSec = Math.round((segResult.transition.time + segResult.cruise.time) * 60);
+      legFuelBase = segResult.transition.fuel + segResult.cruise.fuel;
+    } else {
+      // warning: use fallback (entire leg in transition)
+      eteSec = segResult.fallbackTimeSec;
+      legFuelBase = segResult.fallbackFuel;
+    }
     const arrivalEta = previousEta + eteSec;
-    const arrivalEfr = previousEfr - legFuel;
+    const arrivalEfr = previousEfr - legFuelBase;
 
     // If destination is a Push point, account for wait time fuel burn
     let waitFuel = 0;
@@ -564,12 +723,13 @@ export function calculateAllLegData(
     results.push({
       course,
       distance: distanceNm,
-      legFuel: legFuel + waitFuel,
+      legFuel: legFuelBase + waitFuel,
       heading,
       ete: eteSec,
       eta: arrivalEta,
       efr: arrivalEfr - waitFuel,
       hackEta,
+      segmentsResult: segResult,
     });
 
     // Update inbound bearing for next leg

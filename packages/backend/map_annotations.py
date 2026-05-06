@@ -1005,9 +1005,11 @@ def draw_doghouse(
         # TAS from destination turnpoint
         tas_str = f"{leg_data.tas:.0f}K"
         
-        # Altitude from destination turnpoint
-        alt_str = f"{leg_data.alt:.0f}'"
-        
+        # Altitude from destination turnpoint, with climb/descent glyph
+        alt_delta = leg_data.alt - leg_data.prev_alt
+        alt_glyph = '↑' if alt_delta > 0 else ('↓' if alt_delta < 0 else '')
+        alt_str = f"{alt_glyph}{leg_data.alt:.0f}'"
+
         # Values for each box (from top to bottom: Heading, Distance, ETE, TAS, Alt)
         box_values = [
             heading_str,
@@ -1147,9 +1149,11 @@ def draw_mini_doghouse(
         # Format heading from leg data
         heading_str = f"{leg_data.heading:.0f}°M"
         
-        # Format Alt and TAS from destination turnpoint
+        # Format Alt and TAS from destination turnpoint, with climb/descent glyph
         tas_str = f"{leg_data.tas:.0f}K"
-        alt_str = f"{leg_data.alt:.0f}'"
+        alt_delta = leg_data.alt - leg_data.prev_alt
+        alt_glyph = '↑' if alt_delta > 0 else ('↓' if alt_delta < 0 else '')
+        alt_str = f"{alt_glyph}{leg_data.alt:.0f}'"
         
         # Values for each box (from top to bottom: Heading, Alt, TAS)
         box_values = [heading_str, alt_str, tas_str]

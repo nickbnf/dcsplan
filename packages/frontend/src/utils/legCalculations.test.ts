@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { calculateAllLegData } from './legCalculations';
+import { calculateAllLegData, computeLegSegments, applyWind } from './legCalculations';
 import { get as getProjection } from 'ol/proj';
-import type { FlightPlan } from '../types/flightPlan';
+import type { FlightPlan, Regime } from '../types/flightPlan';
+// LegSegmentsResult types are in flightPlan.ts and re-exported from legCalculations.ts
 
 // Use EPSG:4326 as a simple projection for testing
 const projection = getProjection('EPSG:4326')!;
@@ -12,6 +13,7 @@ function makePlan(overrides: Partial<FlightPlan> = {}): FlightPlan {
   return {
     theatre: 'test',
     points: [],
+    regimes: [],
     declination: 0,
     bankAngle: 45,
     initTimeSec: 12 * 3600, // 12:00:00
@@ -197,5 +199,149 @@ describe('calculateAllLegData with Push waypoints', () => {
 
     // Leg 2 ETA should be leg1 ETA + leg2 ETE
     expect(leg2.eta).toBe(leg1.eta + leg2.ete);
+  });
+});
+
+// --- computeLegSegments tests ---
+
+const noWind = { windSpeed: 0, windDir: 0 };
+
+function makeRegime(overrides: Partial<Regime> = {}): Regime {
+  return {
+    id: 'r1',
+    name: 'Test Regime',
+    cruise: { tas: 400, ff: 3600 },
+    ...overrides,
+  };
+}
+
+describe('computeLegSegments', () => {
+  it('level leg manual (no regime): returns level with stored tas/ff', () => {
+    const result = computeLegSegments({
+      prevAlt: 10000, legAlt: 10000, distance: 50, course: 0,
+      windA: noWind, windB: noWind, tas: 400, ff: 3600,
+    });
+    expect(result.kind).toBe('level');
+    if (result.kind === 'level') {
+      expect(result.tas).toBe(400);
+      expect(result.ff).toBe(3600);
+    }
+  });
+
+  it('level leg with regime (altDelta=0): returns level using stored tas/ff', () => {
+    const result = computeLegSegments({
+      prevAlt: 10000, legAlt: 10000, distance: 50, course: 0,
+      windA: noWind, windB: noWind, tas: 400, ff: 3600,
+    }, makeRegime());
+    expect(result.kind).toBe('level');
+  });
+
+  it('climbing leg with full climb data: returns segmented result', () => {
+    const regime = makeRegime({ climb: { tas: 300, ff: 4000, roc: 2000 } });
+    // altDelta = 10000 ft, roc = 2000 fpm → transitionTime = 5 min
+    // transitionGroundSpeed = 300 kts (no wind), transitionDistance = 300 * (5/60) = 25 nm
+    // distance = 50 nm → fits; cruiseDistance = 25 nm
+    const result = computeLegSegments({
+      prevAlt: 0, legAlt: 10000, distance: 50, course: 0,
+      windA: noWind, windB: noWind, tas: 400, ff: 3600,
+    }, regime);
+    expect(result.kind).toBe('segmented');
+    if (result.kind === 'segmented') {
+      expect(result.transition.phase).toBe('climb');
+      expect(result.transition.time).toBeCloseTo(5, 5);
+      expect(result.transition.distance).toBeCloseTo(25, 5);
+      expect(result.transition.fuel).toBeCloseTo(4000 * (5 / 60), 4);
+      expect(result.cruise.distance).toBeCloseTo(25, 5);
+    }
+  });
+
+  it('climbing leg without climb data: falls back to cruise (level)', () => {
+    const regime = makeRegime(); // no climb data
+    const result = computeLegSegments({
+      prevAlt: 0, legAlt: 10000, distance: 50, course: 0,
+      windA: noWind, windB: noWind, tas: 400, ff: 3600,
+    }, regime);
+    expect(result.kind).toBe('level');
+  });
+
+  it('descending leg with full descent data: returns segmented result', () => {
+    const regime = makeRegime({ descent: { tas: 300, ff: 2000, rod: 2000 } });
+    // altDelta = -10000 ft, rod = 2000 fpm → transitionTime = 5 min
+    const result = computeLegSegments({
+      prevAlt: 10000, legAlt: 0, distance: 50, course: 0,
+      windA: noWind, windB: noWind, tas: 400, ff: 3600,
+    }, regime);
+    expect(result.kind).toBe('segmented');
+    if (result.kind === 'segmented') {
+      expect(result.transition.phase).toBe('descent');
+      expect(result.transition.time).toBeCloseTo(5, 5);
+    }
+  });
+
+  it('descending leg without descent data: falls back to cruise (level)', () => {
+    const regime = makeRegime(); // no descent data
+    const result = computeLegSegments({
+      prevAlt: 10000, legAlt: 0, distance: 50, course: 0,
+      windA: noWind, windB: noWind, tas: 400, ff: 3600,
+    }, regime);
+    expect(result.kind).toBe('level');
+  });
+
+  it('manual leg with alt delta: returns level (no regime)', () => {
+    const result = computeLegSegments({
+      prevAlt: 0, legAlt: 10000, distance: 50, course: 0,
+      windA: noWind, windB: noWind, tas: 400, ff: 3600,
+    });
+    expect(result.kind).toBe('level');
+    if (result.kind === 'level') {
+      expect(result.tas).toBe(400);
+    }
+  });
+
+  it('over-long climb fires warning', () => {
+    const regime = makeRegime({ climb: { tas: 300, ff: 4000, roc: 2000 } });
+    // altDelta = 30000 ft, roc = 2000 fpm → transitionTime = 15 min
+    // transitionDistance = 300 * (15/60) = 75 nm > 50 nm → warning
+    const result = computeLegSegments({
+      prevAlt: 0, legAlt: 30000, distance: 50, course: 0,
+      windA: noWind, windB: noWind, tas: 400, ff: 3600,
+    }, regime);
+    expect(result.kind).toBe('warning');
+    if (result.kind === 'warning') {
+      expect(result.reason).toBe('transition-too-long');
+      expect(result.transitionDistance).toBeGreaterThan(50);
+      // reachableAltDelta should be positive (climbing)
+      expect(result.reachableAltDelta).toBeGreaterThan(0);
+    }
+  });
+
+  it('over-long descent fires warning', () => {
+    const regime = makeRegime({ descent: { tas: 300, ff: 2000, rod: 2000 } });
+    // altDelta = -30000 ft → transitionDistance = 75 nm > 50 nm → warning
+    const result = computeLegSegments({
+      prevAlt: 30000, legAlt: 0, distance: 50, course: 0,
+      windA: noWind, windB: noWind, tas: 400, ff: 3600,
+    }, regime);
+    expect(result.kind).toBe('warning');
+    if (result.kind === 'warning') {
+      // reachableAltDelta should be negative (descending)
+      expect(result.reachableAltDelta).toBeLessThan(0);
+    }
+  });
+
+  it('level leg with no regime unchanged from pre-feature', () => {
+    // Without regime, a level leg should give the same ETE as the direct formula
+    const tas = 400;
+    const distance = 50;
+    const result = computeLegSegments({
+      prevAlt: 10000, legAlt: 10000, distance, course: 90,
+      windA: noWind, windB: noWind, tas, ff: 3600,
+    });
+    expect(result.kind).toBe('level');
+    if (result.kind === 'level') {
+      const gs = applyWind(result.tas, 0, 0, 90);
+      const eteSec = Math.round(distance / gs * 3600);
+      expect(eteSec).toBe(Math.round(distance / tas * 3600));
+    }
   });
 });

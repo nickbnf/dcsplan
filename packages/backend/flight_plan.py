@@ -10,13 +10,37 @@ import logging
 import os
 import json
 from pydantic import BaseModel, Field
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 from pyproj import Transformer
 
 # Set up logger (logging configuration is handled centrally in main.py)
 logger = logging.getLogger(__name__)
 
 THEATRES_DIR = os.path.join(os.path.dirname(__file__), "theatres")
+
+class RegimeCruise(BaseModel):
+    tas: float = Field(..., gt=0, description="Cruise TAS (knots)")
+    ff: float = Field(..., gt=0, description="Cruise fuel flow (pph)")
+
+class RegimeClimb(BaseModel):
+    tas: float = Field(..., gt=0, description="Climb TAS (knots)")
+    ff: float = Field(..., gt=0, description="Climb fuel flow (pph)")
+    roc: float = Field(..., gt=0, description="Rate of climb (fpm)")
+
+class RegimeDescent(BaseModel):
+    tas: float = Field(..., gt=0, description="Descent TAS (knots)")
+    ff: float = Field(..., gt=0, description="Descent fuel flow (pph)")
+    rod: float = Field(..., gt=0, description="Rate of descent (fpm)")
+
+class Regime(BaseModel):
+    """A named performance regime on the flight plan."""
+    id: str = Field(..., description="Opaque unique identifier")
+    name: str = Field(..., description="User-facing label")
+    comment: Optional[str] = Field(default=None, description="Free-form note")
+    cruise: RegimeCruise
+    climb: Optional[RegimeClimb] = None
+    descent: Optional[RegimeDescent] = None
+
 
 class FlightPlanTurnPoint(BaseModel):
     """Represents a single turn point in a flight plan."""
@@ -32,12 +56,14 @@ class FlightPlanTurnPoint(BaseModel):
     exitTimeSec: int | None = Field(default=None, ge=0, le=86399, description="Push only: exit time")
     hack: bool | None = Field(default=None, description="Push only: HACK enabled")
     comment: str | None = Field(default=None, description="Optional kneeboard note for this waypoint")
+    regimeId: str | None = Field(default=None, description="Optional reference to a regime in the plan")
 
 
 class FlightPlan(BaseModel):
     """Represents a complete flight plan with waypoints and initial conditions."""
     theatre: str = Field(..., description="Theatre name")
     points: List[FlightPlanTurnPoint]
+    regimes: List[Regime] = Field(default=[], description="Named performance regimes")
     declination: float = Field(..., ge=-25, le=25, description="Magnetic declination")
     bankAngle: float = Field(..., ge=5, le=85, description="Bank angle for turns (degrees)")
     initTimeSec: int = Field(..., ge=0, le=86399, description="Initial time seconds (0-86399)")
@@ -298,6 +324,90 @@ def calculate_straigthening_point(inbound_bearing: float, point1: Point, point2:
     s_lat, s_lon = _unproject(transformer, sx_result, sy_result)
     return turn_data, s_lat, s_lon
 
+
+def apply_wind(tas: float, wind_speed: float, wind_dir: float, course: float) -> float:
+    """Returns ground speed (knots) for given TAS, wind and course."""
+    wind_angle_rad = ((((wind_dir + 180) % 360) - course + 360) % 360) * (math.pi / 180)
+    return tas + wind_speed * math.cos(wind_angle_rad)
+
+
+def compute_leg_segments(
+    prev_alt: float,
+    leg_alt: float,
+    distance_nm: float,
+    course: float,
+    wind_a_speed: float, wind_a_dir: float,
+    wind_b_speed: float, wind_b_dir: float,
+    tas: float,
+    ff: float,
+    regime: Optional['Regime'] = None,
+) -> dict:
+    """Mirror of the TypeScript computeLegSegments. Returns a dict with 'kind' discriminator."""
+    alt_delta = leg_alt - prev_alt
+
+    # Level-leg path: fall back to stored tas/ff
+    if (
+        alt_delta == 0 or
+        regime is None or
+        (alt_delta > 0 and regime.climb is None) or
+        (alt_delta < 0 and regime.descent is None)
+    ):
+        return {'kind': 'level', 'tas': tas, 'ff': ff}
+
+    if alt_delta > 0:
+        phase_roc = regime.climb.roc
+        phase_tas = regime.climb.tas
+        phase_ff = regime.climb.ff
+        phase_label = 'climb'
+    else:
+        phase_roc = regime.descent.rod
+        phase_tas = regime.descent.tas
+        phase_ff = regime.descent.ff
+        phase_label = 'descent'
+
+    # Time to transition altitude (minutes)
+    transition_time = abs(alt_delta) / phase_roc
+
+    # Ground speed during transition (using origin wind)
+    transition_gs = apply_wind(phase_tas, wind_a_speed, wind_a_dir, course)
+    transition_distance = transition_gs * (transition_time / 60)
+
+    # Warning when transition can't fit
+    if transition_distance > distance_nm:
+        reachable_transition_time = (distance_nm / transition_gs) * 60
+        reachable_alt_delta = math.copysign(phase_roc * reachable_transition_time, alt_delta)
+        fallback_time_sec = round(transition_time * 60)
+        fallback_fuel = phase_ff * (transition_time / 60)
+        return {
+            'kind': 'warning',
+            'reason': 'transition-too-long',
+            'reachable_alt_delta': reachable_alt_delta,
+            'transition_distance': transition_distance,
+            'fallback_time_sec': fallback_time_sec,
+            'fallback_fuel': fallback_fuel,
+        }
+
+    # Cruise covers the remainder
+    cruise_distance = distance_nm - transition_distance
+    cruise_gs = apply_wind(regime.cruise.tas, wind_b_speed, wind_b_dir, course)
+    cruise_time = (cruise_distance / cruise_gs) * 60
+
+    return {
+        'kind': 'segmented',
+        'transition': {
+            'phase': phase_label,
+            'time': transition_time,
+            'distance': transition_distance,
+            'fuel': phase_ff * (transition_time / 60),
+        },
+        'cruise': {
+            'time': cruise_time,
+            'distance': cruise_distance,
+            'fuel': regime.cruise.ff * (cruise_time / 60),
+        },
+    }
+
+
 class LegData:
     """Represent a leg with all the data to display."""
     origin: Point               # Origin turnpoint (where the turn starts)
@@ -310,6 +420,7 @@ class LegData:
     legFuel: float              # Fuel consumed on the leg
     heading: float              # Magnetic heading after the turn (considering the wind)
     tas: float                  # True air speed
+    prev_alt: float             # Altitude at the origin waypoint (for climb/descent detection)
     alt: float                  # Altitude after any climb / descend
     time_to_straightening_s: int # Time to the straigthening point in seconds
     turn_angle_rad: float       # Turn angle in radians (along the arc)
@@ -391,18 +502,43 @@ class LegData:
         distance = arc_distance + calculate_distance(self.straigthening_point, self.destination, navigation_mode, transformer)
         self.distanceNm = distance / 1852
 
-        # Calculate wind.
+        # Calculate wind for heading and arc time (uses destination wind)
         windAngleRad = ((((flightPlan.points[indexWptTo].windDir + 180) % 360) - self.course + 360) % 360) * (math.pi / 180)
         tailComponent = flightPlan.points[indexWptTo].windSpeed * math.cos(windAngleRad)
         crossComponent = flightPlan.points[indexWptTo].windSpeed * math.sin(windAngleRad)
+        cruiseGroundSpeed = flightPlan.points[indexWptTo].tas + tailComponent
+        self.time_to_straightening_s = round((arc_distance / 1852) / cruiseGroundSpeed * 3600)
+        self.heading = (self.course - math.asin(crossComponent / cruiseGroundSpeed) * 180 / math.pi + 360) % 360
 
-        groundSpeed = flightPlan.points[indexWptTo].tas + tailComponent
-        self.time_to_straightening_s = round((arc_distance / 1852) / groundSpeed * 3600)
-        self.eteSec = round(self.distanceNm / groundSpeed * 3600)
-        self.legFuel = self.eteSec * flightPlan.points[indexWptTo].fuelFlow / 3600
-        self.heading = (self.course - math.asin(crossComponent / groundSpeed) * 180 / math.pi + 360) % 360
+        # Regime-aware ETE and fuel
+        regime_id = flightPlan.points[indexWptTo].regimeId
+        regime = next((r for r in flightPlan.regimes if r.id == regime_id), None) if regime_id else None
+        origin_pt = flightPlan.points[indexWptFrom]
+        dest_pt = flightPlan.points[indexWptTo]
+        seg = compute_leg_segments(
+            prev_alt=origin_pt.alt,
+            leg_alt=dest_pt.alt,
+            distance_nm=self.distanceNm,
+            course=self.course,
+            wind_a_speed=origin_pt.windSpeed, wind_a_dir=origin_pt.windDir,
+            wind_b_speed=dest_pt.windSpeed, wind_b_dir=dest_pt.windDir,
+            tas=dest_pt.tas,
+            ff=dest_pt.fuelFlow,
+            regime=regime,
+        )
+        if seg['kind'] == 'level':
+            gs = apply_wind(seg['tas'], dest_pt.windSpeed, dest_pt.windDir, self.course)
+            self.eteSec = round(self.distanceNm / gs * 3600)
+            self.legFuel = self.eteSec * seg['ff'] / 3600
+        elif seg['kind'] == 'segmented':
+            self.eteSec = round((seg['transition']['time'] + seg['cruise']['time']) * 60)
+            self.legFuel = seg['transition']['fuel'] + seg['cruise']['fuel']
+        else:  # warning
+            self.eteSec = seg['fallback_time_sec']
+            self.legFuel = seg['fallback_fuel']
 
         self.tas = flightPlan.points[indexWptTo].tas
+        self.prev_alt = flightPlan.points[indexWptFrom].alt
         self.alt = flightPlan.points[indexWptTo].alt
 
         logger.info(f"ETE: {self.eteSec}")

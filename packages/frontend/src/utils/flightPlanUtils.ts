@@ -9,6 +9,8 @@ import { calculateAllLegData } from "./legCalculations";
 export const slugifyPlanName = (name: string): string =>
     name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 
+export const generateRegimeId = (): string => crypto.randomUUID().slice(0, 8);
+
 const defaultTas = 400;
 const defaultAlt = 3000;
 const defaultFuelFlow = 6000;
@@ -18,7 +20,7 @@ const defaultWindDir = 0;
 // A bunch of functions to manipulate the flight plan
 export const flightPlanUtils = {
     newFlightPlan: (theatre: string = "syria_old"): FlightPlan => {
-        return { theatre, points: [], declination: 0, bankAngle: 45, initTimeSec: 12 * 3600, initFob: 12000, name: "Flight Plan One" };
+        return { theatre, points: [], regimes: [], declination: 0, bankAngle: 45, initTimeSec: 12 * 3600, initFob: 12000, name: "Flight Plan One" };
     },
     addTurnPoint: (flightPlan: FlightPlan, lat: number, lon: number): FlightPlan => {
         const tas = flightPlan.points.length > 1 ? flightPlan.points[flightPlan.points.length - 2].tas : defaultTas;
@@ -56,6 +58,25 @@ export const flightPlanUtils = {
     },
     deleteTurnPoint: (flightPlan: FlightPlan, index: number): FlightPlan => {
         return { ...flightPlan, points: flightPlan.points.filter((_, i) => i !== index) };
+    },
+    insertTurnPointAtPosition: (flightPlan: FlightPlan, index: number, lat: number, lon: number, alt: number, regimeId?: string): FlightPlan => {
+        // Insert a waypoint with explicit position after waypoint[index]
+        if (index < 0 || index >= flightPlan.points.length - 1) return flightPlan;
+        const originWpt = flightPlan.points[index];
+        const newIndex = index + 1;
+        const newPoint: any = {
+            lat, lon,
+            tas: originWpt.tas,
+            alt,
+            fuelFlow: originWpt.fuelFlow,
+            windSpeed: originWpt.windSpeed,
+            windDir: originWpt.windDir,
+            name: `WP${newIndex + 1}`,
+        };
+        if (regimeId !== undefined) newPoint.regimeId = regimeId;
+        const newPoints = [...flightPlan.points];
+        newPoints.splice(index + 1, 0, newPoint);
+        return { ...flightPlan, points: newPoints };
     },
     insertTurnPointAtMidpoint: (flightPlan: FlightPlan, index: number): FlightPlan => {
         // Insert a waypoint at the midpoint of the leg between waypoint[index] and waypoint[index + 1]

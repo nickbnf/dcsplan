@@ -1,0 +1,215 @@
+[
+  {
+    "name": "level-manual",
+    "description": "Level leg, no regime – uses stored TAS/FF",
+    "input": {
+      "prevAlt": 10000,
+      "legAlt": 10000,
+      "distance": 50,
+      "course": 0,
+      "windA": { "windSpeed": 0, "windDir": 0 },
+      "windB": { "windSpeed": 0, "windDir": 0 },
+      "tas": 400,
+      "ff": 3600,
+      "regime": null
+    },
+    "expected": {
+      "kind": "level",
+      "tas": 400,
+      "ff": 3600
+    }
+  },
+  {
+    "name": "level-regime",
+    "description": "Level leg with regime bound – still level (altDelta = 0)",
+    "input": {
+      "prevAlt": 10000,
+      "legAlt": 10000,
+      "distance": 50,
+      "course": 0,
+      "windA": { "windSpeed": 0, "windDir": 0 },
+      "windB": { "windSpeed": 0, "windDir": 0 },
+      "tas": 400,
+      "ff": 3600,
+      "regime": {
+        "id": "r1",
+        "name": "Test",
+        "cruise": { "tas": 400, "ff": 3600 },
+        "climb": { "tas": 300, "ff": 4000, "roc": 2000 }
+      }
+    },
+    "expected": {
+      "kind": "level",
+      "tas": 400,
+      "ff": 3600
+    }
+  },
+  {
+    "name": "climbing-full-data",
+    "description": "Climbing leg with full climb regime data",
+    "input": {
+      "prevAlt": 0,
+      "legAlt": 10000,
+      "distance": 50,
+      "course": 0,
+      "windA": { "windSpeed": 0, "windDir": 0 },
+      "windB": { "windSpeed": 0, "windDir": 0 },
+      "tas": 400,
+      "ff": 3600,
+      "regime": {
+        "id": "r1",
+        "name": "Test",
+        "cruise": { "tas": 400, "ff": 3600 },
+        "climb": { "tas": 300, "ff": 4000, "roc": 2000 }
+      }
+    },
+    "expected": {
+      "kind": "segmented",
+      "transition": {
+        "phase": "climb",
+        "time": 5.0,
+        "distance": 25.0,
+        "fuel": 333.3333333
+      },
+      "cruise": {
+        "time": 3.75,
+        "distance": 25.0,
+        "fuel": 225.0
+      }
+    }
+  },
+  {
+    "name": "climbing-cruise-fallback",
+    "description": "Climbing leg with regime but no climb data – falls back to cruise (level)",
+    "input": {
+      "prevAlt": 0,
+      "legAlt": 10000,
+      "distance": 50,
+      "course": 0,
+      "windA": { "windSpeed": 0, "windDir": 0 },
+      "windB": { "windSpeed": 0, "windDir": 0 },
+      "tas": 400,
+      "ff": 3600,
+      "regime": {
+        "id": "r1",
+        "name": "Test",
+        "cruise": { "tas": 400, "ff": 3600 }
+      }
+    },
+    "expected": {
+      "kind": "level",
+      "tas": 400,
+      "ff": 3600
+    }
+  },
+  {
+    "name": "descending-full-data",
+    "description": "Descending leg with full descent regime data",
+    "input": {
+      "prevAlt": 10000,
+      "legAlt": 0,
+      "distance": 50,
+      "course": 0,
+      "windA": { "windSpeed": 0, "windDir": 0 },
+      "windB": { "windSpeed": 0, "windDir": 0 },
+      "tas": 400,
+      "ff": 3600,
+      "regime": {
+        "id": "r1",
+        "name": "Test",
+        "cruise": { "tas": 400, "ff": 3600 },
+        "descent": { "tas": 300, "ff": 2000, "rod": 2000 }
+      }
+    },
+    "expected": {
+      "kind": "segmented",
+      "transition": {
+        "phase": "descent",
+        "time": 5.0,
+        "distance": 25.0,
+        "fuel": 166.6666667
+      },
+      "cruise": {
+        "time": 3.75,
+        "distance": 25.0,
+        "fuel": 225.0
+      }
+    }
+  },
+  {
+    "name": "descending-cruise-fallback",
+    "description": "Descending leg with regime but no descent data – falls back to level",
+    "input": {
+      "prevAlt": 10000,
+      "legAlt": 0,
+      "distance": 50,
+      "course": 0,
+      "windA": { "windSpeed": 0, "windDir": 0 },
+      "windB": { "windSpeed": 0, "windDir": 0 },
+      "tas": 400,
+      "ff": 3600,
+      "regime": {
+        "id": "r1",
+        "name": "Test",
+        "cruise": { "tas": 400, "ff": 3600 }
+      }
+    },
+    "expected": {
+      "kind": "level",
+      "tas": 400,
+      "ff": 3600
+    }
+  },
+  {
+    "name": "over-long-climb",
+    "description": "Climb that can't fit in the leg distance – warning fired",
+    "input": {
+      "prevAlt": 0,
+      "legAlt": 30000,
+      "distance": 50,
+      "course": 0,
+      "windA": { "windSpeed": 0, "windDir": 0 },
+      "windB": { "windSpeed": 0, "windDir": 0 },
+      "tas": 400,
+      "ff": 3600,
+      "regime": {
+        "id": "r1",
+        "name": "Test",
+        "cruise": { "tas": 400, "ff": 3600 },
+        "climb": { "tas": 300, "ff": 4000, "roc": 2000 }
+      }
+    },
+    "expected": {
+      "kind": "warning",
+      "reason": "transition-too-long",
+      "transitionDistance": 75.0,
+      "reachableAltDelta": 20000.0
+    }
+  },
+  {
+    "name": "over-long-descent",
+    "description": "Descent that can't fit in the leg distance – warning fired",
+    "input": {
+      "prevAlt": 30000,
+      "legAlt": 0,
+      "distance": 50,
+      "course": 0,
+      "windA": { "windSpeed": 0, "windDir": 0 },
+      "windB": { "windSpeed": 0, "windDir": 0 },
+      "tas": 400,
+      "ff": 3600,
+      "regime": {
+        "id": "r1",
+        "name": "Test",
+        "cruise": { "tas": 400, "ff": 3600 },
+        "descent": { "tas": 300, "ff": 2000, "rod": 2000 }
+      }
+    },
+    "expected": {
+      "kind": "warning",
+      "reason": "transition-too-long",
+      "transitionDistance": 75.0,
+      "reachableAltDelta": -20000.0
+    }
+  }
+]

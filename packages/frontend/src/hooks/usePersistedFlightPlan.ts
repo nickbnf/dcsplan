@@ -60,13 +60,27 @@ function loadFlightPlan(): FlightPlan | null {
     // Migration logic
     if (version !== FLIGHT_PLAN_VERSION) {
       console.info(`Migrating flight plan from version ${version || 'legacy'} to ${FLIGHT_PLAN_VERSION}`);
-      
+
       // Ensure theatre exists (required in 1.1)
       if (flightPlanData && typeof flightPlanData === 'object' && !flightPlanData.theatre) {
         flightPlanData.theatre = "syria";
       }
-      
-      // Additional migration steps for future versions would go here
+    }
+
+    // Always ensure regimes exists — may be absent in plans saved before the regimes
+    // feature was introduced, even if the version stamp is already "1.2".
+    if (!flightPlanData.regimes) {
+      flightPlanData.regimes = [];
+    }
+
+    // Clear any regimeId on waypoints that don't match a known regime
+    const regimeIds = new Set((flightPlanData.regimes as any[]).map((r: any) => r.id));
+    if (Array.isArray(flightPlanData.points)) {
+      for (const point of flightPlanData.points) {
+        if (point.regimeId !== undefined && !regimeIds.has(point.regimeId)) {
+          delete point.regimeId;
+        }
+      }
     }
 
     if (isValidFlightPlan(flightPlanData)) {

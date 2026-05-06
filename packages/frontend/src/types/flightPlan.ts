@@ -1,3 +1,34 @@
+/**
+ * A named performance regime. `climb` describes climbing UP TO this regime's cruise altitude;
+ * `descent` describes descending DOWN TO it (both are start-of-leg transitions toward legAlt).
+ */
+export type Regime = {
+  id: string;       // opaque, generated on creation, immutable
+  name: string;     // user-facing label, unique within plan
+  comment?: string; // free-form note
+  cruise: { tas: number; ff: number };
+  climb?: { tas: number; ff: number; roc: number };   // fpm
+  descent?: { tas: number; ff: number; rod: number }; // fpm
+}
+
+export type Wind = { windSpeed: number; windDir: number };
+
+export type LegSegmentsLevel = { kind: 'level'; tas: number; ff: number };
+export type LegSegmentsSegmented = {
+  kind: 'segmented';
+  transition: { phase: 'climb' | 'descent'; time: number; distance: number; fuel: number };
+  cruise: { time: number; distance: number; fuel: number };
+};
+export type LegSegmentsWarning = {
+  kind: 'warning';
+  reason: 'transition-too-long';
+  reachableAltDelta: number;
+  transitionDistance: number;
+  fallbackTimeSec: number;
+  fallbackFuel: number;
+};
+export type LegSegmentsResult = LegSegmentsLevel | LegSegmentsSegmented | LegSegmentsWarning;
+
 export type LegData = {
   course: number;
   distance: number;
@@ -7,6 +38,7 @@ export type LegData = {
   eta: number; // ETA at this TP, in seconds since midnight
   efr: number; // EFR at this TP, unitless (typically in lbs)
   hackEta?: number; // Hack-relative ETA in seconds (present after a hack push point)
+  segmentsResult?: LegSegmentsResult;
 }
 
 export type WaypointType = 'normal' | 'push' | 'ip' | 'tgt';
@@ -25,6 +57,7 @@ export type FlightPlanTurnPoint = {
   exitTimeSec?: number; // Push only: exit time in seconds since midnight
   hack?: boolean; // Push only: HACK enabled
   comment?: string; // Optional free-text note for the kneeboard
+  regimeId?: string; // Optional reference to a regime in the plan's regimes collection
 }
 
 export type FlightPlanPointChange = {
@@ -38,6 +71,7 @@ export type FlightPlanPointChange = {
   exitTimeSec?: number;
   hack?: boolean;
   comment?: string;
+  regimeId?: string;
 }
 
 // Attack planning types
@@ -91,13 +125,14 @@ export type FlightPlan = {
   initTimeSec: number; // Initial time in seconds since midnight
   initFob: number;
   name: string; // Name of the flight plan
+  regimes: Regime[];
   attackPlanning?: {        // optional; params are user-supplied, results are computed on Calculate
     params: AttackPlanningParams;
     results?: AttackPlanningResults;
   };
 }
 
-export const FLIGHT_PLAN_VERSION = "1.1";
+export const FLIGHT_PLAN_VERSION = "1.2";
 
 export interface VersionedFlightPlan {
   version: string;

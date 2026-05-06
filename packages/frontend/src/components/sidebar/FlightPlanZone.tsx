@@ -1,8 +1,9 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import * as Separator from '@radix-ui/react-separator';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
-import type { FlightPlan, LegData, WaypointType } from '../../types/flightPlan';
+import type { FlightPlan, LegData, WaypointType, Regime, LegSegmentsResult } from '../../types/flightPlan';
 import { flightPlanUtils, getEffectiveExitTime } from '../../utils/flightPlanUtils';
+import { applyRegimeToWaypoint, clearRegimeBinding } from '../../utils/regimeUtils';
 import { formatCoordinate } from '../../utils/coordinateUtils';
 import { GenerateDialog } from './GenerateDialog';
 import { DeleteWaypointDialog } from './DeleteWaypointDialog';
@@ -550,21 +551,88 @@ const WaypointCard: React.FC<{ flightPlan: FlightPlan, legData: LegData | null, 
   );
 }
 
-const RouteCard: React.FC<{ 
-  flightPlan: FlightPlan, 
+// Tooltip wrapper: shows tooltip on hover using CSS
+const Tooltip: React.FC<{ tip: React.ReactNode; children: React.ReactNode }> = ({ tip, children }) => (
+  <span className="relative group/tip">
+    {children}
+    <span className="pointer-events-none absolute bottom-full left-0 mb-1 z-50 hidden group-hover/tip:block w-max bg-gray-100 text-gray-800 border border-gray-500 text-xs rounded p-2 shadow-lg font-aero-mono whitespace-pre">
+      {tip}
+    </span>
+  </span>
+);
+
+function formatMinutes(min: number): string {
+  const m = Math.floor(min);
+  const s = Math.round((min - m) * 60);
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+function segmentTooltipContent(seg: LegSegmentsResult, prevAlt: number, legAlt: number, distance: number): string {
+  const altDelta = legAlt - prevAlt;
+  if (seg.kind === 'level') {
+    return `${altDelta >= 0 ? '+' : ''}${altDelta.toFixed(0)}ft over ${distance.toFixed(1)}nm`;
+  }
+  if (seg.kind === 'warning') {
+    return `Transition too long\nNeeds ${seg.transitionDistance.toFixed(1)}nm, only ${distance.toFixed(1)}nm available`;
+  }
+  const t = seg.transition;
+  const c = seg.cruise;
+  return [
+    `${t.phase === 'climb' ? 'Climb' : 'Descent'}:`,
+    `  ${formatMinutes(t.time)} · ${t.distance.toFixed(1)}nm · ${t.fuel.toFixed(0)}lb`,
+    `Cruise:`,
+    `  ${formatMinutes(c.time)} · ${c.distance.toFixed(1)}nm · ${c.fuel.toFixed(0)}lb`,
+  ].join('\n');
+}
+
+export const RouteCard: React.FC<{
+  flightPlan: FlightPlan,
   legData: LegData,
-  index: number, 
-  onFlightPlanUpdate: (flightPlan: FlightPlan) => void
+  index: number,
+  onFlightPlanUpdate: (flightPlan: FlightPlan) => void,
 }> = ({ flightPlan, legData, index, onFlightPlanUpdate }) => {
+  const [showRegimePicker, setShowRegimePicker] = useState(false);
+  const regimePickerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!showRegimePicker) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (regimePickerRef.current && !regimePickerRef.current.contains(e.target as Node)) {
+        setShowRegimePicker(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showRegimePicker]);
+
+  const destWpt = flightPlan.points[index + 1];
+  const prevWpt = flightPlan.points[index];
+  const altDelta = destWpt.alt - prevWpt.alt;
+  const boundRegime = destWpt.regimeId ? flightPlan.regimes.find(r => r.id === destWpt.regimeId) : undefined;
+  const seg = legData.segmentsResult;
+  const isWarning = seg?.kind === 'warning';
+
   const handleInsertClick = () => {
-    const updatedFlightPlan = flightPlanUtils.insertTurnPointAtMidpoint(flightPlan, index);
-    onFlightPlanUpdate(updatedFlightPlan);
+    onFlightPlanUpdate(flightPlanUtils.insertTurnPointAtMidpoint(flightPlan, index));
   };
+
+  const handleSelectRegime = (regime: Regime | null) => {
+    setShowRegimePicker(false);
+    const newPoints = [...flightPlan.points];
+    if (regime) {
+      newPoints[index + 1] = applyRegimeToWaypoint(destWpt, regime);
+    } else {
+      newPoints[index + 1] = clearRegimeBinding(destWpt);
+    }
+    onFlightPlanUpdate({ ...flightPlan, points: newPoints });
+  };
+
+  const altGlyph = altDelta > 0 ? '↗' : altDelta < 0 ? '↘' : null;
 
   return (
     <div className="group ml-4 bg-gray-100 border border-gray-200 rounded p-3">
       <div className="space-y-2 text-xs">
-        {/* Line 1: CRS, DIST, ETE */}
+        {/* Line 1: CRS, DIST, ETE + regime picker */}
         <div className="flex justify-between items-center">
           <div className="flex items-center space-x-1">
             <span className="font-aero-label text-gray-600 text-xs">CRS</span>
@@ -578,19 +646,49 @@ const RouteCard: React.FC<{
             <span className="font-aero-label text-gray-600 text-xs">ETE</span>
             <span className="font-aero-mono text-gray-900 text-xs">{displaySecondsInMinutes(legData.ete)}</span>
           </div>
+          {flightPlan.regimes.length > 0 && (
+            <div className="relative max-w-[9rem]" ref={regimePickerRef}>
+              <button
+                onClick={() => setShowRegimePicker(v => !v)}
+                className="font-aero-label text-xs px-2 py-0.5 border border-gray-300 rounded bg-white hover:bg-gray-50 text-gray-700 w-full truncate block"
+                title={boundRegime ? boundRegime.name : 'Manual'}
+              >
+                {boundRegime ? boundRegime.name : '—'}
+              </button>
+              {showRegimePicker && (
+                <div className="absolute right-0 top-full mt-1 z-40 bg-white border border-gray-300 rounded shadow-lg min-w-max">
+                  {flightPlan.regimes.map(r => (
+                    <button key={r.id} onClick={() => handleSelectRegime(r)}
+                      className="block w-full text-left px-3 py-1.5 text-xs font-aero-label hover:bg-gray-100">
+                      {r.name}
+                    </button>
+                  ))}
+                  <button onClick={() => handleSelectRegime(null)}
+                    className="block w-full text-left px-3 py-1.5 text-xs font-aero-label text-gray-500 hover:bg-gray-100 border-t border-gray-200">
+                    — Manual —
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
-        {/* Line 2: Alt, TAS, FF */}
+        {/* Line 2: Alt (with glyph), TAS, FF, WND */}
         <div className="flex justify-between items-center">
           <div className="flex items-center space-x-1">
             <span className="font-aero-label text-gray-600 text-xs">Alt</span>
+            {altGlyph && seg && (
+              <Tooltip tip={segmentTooltipContent(seg, prevWpt.alt, destWpt.alt, legData.distance)}>
+                <span className={`text-xs cursor-default ${isWarning ? 'text-amber-600' : 'text-gray-500'}`}>{altGlyph}</span>
+              </Tooltip>
+            )}
             <EditableField
-              value={`${flightPlan.points[index+1].alt}'`}
+              value={`${destWpt.alt}'`}
               onChange={(value: string) => {
-                const alt = value.match(/\d+/);
-                if (alt && alt[0]) {
-                  const updatedFlightPlan = flightPlanUtils.updateTurnPoint(flightPlan, index+1, { alt: parseInt(alt[0]) });
-                  onFlightPlanUpdate(updatedFlightPlan);
+                const m = value.match(/\d+/);
+                if (m && m[0]) {
+                  // Alt edit does NOT clear regime binding
+                  onFlightPlanUpdate(flightPlanUtils.updateTurnPoint(flightPlan, index + 1, { alt: parseInt(m[0]) }));
                 }
               }}
               className="font-aero-mono text-gray-900 text-xs"
@@ -601,12 +699,18 @@ const RouteCard: React.FC<{
           <div className="flex items-center space-x-1">
             <span className="font-aero-label text-gray-600 text-xs">TAS</span>
             <EditableField
-              value={`${flightPlan.points[index+1].tas}K`}
+              value={`${destWpt.tas}K`}
               onChange={(value: string) => {
-                const alt = value.match(/\d+/);
-                if (alt && alt[0]) {
-                  const updatedFlightPlan = flightPlanUtils.updateTurnPoint(flightPlan, index+1, { tas: parseInt(alt[0]) });
-                  onFlightPlanUpdate(updatedFlightPlan);
+                const m = value.match(/\d+/);
+                if (m && m[0]) {
+                  const newTas = parseInt(m[0]);
+                  // TAS edit clears regime binding if value actually changed
+                  const updated = newTas !== destWpt.tas
+                    ? clearRegimeBinding({ ...destWpt, tas: newTas })
+                    : { ...destWpt, tas: newTas };
+                  const newPoints = [...flightPlan.points];
+                  newPoints[index + 1] = updated;
+                  onFlightPlanUpdate({ ...flightPlan, points: newPoints });
                 }
               }}
               className="font-aero-mono text-gray-900 text-xs"
@@ -617,12 +721,18 @@ const RouteCard: React.FC<{
           <div className="flex items-center space-x-1">
             <span className="font-aero-label text-gray-600 text-xs">FF</span>
             <EditableField
-              value={`${flightPlan.points[index+1].fuelFlow}pph`}
+              value={`${destWpt.fuelFlow}pph`}
               onChange={(value: string) => {
-                const alt = value.match(/\d+/);
-                if (alt && alt[0]) {
-                  const updatedFlightPlan = flightPlanUtils.updateTurnPoint(flightPlan, index+1, { fuelFlow: parseInt(alt[0]) });
-                  onFlightPlanUpdate(updatedFlightPlan);
+                const m = value.match(/\d+/);
+                if (m && m[0]) {
+                  const newFf = parseInt(m[0]);
+                  // FF edit clears regime binding if value actually changed
+                  const updated = newFf !== destWpt.fuelFlow
+                    ? clearRegimeBinding({ ...destWpt, fuelFlow: newFf })
+                    : { ...destWpt, fuelFlow: newFf };
+                  const newPoints = [...flightPlan.points];
+                  newPoints[index + 1] = updated;
+                  onFlightPlanUpdate({ ...flightPlan, points: newPoints });
                 }
               }}
               className="font-aero-mono text-gray-900 text-xs"
@@ -633,38 +743,38 @@ const RouteCard: React.FC<{
           <div className="flex items-center space-x-1">
             <span className="font-aero-label text-gray-600 text-xs">WND</span>
             <span>
-            <EditableField
-              value={`${flightPlan.points[index+1].windDir}°`}
-              onChange={(value: string) => {
-                const windDir = value.match(/\d+/);
-                if (windDir && windDir[0]) {
-                  const updatedFlightPlan = flightPlanUtils.updateTurnPoint(flightPlan, index+1, { windDir: parseInt(windDir[0]) });
-                  onFlightPlanUpdate(updatedFlightPlan);
-                }
-              }}
-              className="font-aero-mono text-gray-900 text-xs"
-              maxLength={3}
-              unit="°"
-            />
-            /
-            <EditableField
-              value={`${flightPlan.points[index+1].windSpeed}K`}
-              onChange={(value: string) => {
-                const windSpeed = value.match(/\d+/);
-                if (windSpeed && windSpeed[0]) {
-                  const updatedFlightPlan = flightPlanUtils.updateTurnPoint(flightPlan, index+1, { windSpeed: parseInt(windSpeed[0]) });
-                  onFlightPlanUpdate(updatedFlightPlan);
-                }
-              }}
-              className="font-aero-mono text-gray-900 text-xs"
-              maxLength={2}
-              unit="K"
-            />
+              <EditableField
+                value={`${destWpt.windDir}°`}
+                onChange={(value: string) => {
+                  const m = value.match(/\d+/);
+                  if (m && m[0]) {
+                    // Wind edit does NOT clear regime binding
+                    onFlightPlanUpdate(flightPlanUtils.updateTurnPoint(flightPlan, index + 1, { windDir: parseInt(m[0]) }));
+                  }
+                }}
+                className="font-aero-mono text-gray-900 text-xs"
+                maxLength={3}
+                unit="°"
+              />
+              /
+              <EditableField
+                value={`${destWpt.windSpeed}K`}
+                onChange={(value: string) => {
+                  const m = value.match(/\d+/);
+                  if (m && m[0]) {
+                    // Wind edit does NOT clear regime binding
+                    onFlightPlanUpdate(flightPlanUtils.updateTurnPoint(flightPlan, index + 1, { windSpeed: parseInt(m[0]) }));
+                  }
+                }}
+                className="font-aero-mono text-gray-900 text-xs"
+                maxLength={2}
+                unit="K"
+              />
             </span>
           </div>
         </div>
 
-        {/* Line 3: HDG, Leg Fuel, Insert button */}
+        {/* Line 3: HDG, Leg Fuel, Insert button + warning indicator */}
         <div className="flex justify-between items-center">
           <div className="flex items-center space-x-1">
             <span className="font-aero-label text-gray-600 text-xs">HDG</span>
@@ -674,14 +784,24 @@ const RouteCard: React.FC<{
             <span className="font-aero-label text-gray-600 text-xs">Leg Fuel</span>
             <span className="font-aero-mono text-gray-900 text-xs">{legData.legFuel.toFixed(0)}lbs</span>
           </div>
-          <button
-            onClick={handleInsertClick}
-            className="opacity-40 group-hover:opacity-100 transition-opacity px-2 py-1 text-xs font-aero-label rounded border border-gray-300 bg-white hover:bg-gray-50 text-gray-700"
-            title="Insert waypoint at midpoint"
-          >
-            + Insert
-          </button>
+          <div className="flex items-center gap-1">
+            {isWarning && seg && (
+              <Tooltip tip={segmentTooltipContent(seg, prevWpt.alt, destWpt.alt, legData.distance)}>
+                <span className="text-amber-600 border border-amber-300 bg-amber-50 px-2 py-1 text-xs font-aero-label rounded cursor-default select-none">
+                  ⚠ Fix
+                </span>
+              </Tooltip>
+            )}
+            <button
+              onClick={handleInsertClick}
+              className="opacity-40 group-hover:opacity-100 transition-opacity px-2 py-1 text-xs font-aero-label rounded border border-gray-300 bg-white hover:bg-gray-50 text-gray-700"
+              title="Insert waypoint at midpoint"
+            >
+              + Insert
+            </button>
+          </div>
         </div>
+
       </div>
     </div>
   );

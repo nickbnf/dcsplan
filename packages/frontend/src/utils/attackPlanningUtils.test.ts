@@ -10,6 +10,7 @@ const BASE_PLAN: FlightPlan = {
   initTimeSec: 43200,
   initFob: 12000,
   name: 'Test Plan',
+  regimes: [],
 };
 
 const BASE_PARAMS: AttackPlanningParams = {
