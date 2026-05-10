@@ -83,11 +83,11 @@ describe('PerformanceImportDialog', () => {
 
     await waitFor(() => {
       expect(screen.getByText('my-aircraft.perf.json')).toBeInTheDocument();
+      expect(screen.getByText('F-15E')).toBeInTheDocument();
+      expect(screen.getByText('MIL')).toBeInTheDocument();
+      expect(screen.getByText('2')).toBeInTheDocument();
+      expect(screen.getByText('Replace')).not.toBeDisabled();
     });
-    expect(screen.getByText('F-15E')).toBeInTheDocument();
-    expect(screen.getByText('MIL')).toBeInTheDocument();
-    expect(screen.getByText('2')).toBeInTheDocument();
-    expect(screen.getByText('Replace')).not.toBeDisabled();
   });
 
   it('replace overwrites aircraft and preserves other plan fields', async () => {
