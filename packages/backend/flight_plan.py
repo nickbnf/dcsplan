@@ -9,8 +9,8 @@ import pprint
 import logging
 import os
 import json
-from pydantic import BaseModel, Field
-from typing import List, Tuple, Optional
+from pydantic import BaseModel, Field, model_validator
+from typing import Any, List, Tuple, Optional
 from pyproj import Transformer
 
 # Set up logger (logging configuration is handled centrally in main.py)
@@ -42,6 +42,26 @@ class Regime(BaseModel):
     descent: Optional[RegimeDescent] = None
 
 
+class TakeoffPerformance(BaseModel):
+    """Take-off performance block (brake release → climb speed)."""
+    timeSec: float = Field(default=0, ge=0, description="Time in seconds")
+    fuel: float = Field(default=0, ge=0, description="Fuel consumed (lbs)")
+    distance: float = Field(default=0, ge=0, description="Ground distance (nm)")
+
+
+class Aircraft(BaseModel):
+    """Aircraft-level performance data."""
+    model: str = Field(default='', description="Aircraft model name")
+    takeoffConfiguration: str = Field(default='', description="T/O configuration label")
+    taxiFuel: float = Field(default=0, ge=0, description="Taxi fuel deduction (lbs)")
+    takeoff: TakeoffPerformance = Field(default_factory=TakeoffPerformance)
+    regimes: List[Regime] = Field(default_factory=list, description="Named performance regimes")
+
+
+def default_aircraft() -> Aircraft:
+    return Aircraft()
+
+
 class FlightPlanTurnPoint(BaseModel):
     """Represents a single turn point in a flight plan."""
     lat: float = Field(..., ge=-90, le=90, description="Latitude (-90 to 90)")
@@ -63,12 +83,24 @@ class FlightPlan(BaseModel):
     """Represents a complete flight plan with waypoints and initial conditions."""
     theatre: str = Field(..., description="Theatre name")
     points: List[FlightPlanTurnPoint]
-    regimes: List[Regime] = Field(default=[], description="Named performance regimes")
+    aircraft: Aircraft = Field(default_factory=default_aircraft, description="Aircraft performance data")
     declination: float = Field(..., ge=-25, le=25, description="Magnetic declination")
     bankAngle: float = Field(..., ge=5, le=85, description="Bank angle for turns (degrees)")
     initTimeSec: int = Field(..., ge=0, le=86399, description="Initial time seconds (0-86399)")
     initFob: float = Field(..., ge=0, description="Initial fuel on board")
     name: str | None = Field(default=None, description="Name of the flight plan")
+
+    @model_validator(mode='before')
+    @classmethod
+    def migrate_legacy_regimes(cls, data: Any) -> Any:
+        """Accept v1.2 plans with top-level regimes and synthesise aircraft block."""
+        if not isinstance(data, dict):
+            return data
+        if 'regimes' in data:
+            legacy_regimes = data.pop('regimes')
+            if 'aircraft' not in data:
+                data['aircraft'] = {'regimes': legacy_regimes}
+        return data
 
 
 class ImportFlightPlanRequest(BaseModel):
@@ -341,18 +373,61 @@ def compute_leg_segments(
     tas: float,
     ff: float,
     regime: Optional['Regime'] = None,
+    leg_index: Optional[int] = None,
+    takeoff: Optional['TakeoffPerformance'] = None,
 ) -> dict:
     """Mirror of the TypeScript computeLegSegments. Returns a dict with 'kind' discriminator."""
     alt_delta = leg_alt - prev_alt
 
+    # Determine if take-off segment is active
+    takeoff_active = (
+        leg_index == 0 and
+        regime is not None and
+        takeoff is not None and
+        takeoff.timeSec > 0 and
+        takeoff.distance > 0
+    )
+
+    # Wind-corrected take-off segment
+    takeoff_seg = None
+    if takeoff_active and takeoff is not None:
+        tas_to = takeoff.distance / (takeoff.timeSec / 3600)
+        gs_to = apply_wind(tas_to, wind_a_speed, wind_a_dir, course)
+        ground_dist = gs_to * (takeoff.timeSec / 3600)
+        takeoff_seg = {'time': takeoff.timeSec / 60, 'distance': ground_dist, 'fuel': takeoff.fuel}
+
+    remaining_distance = distance_nm - takeoff_seg['distance'] if takeoff_seg else distance_nm
+
     # Level-leg path: fall back to stored tas/ff
-    if (
+    no_transition = (
         alt_delta == 0 or
         regime is None or
         (alt_delta > 0 and regime.climb is None) or
         (alt_delta < 0 and regime.descent is None)
-    ):
-        return {'kind': 'level', 'tas': tas, 'ff': ff}
+    )
+
+    if no_transition:
+        if not takeoff_seg or regime is None:
+            return {'kind': 'level', 'tas': tas, 'ff': ff}
+
+        # T/O + cruise (no transition)
+        if takeoff_seg['distance'] > distance_nm:
+            return {
+                'kind': 'warning',
+                'reason': 'transition-too-long',
+                'reachable_alt_delta': 0,
+                'transition_distance': takeoff_seg['distance'],
+                'fallback_time_sec': round(takeoff_seg['time'] * 60),
+                'fallback_fuel': takeoff_seg['fuel'],
+            }
+        cruise_gs = apply_wind(regime.cruise.tas, wind_b_speed, wind_b_dir, course)
+        cruise_time = (remaining_distance / cruise_gs) * 60
+        return {
+            'kind': 'segmented',
+            'takeoff': takeoff_seg,
+            'transition': {'phase': 'climb', 'time': 0, 'distance': 0, 'fuel': 0},
+            'cruise': {'time': cruise_time, 'distance': remaining_distance, 'fuel': regime.cruise.ff * (cruise_time / 60)},
+        }
 
     if alt_delta > 0:
         phase_roc = regime.climb.roc
@@ -372,27 +447,31 @@ def compute_leg_segments(
     transition_gs = apply_wind(phase_tas, wind_a_speed, wind_a_dir, course)
     transition_distance = transition_gs * (transition_time / 60)
 
-    # Warning when transition can't fit
-    if transition_distance > distance_nm:
-        reachable_transition_time = (distance_nm / transition_gs) * 60
-        reachable_alt_delta = math.copysign(phase_roc * reachable_transition_time, alt_delta)
+    # Warning when transition can't fit (including T/O distance)
+    combined_transition_dist = (takeoff_seg['distance'] if takeoff_seg else 0) + transition_distance
+    if combined_transition_dist > distance_nm:
+        if takeoff_seg:
+            reachable_transition_time = ((distance_nm - takeoff_seg['distance']) / transition_gs) * 60
+        else:
+            reachable_transition_time = (distance_nm / transition_gs) * 60
+        reachable_alt_delta = math.copysign(phase_roc * max(reachable_transition_time, 0), alt_delta)
         fallback_time_sec = round(transition_time * 60)
         fallback_fuel = phase_ff * (transition_time / 60)
         return {
             'kind': 'warning',
             'reason': 'transition-too-long',
             'reachable_alt_delta': reachable_alt_delta,
-            'transition_distance': transition_distance,
+            'transition_distance': combined_transition_dist,
             'fallback_time_sec': fallback_time_sec,
             'fallback_fuel': fallback_fuel,
         }
 
     # Cruise covers the remainder
-    cruise_distance = distance_nm - transition_distance
+    cruise_distance = remaining_distance - transition_distance
     cruise_gs = apply_wind(regime.cruise.tas, wind_b_speed, wind_b_dir, course)
     cruise_time = (cruise_distance / cruise_gs) * 60
 
-    return {
+    result = {
         'kind': 'segmented',
         'transition': {
             'phase': phase_label,
@@ -406,6 +485,9 @@ def compute_leg_segments(
             'fuel': regime.cruise.ff * (cruise_time / 60),
         },
     }
+    if takeoff_seg:
+        result['takeoff'] = takeoff_seg
+    return result
 
 
 class LegData:
@@ -512,9 +594,10 @@ class LegData:
 
         # Regime-aware ETE and fuel
         regime_id = flightPlan.points[indexWptTo].regimeId
-        regime = next((r for r in flightPlan.regimes if r.id == regime_id), None) if regime_id else None
+        regime = next((r for r in flightPlan.aircraft.regimes if r.id == regime_id), None) if regime_id else None
         origin_pt = flightPlan.points[indexWptFrom]
         dest_pt = flightPlan.points[indexWptTo]
+        leg_index = indexWptFrom  # leg 0 = first leg (from point 0 to point 1)
         seg = compute_leg_segments(
             prev_alt=origin_pt.alt,
             leg_alt=dest_pt.alt,
@@ -525,14 +608,18 @@ class LegData:
             tas=dest_pt.tas,
             ff=dest_pt.fuelFlow,
             regime=regime,
+            leg_index=leg_index,
+            takeoff=flightPlan.aircraft.takeoff,
         )
         if seg['kind'] == 'level':
             gs = apply_wind(seg['tas'], dest_pt.windSpeed, dest_pt.windDir, self.course)
             self.eteSec = round(self.distanceNm / gs * 3600)
             self.legFuel = self.eteSec * seg['ff'] / 3600
         elif seg['kind'] == 'segmented':
-            self.eteSec = round((seg['transition']['time'] + seg['cruise']['time']) * 60)
-            self.legFuel = seg['transition']['fuel'] + seg['cruise']['fuel']
+            takeoff_time = seg['takeoff']['time'] if seg.get('takeoff') else 0
+            self.eteSec = round((takeoff_time + seg['transition']['time'] + seg['cruise']['time']) * 60)
+            takeoff_fuel = seg['takeoff']['fuel'] if seg.get('takeoff') else 0
+            self.legFuel = takeoff_fuel + seg['transition']['fuel'] + seg['cruise']['fuel']
         else:  # warning
             self.eteSec = seg['fallback_time_sec']
             self.legFuel = seg['fallback_fuel']
@@ -572,7 +659,7 @@ class FlightPlanData:
 
         hackOffsetSec: int | None = None
         previousEta = flightPlan.initTimeSec
-        previousEfr = flightPlan.initFob
+        previousEfr = flightPlan.initFob - flightPlan.aircraft.taxiFuel
 
         for i in range(len(flightPlan.points)):
             if i == 0:

@@ -3,6 +3,7 @@ import { render, screen, fireEvent, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import PerformancePage from './PerformancePage';
 import type { FlightPlan, Regime } from '../types/flightPlan';
+import { defaultAircraft } from '../types/flightPlan';
 
 // Mock useFlightPlan so we control the plan state
 const mockOnFlightPlanUpdate = vi.fn();
@@ -32,22 +33,101 @@ const makeRegime = (overrides: Partial<Regime> = {}): Regime => ({
   ...overrides,
 });
 
-const makePlan = (overrides: Partial<FlightPlan> = {}): FlightPlan => ({
-  theatre: 'syria',
-  points: [],
-  regimes: [],
-  declination: 0,
-  bankAngle: 45,
-  initTimeSec: 43200,
-  initFob: 12000,
-  name: 'Test',
-  ...overrides,
-});
+const makePlan = (overrides: Partial<FlightPlan> & { regimes?: Regime[] } = {}): FlightPlan => {
+  const { regimes, ...rest } = overrides;
+  return {
+    theatre: 'syria',
+    points: [],
+    aircraft: regimes !== undefined ? { ...defaultAircraft(), regimes } : defaultAircraft(),
+    declination: 0,
+    bankAngle: 45,
+    initTimeSec: 43200,
+    initFob: 12000,
+    name: 'Test',
+    ...rest,
+  };
+};
+
+const TO_TOOLTIP_TEXT = 'Time, fuel, and distance covered from brake release through acceleration to climb speed. Use values from your aircraft\'s performance charts for your T/O configuration. Or obtain by flight testing the difference between a cruise climb and the same climb from brake release.';
 
 describe('PerformancePage', () => {
   beforeEach(() => {
     mockOnFlightPlanUpdate.mockClear();
     mockFlightPlan = makePlan();
+  });
+
+  describe('Aircraft header', () => {
+    it('header is always visible with no regimes', () => {
+      render(<PerformancePage />);
+      expect(screen.getByPlaceholderText('e.g. F-15E')).toBeInTheDocument();
+      expect(screen.getByPlaceholderText('e.g. MIL @ 60klb')).toBeInTheDocument();
+    });
+
+    it('header is always visible with regimes', () => {
+      mockFlightPlan = makePlan({ regimes: [makeRegime()] });
+      render(<PerformancePage />);
+      expect(screen.getByPlaceholderText('e.g. F-15E')).toBeInTheDocument();
+    });
+
+    it('editing aircraft model calls onFlightPlanUpdate with new model', () => {
+      render(<PerformancePage />);
+      fireEvent.change(screen.getByPlaceholderText('e.g. F-15E'), { target: { value: 'F-16C' } });
+      expect(mockOnFlightPlanUpdate).toHaveBeenCalled();
+      const updated: FlightPlan = mockOnFlightPlanUpdate.mock.calls[0][0];
+      expect(updated.aircraft.model).toBe('F-16C');
+    });
+
+    it('editing T/O config calls onFlightPlanUpdate with new config', () => {
+      render(<PerformancePage />);
+      fireEvent.change(screen.getByPlaceholderText('e.g. MIL @ 60klb'), { target: { value: 'AB' } });
+      expect(mockOnFlightPlanUpdate).toHaveBeenCalled();
+      const updated: FlightPlan = mockOnFlightPlanUpdate.mock.calls[0][0];
+      expect(updated.aircraft.takeoffConfiguration).toBe('AB');
+    });
+
+    it('editing taxi fuel calls onFlightPlanUpdate with new taxiFuel', () => {
+      render(<PerformancePage />);
+      const taxiInput = screen.getAllByRole('spinbutton')[0];
+      fireEvent.change(taxiInput, { target: { value: '500' } });
+      expect(mockOnFlightPlanUpdate).toHaveBeenCalled();
+      const updated: FlightPlan = mockOnFlightPlanUpdate.mock.calls[0][0];
+      expect(updated.aircraft.taxiFuel).toBe(500);
+    });
+
+    it('T/O info icon has correct tooltip text', () => {
+      render(<PerformancePage />);
+      const icon = screen.getByLabelText('Take-off performance info');
+      expect(icon).toHaveAttribute('title', TO_TOOLTIP_TEXT);
+    });
+
+    it('T/O all-or-nothing: all-zero is accepted (no error)', () => {
+      mockFlightPlan = makePlan();
+      render(<PerformancePage />);
+      // All zero by default — no error shown
+      expect(screen.queryByText(/All three take-off fields/)).toBeNull();
+    });
+
+    it('T/O all-or-nothing: partial (only fuel positive) shows error and does not persist', () => {
+      render(<PerformancePage />);
+      const toFuelInput = screen.getAllByRole('spinbutton')[1];
+      fireEvent.change(toFuelInput, { target: { value: '250' } });
+      fireEvent.blur(toFuelInput);
+      // Partial state: only fuel > 0, timeSec and distance are 0 → validation rejects
+      expect(screen.getByText(/All three take-off fields/)).toBeInTheDocument();
+      expect(mockOnFlightPlanUpdate).not.toHaveBeenCalled();
+    });
+
+    it('T/O all-or-nothing: all-positive is accepted', () => {
+      mockFlightPlan = makePlan({
+        aircraft: {
+          ...defaultAircraft(),
+          takeoff: { timeSec: 75, fuel: 250, distance: 1.8 },
+        },
+      });
+      render(<PerformancePage />);
+      // No error initially
+      expect(screen.queryByText(/All three take-off fields/)).toBeNull();
+    });
   });
 
   it('shows empty state message when no regimes', () => {
@@ -61,9 +141,9 @@ describe('PerformancePage', () => {
 
     expect(mockOnFlightPlanUpdate).toHaveBeenCalledOnce();
     const updated: FlightPlan = mockOnFlightPlanUpdate.mock.calls[0][0];
-    expect(updated.regimes).toHaveLength(1);
-    expect(updated.regimes[0].name).toBe('Regime 1');
-    expect(updated.regimes[0].cruise.tas).toBe(400);
+    expect(updated.aircraft.regimes).toHaveLength(1);
+    expect(updated.aircraft.regimes[0].name).toBe('Regime 1');
+    expect(updated.aircraft.regimes[0].cruise.tas).toBe(400);
 
     // Simulate the context re-rendering with the new plan
     mockFlightPlan = updated;
@@ -81,7 +161,7 @@ describe('PerformancePage', () => {
     await userEvent.click(screen.getByText('+ Add regime'));
 
     const updated: FlightPlan = mockOnFlightPlanUpdate.mock.calls[0][0];
-    expect(updated.regimes[1].name).toBe('Regime 2');
+    expect(updated.aircraft.regimes[1].name).toBe('Regime 2');
   });
 
   it('shows climb/descent badges in the list', () => {
@@ -148,7 +228,7 @@ describe('PerformancePage', () => {
 
       const calls = mockOnFlightPlanUpdate.mock.calls;
       const lastCall: FlightPlan = calls[calls.length - 1][0];
-      const updated = lastCall.regimes.find(r => r.id === 'r1');
+      const updated = lastCall.aircraft.regimes.find((r: Regime) => r.id === 'r1');
       expect(updated).toBeDefined();
       expect(updated!.name).toBe('Zulu');
     });
@@ -157,16 +237,16 @@ describe('PerformancePage', () => {
       await openEditor();
       // Fill only one climb field
       const tasInputs = screen.getAllByRole('spinbutton');
-      // Climb TAS is the 3rd spinbutton (after cruise TAS, cruise FF)
-      fireEvent.change(tasInputs[2], { target: { value: '300' } });
+      // Header adds: taxiFuel[0], T/O fuel[1], T/O distance[2]; regime editor: cruise TAS[3], cruise FF[4], climb TAS[5]
+      fireEvent.change(tasInputs[5], { target: { value: '300' } });
       expect(screen.getByText('Fill all fields or leave all empty.')).toBeInTheDocument();
     });
 
     it('all-or-nothing validation: partial descent shows error', async () => {
       await openEditor();
       const tasInputs = screen.getAllByRole('spinbutton');
-      // Descent TAS is the 6th spinbutton
-      fireEvent.change(tasInputs[5], { target: { value: '200' } });
+      // Descent TAS is the 9th spinbutton (after taxiFuel, T/O fuel, T/O distance, cruise TAS, cruise FF, climb TAS, climb FF, climb ROC)
+      fireEvent.change(tasInputs[8], { target: { value: '200' } });
       expect(screen.getByText('Fill all fields or leave all empty.')).toBeInTheDocument();
     });
 
@@ -184,7 +264,8 @@ describe('PerformancePage', () => {
 
       mockOnFlightPlanUpdate.mockClear();
 
-      const tasInput = screen.getAllByRole('spinbutton')[0];
+      // Header adds taxiFuel[0], T/O fuel[1], T/O distance[2]; cruise TAS is [3]
+      const tasInput = screen.getAllByRole('spinbutton')[3];
       fireEvent.change(tasInput, { target: { value: '450' } });
 
       const calls = mockOnFlightPlanUpdate.mock.calls;
@@ -253,7 +334,7 @@ describe('PerformancePage', () => {
 
       expect(mockOnFlightPlanUpdate).toHaveBeenCalledOnce();
       const updated: FlightPlan = mockOnFlightPlanUpdate.mock.calls[0][0];
-      expect(updated.regimes).toHaveLength(0);
+      expect(updated.aircraft.regimes).toHaveLength(0);
       expect(updated.points[0].regimeId).toBeUndefined();
     });
   });

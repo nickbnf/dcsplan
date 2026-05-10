@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import type { FlightPlan, VersionedFlightPlan } from '../types/flightPlan';
-import { FLIGHT_PLAN_VERSION } from '../types/flightPlan';
+import { FLIGHT_PLAN_VERSION, defaultAircraft } from '../types/flightPlan';
 
 const STORAGE_KEY = 'dcsplan-flightplan';
 const DEBOUNCE_MS = 300;
@@ -19,6 +19,9 @@ function isValidFlightPlan(data: any): data is FlightPlan {
     typeof data.initTimeSec === 'number' &&
     typeof data.initFob === 'number' &&
     typeof data.name === 'string' &&
+    data.aircraft &&
+    typeof data.aircraft === 'object' &&
+    Array.isArray(data.aircraft.regimes) &&
     data.points.every((point: any) =>
       point &&
       typeof point.lat === 'number' &&
@@ -65,16 +68,30 @@ function loadFlightPlan(): FlightPlan | null {
       if (flightPlanData && typeof flightPlanData === 'object' && !flightPlanData.theatre) {
         flightPlanData.theatre = "syria";
       }
+
+      // v1.2 → v1.3: synthesise aircraft block and relocate top-level regimes
+      if (version === '1.2' || (version !== '1.3' && flightPlanData.regimes !== undefined)) {
+        const aircraft = defaultAircraft();
+        if (Array.isArray(flightPlanData.regimes)) {
+          aircraft.regimes = flightPlanData.regimes;
+          delete flightPlanData.regimes;
+        }
+        flightPlanData.aircraft = aircraft;
+      }
     }
 
-    // Always ensure regimes exists — may be absent in plans saved before the regimes
-    // feature was introduced, even if the version stamp is already "1.2".
-    if (!flightPlanData.regimes) {
-      flightPlanData.regimes = [];
+    // Always ensure aircraft exists (guard for any intermediate state)
+    if (!flightPlanData.aircraft) {
+      const aircraft = defaultAircraft();
+      if (Array.isArray(flightPlanData.regimes)) {
+        aircraft.regimes = flightPlanData.regimes;
+        delete flightPlanData.regimes;
+      }
+      flightPlanData.aircraft = aircraft;
     }
 
     // Clear any regimeId on waypoints that don't match a known regime
-    const regimeIds = new Set((flightPlanData.regimes as any[]).map((r: any) => r.id));
+    const regimeIds = new Set((flightPlanData.aircraft.regimes as any[]).map((r: any) => r.id));
     if (Array.isArray(flightPlanData.points)) {
       for (const point of flightPlanData.points) {
         if (point.regimeId !== undefined && !regimeIds.has(point.regimeId)) {

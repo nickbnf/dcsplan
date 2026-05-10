@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { calculateAllLegData, computeLegSegments, applyWind } from './legCalculations';
 import { get as getProjection } from 'ol/proj';
 import type { FlightPlan, Regime } from '../types/flightPlan';
+import { defaultAircraft } from '../types/flightPlan';
 // LegSegmentsResult types are in flightPlan.ts and re-exported from legCalculations.ts
 
 // Use EPSG:4326 as a simple projection for testing
@@ -9,17 +10,18 @@ const projection = getProjection('EPSG:4326')!;
 const navigationMode = 'projected';
 
 // Helper: build a minimal flight plan
-function makePlan(overrides: Partial<FlightPlan> = {}): FlightPlan {
+function makePlan(overrides: Partial<FlightPlan> & { regimes?: Regime[] } = {}): FlightPlan {
+  const { regimes, ...rest } = overrides;
   return {
     theatre: 'test',
     points: [],
-    regimes: [],
+    aircraft: regimes !== undefined ? { ...defaultAircraft(), regimes } : defaultAircraft(),
     declination: 0,
     bankAngle: 45,
     initTimeSec: 12 * 3600, // 12:00:00
     initFob: 10000,
     name: 'Test',
-    ...overrides,
+    ...rest,
   };
 }
 
@@ -343,5 +345,218 @@ describe('computeLegSegments', () => {
       const eteSec = Math.round(distance / gs * 3600);
       expect(eteSec).toBe(Math.round(distance / tas * 3600));
     }
+  });
+
+  // --- Take-off segment tests (task 3.6) ---
+
+  const regime3Phase = makeRegime({ climb: { tas: 300, ff: 4000, roc: 2000 } });
+  const takeoffBlock = { timeSec: 75, fuel: 250, distance: 1.8 };
+  // TAS_to = 1.8 / (75/3600) = 86.4 kts
+
+  it('leg 0 with active T/O and climb yields 3-phase segmented result', () => {
+    const result = computeLegSegments({
+      prevAlt: 0, legAlt: 10000, distance: 50, course: 0,
+      windA: noWind, windB: noWind, tas: 400, ff: 3600,
+      legIndex: 0, takeoff: takeoffBlock,
+    }, regime3Phase);
+    expect(result.kind).toBe('segmented');
+    if (result.kind === 'segmented') {
+      expect(result.takeoff).toBeDefined();
+      expect(result.takeoff!.time).toBeCloseTo(75 / 60, 5);
+      expect(result.takeoff!.fuel).toBe(250);
+      expect(result.transition.phase).toBe('climb');
+      expect(result.cruise.distance).toBeGreaterThan(0);
+    }
+  });
+
+  it('leg 0 with active T/O and no climb yields T/O + cruise', () => {
+    const regimeCruiseOnly = makeRegime(); // no climb
+    const result = computeLegSegments({
+      prevAlt: 0, legAlt: 10000, distance: 50, course: 0,
+      windA: noWind, windB: noWind, tas: 400, ff: 3600,
+      legIndex: 0, takeoff: takeoffBlock,
+    }, regimeCruiseOnly);
+    expect(result.kind).toBe('segmented');
+    if (result.kind === 'segmented') {
+      expect(result.takeoff).toBeDefined();
+      expect(result.transition.time).toBe(0);
+    }
+  });
+
+  it('leg 0 with regime but takeoff = {0,0,0} returns same as 2-phase', () => {
+    const zeroTO = { timeSec: 0, fuel: 0, distance: 0 };
+    const r1 = computeLegSegments({
+      prevAlt: 0, legAlt: 10000, distance: 50, course: 0,
+      windA: noWind, windB: noWind, tas: 400, ff: 3600,
+      legIndex: 0, takeoff: zeroTO,
+    }, regime3Phase);
+    const r2 = computeLegSegments({
+      prevAlt: 0, legAlt: 10000, distance: 50, course: 0,
+      windA: noWind, windB: noWind, tas: 400, ff: 3600,
+    }, regime3Phase);
+    expect(r1.kind).toBe(r2.kind);
+    if (r1.kind === 'segmented' && r2.kind === 'segmented') {
+      expect(r1.takeoff).toBeUndefined();
+      expect(r1.transition.time).toBeCloseTo(r2.transition.time, 5);
+    }
+  });
+
+  it('leg 0 in Manual mode (no regime) skips T/O even when takeoff is set', () => {
+    const result = computeLegSegments({
+      prevAlt: 0, legAlt: 10000, distance: 50, course: 0,
+      windA: noWind, windB: noWind, tas: 400, ff: 3600,
+      legIndex: 0, takeoff: takeoffBlock,
+    }); // no regime
+    expect(result.kind).toBe('level');
+  });
+
+  it('leg 1 (index >= 1) ignores takeoff regardless', () => {
+    const result = computeLegSegments({
+      prevAlt: 0, legAlt: 10000, distance: 50, course: 0,
+      windA: noWind, windB: noWind, tas: 400, ff: 3600,
+      legIndex: 1, takeoff: takeoffBlock,
+    }, regime3Phase);
+    // Should be same as without T/O
+    const noTO = computeLegSegments({
+      prevAlt: 0, legAlt: 10000, distance: 50, course: 0,
+      windA: noWind, windB: noWind, tas: 400, ff: 3600,
+    }, regime3Phase);
+    expect(result.kind).toBe(noTO.kind);
+    if (result.kind === 'segmented' && noTO.kind === 'segmented') {
+      expect(result.takeoff).toBeUndefined();
+    }
+  });
+
+  it('T/O time is verbatim (75s) regardless of wind', () => {
+    const headwind = { windSpeed: 20, windDir: 0 }; // direct headwind on course 0
+    const result = computeLegSegments({
+      prevAlt: 10000, legAlt: 10000, distance: 50, course: 0,
+      windA: headwind, windB: noWind, tas: 400, ff: 3600,
+      legIndex: 0, takeoff: takeoffBlock,
+    }, makeRegime());
+    expect(result.kind).toBe('segmented');
+    if (result.kind === 'segmented') {
+      expect(result.takeoff!.time).toBeCloseTo(75 / 60, 5);
+      expect(result.takeoff!.fuel).toBe(250);
+    }
+  });
+
+  it('T/O ground distance shrinks with headwind', () => {
+    const noWindResult = computeLegSegments({
+      prevAlt: 10000, legAlt: 10000, distance: 50, course: 0,
+      windA: noWind, windB: noWind, tas: 400, ff: 3600,
+      legIndex: 0, takeoff: takeoffBlock,
+    }, makeRegime());
+    const headwindResult = computeLegSegments({
+      prevAlt: 10000, legAlt: 10000, distance: 50, course: 0,
+      windA: { windSpeed: 20, windDir: 0 }, windB: noWind, tas: 400, ff: 3600,
+      legIndex: 0, takeoff: takeoffBlock,
+    }, makeRegime());
+    if (noWindResult.kind === 'segmented' && headwindResult.kind === 'segmented') {
+      expect(headwindResult.takeoff!.distance).toBeLessThan(noWindResult.takeoff!.distance);
+    }
+  });
+
+  it('T/O ground distance grows with tailwind', () => {
+    const noWindResult = computeLegSegments({
+      prevAlt: 10000, legAlt: 10000, distance: 50, course: 0,
+      windA: noWind, windB: noWind, tas: 400, ff: 3600,
+      legIndex: 0, takeoff: takeoffBlock,
+    }, makeRegime());
+    const tailwindResult = computeLegSegments({
+      prevAlt: 10000, legAlt: 10000, distance: 50, course: 0,
+      windA: { windSpeed: 20, windDir: 180 }, windB: noWind, tas: 400, ff: 3600,
+      legIndex: 0, takeoff: takeoffBlock,
+    }, makeRegime());
+    if (noWindResult.kind === 'segmented' && tailwindResult.kind === 'segmented') {
+      expect(tailwindResult.takeoff!.distance).toBeGreaterThan(noWindResult.takeoff!.distance);
+    }
+  });
+
+  it('warning fires when T/O + climb > leg_distance', () => {
+    // T/O distance (no wind) ≈ 1.8 nm, climb needs 25 nm, total 26.8 > 20 nm
+    const smallDist = 20;
+    const result = computeLegSegments({
+      prevAlt: 0, legAlt: 10000, distance: smallDist, course: 0,
+      windA: noWind, windB: noWind, tas: 400, ff: 3600,
+      legIndex: 0, takeoff: takeoffBlock,
+    }, regime3Phase);
+    expect(result.kind).toBe('warning');
+  });
+
+  it('warning fires when T/O distance alone > leg_distance (no climb)', () => {
+    // T/O block with large distance > leg
+    const bigTO = { timeSec: 300, fuel: 500, distance: 10 };
+    // TAS_to = 10 / (300/3600) = 120 kts → ground dist = 120 * 300/3600 = 10 nm
+    // leg = 5 nm → warning
+    const result = computeLegSegments({
+      prevAlt: 10000, legAlt: 10000, distance: 5, course: 0,
+      windA: noWind, windB: noWind, tas: 400, ff: 3600,
+      legIndex: 0, takeoff: bigTO,
+    }, makeRegime()); // no climb
+    expect(result.kind).toBe('warning');
+  });
+
+  it('T/O ground distance is wind-corrected with 20-kt headwind', () => {
+    // TAS_to = 1.8 / (75/3600) = 86.4 kts
+    // GS_to = 86.4 - 20 = 66.4 kts (headwind on course 0, wind from 0)
+    // ground dist = 66.4 * (75/3600) ≈ 1.383 nm
+    const headwind = { windSpeed: 20, windDir: 0 };
+    const result = computeLegSegments({
+      prevAlt: 10000, legAlt: 10000, distance: 50, course: 0,
+      windA: headwind, windB: noWind, tas: 400, ff: 3600,
+      legIndex: 0, takeoff: takeoffBlock,
+    }, makeRegime());
+    expect(result.kind).toBe('segmented');
+    if (result.kind === 'segmented') {
+      expect(result.takeoff!.distance).toBeCloseTo(1.383, 2);
+    }
+  });
+});
+
+// --- Taxi fuel in EFR chain (task 4.3) ---
+
+describe('calculateAllLegData — taxi fuel', () => {
+  it('taxiFuel = 0 reproduces pre-change EFR exactly', () => {
+    const plan = makePlan({
+      aircraft: { ...defaultAircraft(), taxiFuel: 0 },
+      points: [
+        makePoint(0, 0),
+        makePoint(0, 1, { fuelFlow: 3600 }),
+      ],
+    });
+    const legs = calculateAllLegData(plan, projection, navigationMode);
+    const leg = legs[0];
+    const expectedEfr = 10000 - leg.legFuel;
+    expect(leg.efr).toBeCloseTo(expectedEfr, 2);
+  });
+
+  it('taxiFuel = 400 reduces waypoint-1 EFR by 400 lbs', () => {
+    const withoutTaxi = makePlan({
+      aircraft: { ...defaultAircraft(), taxiFuel: 0 },
+      points: [makePoint(0, 0), makePoint(0, 1, { fuelFlow: 3600 })],
+    });
+    const withTaxi = makePlan({
+      aircraft: { ...defaultAircraft(), taxiFuel: 400 },
+      points: [makePoint(0, 0), makePoint(0, 1, { fuelFlow: 3600 })],
+    });
+    const legsA = calculateAllLegData(withoutTaxi, projection, navigationMode);
+    const legsB = calculateAllLegData(withTaxi, projection, navigationMode);
+    expect(legsB[0].efr).toBeCloseTo(legsA[0].efr - 400, 2);
+  });
+
+  it('taxiFuel does not appear as recurring deduction on legs 2..N', () => {
+    const plan = makePlan({
+      aircraft: { ...defaultAircraft(), taxiFuel: 400 },
+      points: [
+        makePoint(0, 0),
+        makePoint(0, 1, { fuelFlow: 3600 }),
+        makePoint(0, 2, { fuelFlow: 3600 }),
+      ],
+    });
+    const legs = calculateAllLegData(plan, projection, navigationMode);
+    // EFR at wp2 should be (EFR at wp1) - leg2Fuel, not (EFR at wp1) - 400 - leg2Fuel
+    const expectedEfr2 = legs[0].efr - legs[1].legFuel;
+    expect(legs[1].efr).toBeCloseTo(expectedEfr2, 2);
   });
 });

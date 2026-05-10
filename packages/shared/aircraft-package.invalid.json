@@ -1,0 +1,31 @@
+{
+  "version": "1.0",
+  "aircraft": {
+    "model": "F-15E",
+    "takeoffConfiguration": "MIL",
+    "taxiFuel": 400,
+    "takeoff": {
+      "timeSec": 75,
+      "fuel": 0,
+      "distance": 0
+    },
+    "regimes": [
+      {
+        "id": "r1",
+        "name": "Alpha",
+        "cruise": {
+          "tas": 400,
+          "ff": 3600
+        }
+      },
+      {
+        "id": "r2",
+        "name": "Alpha",
+        "cruise": {
+          "tas": 350,
+          "ff": 3200
+        }
+      }
+    ]
+  }
+}

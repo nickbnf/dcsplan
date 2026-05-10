@@ -211,5 +211,33 @@
       "transitionDistance": 75.0,
       "reachableAltDelta": -20000.0
     }
+  },
+  {
+    "name": "leg0-with-takeoff",
+    "description": "Leg 0 with T/O segment + climb + cruise – three-phase result. No wind. T/O: 75s/250lb/1.8nm. Climb: 300kts/4000pph/2000fpm to 10000ft. Cruise: 400kts/3600pph.",
+    "input": {
+      "prevAlt": 0,
+      "legAlt": 10000,
+      "distance": 100,
+      "course": 0,
+      "windA": { "windSpeed": 0, "windDir": 0 },
+      "windB": { "windSpeed": 0, "windDir": 0 },
+      "tas": 400,
+      "ff": 3600,
+      "regime": {
+        "id": "r1",
+        "name": "Alpha",
+        "cruise": { "tas": 400, "ff": 3600 },
+        "climb": { "tas": 300, "ff": 4000, "roc": 2000 }
+      },
+      "legIndex": 0,
+      "takeoff": { "timeSec": 75, "fuel": 250, "distance": 1.8 }
+    },
+    "expected": {
+      "kind": "segmented",
+      "takeoff": { "time": 1.25, "distance": 1.8, "fuel": 250 },
+      "transition": { "phase": "climb", "time": 5.0, "distance": 25.0, "fuel": 333.333 },
+      "cruise": { "time": 10.98, "distance": 73.2, "fuel": 658.8 }
+    }
   }
 ]

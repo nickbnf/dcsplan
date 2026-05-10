@@ -126,8 +126,32 @@ def generate_waypoint_list_page(flight_plan: FlightPlan) -> bytes:
     title_y = MARGIN_TOP
     draw.text((title_x, title_y), title, fill=BLACK, font=title_font)
 
-    # Horizontal line below title
-    title_bottom = title_y + (title_bbox[3] - title_bbox[1]) + 26 
+    title_bottom = title_y + (title_bbox[3] - title_bbox[1]) + 4
+
+    # Aircraft header line (below title, above separator)
+    ac = flight_plan.aircraft
+    model = ac.model.strip() if ac.model else ''
+    config = ac.takeoffConfiguration.strip() if ac.takeoffConfiguration else ''
+    if model and config:
+        aircraft_label = f"{model} · {config}"
+    elif model:
+        aircraft_label = model
+    elif config:
+        aircraft_label = config
+    else:
+        aircraft_label = ''
+
+    if aircraft_label:
+        header_font = _load_fixed_font(ROW_FONT_SIZE)
+        header_bbox = header_font.getbbox(aircraft_label)
+        header_w = header_bbox[2] - header_bbox[0]
+        header_x = (PAGE_WIDTH - header_w) / 2
+        header_y = title_bottom + 4
+        draw.text((header_x, header_y), aircraft_label, fill=BLACK, font=header_font)
+        title_bottom = header_y + (header_bbox[3] - header_bbox[1]) + 14
+
+    # Horizontal line below title/header
+    title_bottom += 8
     draw.line([(table_left, title_bottom), (table_right, title_bottom)],
               fill=BLACK, width=LINE_WIDTH)
 

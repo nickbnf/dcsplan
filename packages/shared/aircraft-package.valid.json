@@ -1,0 +1,42 @@
+{
+  "version": "1.0",
+  "aircraft": {
+    "model": "F-15E Strike Eagle",
+    "takeoffConfiguration": "MIL @ 60klb",
+    "taxiFuel": 400,
+    "takeoff": {
+      "timeSec": 75,
+      "fuel": 250,
+      "distance": 1.8
+    },
+    "regimes": [
+      {
+        "id": "r1",
+        "name": "Alpha",
+        "comment": "MIL power cruise",
+        "cruise": {
+          "tas": 400,
+          "ff": 3600
+        },
+        "climb": {
+          "tas": 300,
+          "ff": 4000,
+          "roc": 2000
+        },
+        "descent": {
+          "tas": 350,
+          "ff": 2000,
+          "rod": 3000
+        }
+      },
+      {
+        "id": "r2",
+        "name": "Bravo",
+        "cruise": {
+          "tas": 350,
+          "ff": 3200
+        }
+      }
+    ]
+  }
+}

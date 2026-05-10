@@ -23,6 +23,8 @@ interface Fixture {
     tas: number;
     ff: number;
     regime: Regime | null;
+    legIndex?: number;
+    takeoff?: { timeSec: number; fuel: number; distance: number };
   };
   expected: Record<string, any>;
 }
@@ -32,9 +34,9 @@ const fixtures: Fixture[] = JSON.parse(readFileSync(FIXTURE_PATH, 'utf-8'));
 describe('computeLegSegments contract tests (shared fixtures)', () => {
   for (const fixture of fixtures) {
     it(fixture.name, () => {
-      const { prevAlt, legAlt, distance, course, windA, windB, tas, ff, regime } = fixture.input;
+      const { prevAlt, legAlt, distance, course, windA, windB, tas, ff, regime, legIndex, takeoff } = fixture.input;
       const result = computeLegSegments(
-        { prevAlt, legAlt, distance, course, windA, windB, tas, ff },
+        { prevAlt, legAlt, distance, course, windA, windB, tas, ff, legIndex, takeoff },
         regime ?? undefined
       );
 
@@ -46,6 +48,14 @@ describe('computeLegSegments contract tests (shared fixtures)', () => {
       }
 
       if (result.kind === 'segmented' && fixture.expected.kind === 'segmented') {
+        if (fixture.expected.takeoff) {
+          expect(result.takeoff).toBeDefined();
+          expect(result.takeoff!.time).toBeCloseTo(fixture.expected.takeoff.time, 3);
+          expect(result.takeoff!.distance).toBeCloseTo(fixture.expected.takeoff.distance, 3);
+          expect(result.takeoff!.fuel).toBeCloseTo(fixture.expected.takeoff.fuel, 1);
+        } else {
+          expect(result.takeoff).toBeUndefined();
+        }
         expect(result.transition.phase).toBe(fixture.expected.transition.phase);
         expect(result.transition.time).toBeCloseTo(fixture.expected.transition.time, 3);
         expect(result.transition.distance).toBeCloseTo(fixture.expected.transition.distance, 3);

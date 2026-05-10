@@ -567,7 +567,7 @@ function formatMinutes(min: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
-function segmentTooltipContent(seg: LegSegmentsResult, prevAlt: number, legAlt: number, distance: number): string {
+function segmentTooltipContent(seg: LegSegmentsResult, prevAlt: number, legAlt: number, distance: number): React.ReactNode {
   const altDelta = legAlt - prevAlt;
   if (seg.kind === 'level') {
     return `${altDelta >= 0 ? '+' : ''}${altDelta.toFixed(0)}ft over ${distance.toFixed(1)}nm`;
@@ -575,14 +575,25 @@ function segmentTooltipContent(seg: LegSegmentsResult, prevAlt: number, legAlt: 
   if (seg.kind === 'warning') {
     return `Transition too long\nNeeds ${seg.transitionDistance.toFixed(1)}nm, only ${distance.toFixed(1)}nm available`;
   }
+  const sections: React.ReactNode[] = [];
+  if (seg.takeoff) {
+    const to = seg.takeoff;
+    sections.push(
+      <span key="to"><span>Take-off:</span>{`\n  ${formatMinutes(to.time)} · ${to.distance.toFixed(1)}nm · ${to.fuel.toFixed(0)}lb\n`}</span>
+    );
+  }
   const t = seg.transition;
+  if (t.time > 0) {
+    const label = t.phase === 'climb' ? 'Climb:' : 'Descent:';
+    sections.push(
+      <span key="tr"><span>{label}</span>{`\n  ${formatMinutes(t.time)} · ${t.distance.toFixed(1)}nm · ${t.fuel.toFixed(0)}lb\n`}</span>
+    );
+  }
   const c = seg.cruise;
-  return [
-    `${t.phase === 'climb' ? 'Climb' : 'Descent'}:`,
-    `  ${formatMinutes(t.time)} · ${t.distance.toFixed(1)}nm · ${t.fuel.toFixed(0)}lb`,
-    `Cruise:`,
-    `  ${formatMinutes(c.time)} · ${c.distance.toFixed(1)}nm · ${c.fuel.toFixed(0)}lb`,
-  ].join('\n');
+  sections.push(
+    <span key="cr"><span>Cruise:</span>{`\n  ${formatMinutes(c.time)} · ${c.distance.toFixed(1)}nm · ${c.fuel.toFixed(0)}lb`}</span>
+  );
+  return <>{sections}</>;
 }
 
 export const RouteCard: React.FC<{
@@ -608,7 +619,7 @@ export const RouteCard: React.FC<{
   const destWpt = flightPlan.points[index + 1];
   const prevWpt = flightPlan.points[index];
   const altDelta = destWpt.alt - prevWpt.alt;
-  const boundRegime = destWpt.regimeId ? flightPlan.regimes.find(r => r.id === destWpt.regimeId) : undefined;
+  const boundRegime = destWpt.regimeId ? flightPlan.aircraft.regimes.find(r => r.id === destWpt.regimeId) : undefined;
   const seg = legData.segmentsResult;
   const isWarning = seg?.kind === 'warning';
 
@@ -646,7 +657,7 @@ export const RouteCard: React.FC<{
             <span className="font-aero-label text-gray-600 text-xs">ETE</span>
             <span className="font-aero-mono text-gray-900 text-xs">{displaySecondsInMinutes(legData.ete)}</span>
           </div>
-          {flightPlan.regimes.length > 0 && (
+          {flightPlan.aircraft.regimes.length > 0 && (
             <div className="relative max-w-[9rem]" ref={regimePickerRef}>
               <button
                 onClick={() => setShowRegimePicker(v => !v)}
@@ -657,7 +668,7 @@ export const RouteCard: React.FC<{
               </button>
               {showRegimePicker && (
                 <div className="absolute right-0 top-full mt-1 z-40 bg-white border border-gray-300 rounded shadow-lg min-w-max">
-                  {flightPlan.regimes.map(r => (
+                  {flightPlan.aircraft.regimes.map(r => (
                     <button key={r.id} onClick={() => handleSelectRegime(r)}
                       className="block w-full text-left px-3 py-1.5 text-xs font-aero-label hover:bg-gray-100">
                       {r.name}
@@ -826,29 +837,13 @@ export const FlightPlanZone: React.FC<FlightPlanZoneProps> = ({
       <div className="flex-1 overflow-y-auto mb-4">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-sm font-aero-label text-gray-700 uppercase">Flight Plan</h3>
-          <div className="flex items-center gap-1">
-            {/* Download icon */}
+          <div className="flex items-center gap-3">
             <button
               onClick={() => flightPlanUtils.downloadFlightPlan(flightPlan)}
-              className="opacity-40 hover:opacity-100 transition-opacity p-1 hover:bg-gray-100 rounded text-gray-600 hover:text-gray-700"
-              title="Download flight plan"
+              className="text-xs font-aero-label text-gray-400 hover:text-gray-600 transition-colors"
             >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-4 w-4"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                <polyline points="7 10 12 15 17 10" />
-                <line x1="12" y1="15" x2="12" y2="3" />
-              </svg>
+              ⬇ Export
             </button>
-            {/* Upload icon */}
             <ImportFlightPlanDialog
               onImport={(importedFlightPlan) => {
                 onFlightPlanUpdate(importedFlightPlan);

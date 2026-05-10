@@ -1,4 +1,4 @@
-import type { FlightPlan, LegData, Regime, Wind, LegSegmentsResult } from "../types/flightPlan";
+import type { FlightPlan, LegData, Regime, Wind, LegSegmentsResult, TakeoffPerformance } from "../types/flightPlan";
 import { getEffectiveExitTime } from "./flightPlanUtils";
 import { transform } from "ol/proj";
 
@@ -338,6 +338,9 @@ export function applyWind(tas: number, windSpeed: number, windDir: number, cours
  * Compute the leg segment breakdown for a regime-driven leg.
  * Returns a level result (use stored tas/ff), segmented result (transition + cruise), or a
  * warning when the transition cannot complete within the available leg distance.
+ *
+ * When legIndex === 0 and takeoff is provided with timeSec > 0 and distance > 0 and a regime
+ * is bound, a wind-corrected take-off segment is prepended to the result.
  */
 export function computeLegSegments(
   input: {
@@ -349,20 +352,64 @@ export function computeLegSegments(
     windB: Wind;      // wind at destination (used for cruise segment)
     tas: number;      // fallback TAS (waypoint value, used for level path)
     ff: number;       // fallback FF (waypoint value, used for level path)
+    legIndex?: number;
+    takeoff?: TakeoffPerformance;
   },
   regime?: Regime
 ): LegSegmentsResult {
-  const { prevAlt, legAlt, distance, course, windA, windB, tas, ff } = input;
+  const { prevAlt, legAlt, distance, course, windA, windB, tas, ff, legIndex, takeoff } = input;
   const altDelta = legAlt - prevAlt;
 
+  // Determine if take-off segment is active
+  const takeoffActive =
+    legIndex === 0 &&
+    regime !== undefined &&
+    takeoff !== undefined &&
+    takeoff.timeSec > 0 &&
+    takeoff.distance > 0;
+
+  // Wind-corrected take-off segment
+  let takeoffSeg: { time: number; distance: number; fuel: number } | undefined;
+  if (takeoffActive && takeoff) {
+    const tasTo = takeoff.distance / (takeoff.timeSec / 3600);
+    const gsTo = applyWind(tasTo, windA.windSpeed, windA.windDir, course);
+    const groundDist = gsTo * (takeoff.timeSec / 3600);
+    takeoffSeg = { time: takeoff.timeSec / 60, distance: groundDist, fuel: takeoff.fuel };
+  }
+
+  const remainingDistance = takeoffSeg ? distance - takeoffSeg.distance : distance;
+
   // Level-leg path: fall back to stored tas/ff (today's behaviour)
-  if (
+  const noTransition =
     altDelta === 0 ||
     !regime ||
     (altDelta > 0 && !regime.climb) ||
-    (altDelta < 0 && !regime.descent)
-  ) {
-    return { kind: 'level', tas, ff };
+    (altDelta < 0 && !regime.descent);
+
+  if (noTransition) {
+    if (!takeoffSeg || !regime) return { kind: 'level', tas, ff };
+
+    // T/O + cruise (no transition) — regime is defined here because takeoffActive requires it
+    // Warning: T/O alone exceeds leg distance
+    if (takeoffSeg.distance > distance) {
+      return {
+        kind: 'warning',
+        reason: 'transition-too-long',
+        reachableAltDelta: 0,
+        transitionDistance: takeoffSeg.distance,
+        fallbackTimeSec: Math.round(takeoffSeg.time * 60),
+        fallbackFuel: takeoffSeg.fuel,
+      };
+    }
+
+    const cruiseGs = applyWind(regime.cruise.tas, windB.windSpeed, windB.windDir, course);
+    const cruiseTime = (remainingDistance / cruiseGs) * 60;
+    return {
+      kind: 'segmented',
+      takeoff: takeoffSeg,
+      transition: { phase: 'climb', time: 0, distance: 0, fuel: 0 },
+      cruise: { time: cruiseTime, distance: remainingDistance, fuel: regime.cruise.ff * (cruiseTime / 60) },
+    };
   }
 
   const phaseRoc = altDelta > 0 ? regime.climb!.roc : regime.descent!.rod;
@@ -377,30 +424,33 @@ export function computeLegSegments(
   const transitionGroundSpeed = applyWind(phaseTas, windA.windSpeed, windA.windDir, course);
   const transitionDistance = transitionGroundSpeed * (transitionTime / 60);
 
-  // 3. Warning when transition can't fit
-  if (transitionDistance > distance) {
-    const reachableTransitionTime = (distance / transitionGroundSpeed) * 60;
-    const reachableAltDelta = Math.sign(altDelta) * phaseRoc * reachableTransitionTime;
-    // Fallback: compute time/fuel as if the entire leg were in transition
+  // 3. Warning when transition can't fit (including T/O distance)
+  const combinedTransitionDist = (takeoffSeg?.distance ?? 0) + transitionDistance;
+  if (combinedTransitionDist > distance) {
+    const reachableTransitionTime = takeoffSeg
+      ? ((distance - takeoffSeg.distance) / transitionGroundSpeed) * 60
+      : (distance / transitionGroundSpeed) * 60;
+    const reachableAltDelta = Math.sign(altDelta) * phaseRoc * Math.max(reachableTransitionTime, 0);
     const fallbackTimeSec = Math.round(transitionTime * 60);
     const fallbackFuel = phaseFf * (transitionTime / 60);
     return {
       kind: 'warning',
       reason: 'transition-too-long',
       reachableAltDelta,
-      transitionDistance,
+      transitionDistance: combinedTransitionDist,
       fallbackTimeSec,
       fallbackFuel,
     };
   }
 
   // 4. Cruise covers the remainder
-  const cruiseDistance = distance - transitionDistance;
+  const cruiseDistance = remainingDistance - transitionDistance;
   const cruiseGroundSpeed = applyWind(regime.cruise.tas, windB.windSpeed, windB.windDir, course);
   const cruiseTime = (cruiseDistance / cruiseGroundSpeed) * 60;
 
   return {
     kind: 'segmented',
+    takeoff: takeoffSeg,
     transition: {
       phase: phaseLabel,
       time: transitionTime,
@@ -592,7 +642,7 @@ export function calculateAllLegData(
 
   let inboundBearing = 0; // First leg has no inbound bearing
   let previousEta = flightPlan.initTimeSec;
-  let previousEfr = flightPlan.initFob;
+  let previousEfr = flightPlan.initFob - (flightPlan.aircraft?.taxiFuel ?? 0);
   let hackOffsetSec: number | undefined = undefined;
 
   for (let i = 0; i < flightPlan.points.length - 1; i++) {
@@ -674,7 +724,7 @@ export function calculateAllLegData(
 
     // Regime-aware ETE and fuel computation
     const regime = destination.regimeId
-      ? flightPlan.regimes?.find(r => r.id === destination.regimeId)
+      ? flightPlan.aircraft?.regimes?.find(r => r.id === destination.regimeId)
       : undefined;
     const segResult = computeLegSegments(
       {
@@ -686,6 +736,8 @@ export function calculateAllLegData(
         windB: { windSpeed: destination.windSpeed, windDir: destination.windDir },
         tas: destination.tas,
         ff: destination.fuelFlow,
+        legIndex: i,
+        takeoff: flightPlan.aircraft?.takeoff,
       },
       regime
     );
@@ -696,8 +748,12 @@ export function calculateAllLegData(
       eteSec = Math.round(distanceNm / applyWind(segResult.tas, destination.windSpeed, destination.windDir, course) * 3600);
       legFuelBase = eteSec * (segResult.ff / 3600);
     } else if (segResult.kind === 'segmented') {
-      eteSec = Math.round((segResult.transition.time + segResult.cruise.time) * 60);
-      legFuelBase = segResult.transition.fuel + segResult.cruise.fuel;
+      const takeoffTime = segResult.takeoff?.time ?? 0;
+      const takeoffFuel = segResult.takeoff?.fuel ?? 0;
+      const transitionTime = segResult.transition.time;
+      const transitionFuel = segResult.transition.fuel;
+      eteSec = Math.round((takeoffTime + transitionTime + segResult.cruise.time) * 60);
+      legFuelBase = takeoffFuel + transitionFuel + segResult.cruise.fuel;
     } else {
       // warning: use fallback (entire leg in transition)
       eteSec = segResult.fallbackTimeSec;

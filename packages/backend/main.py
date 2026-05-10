@@ -156,7 +156,7 @@ async def import_flight_plan(request: ImportFlightPlanRequest):
     logger.info(f"Flight plan has {len(request.flightPlan.points)} waypoint(s)")
     
     # Validate version
-    SUPPORTED_VERSIONS = ["1.1", "1.2"]
+    SUPPORTED_VERSIONS = ["1.1", "1.2", "1.3"]
     if request.version not in SUPPORTED_VERSIONS:
         logger.error(f"Unsupported version: {request.version}")
         raise HTTPException(

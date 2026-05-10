@@ -54,7 +54,10 @@
       "Bash(openspec --version)",
       "Bash(openspec update *)",
       "Bash(npm info *)",
-      "Bash(npm list *)"
+      "Bash(npm list *)",
+      "Bash(mkdir -p /Users/nicolasbonnefon/Sandbox/dcsplan/openspec/changes/2026-05-10-aircraft-performance/specs/aircraft-performance)",
+      "Bash(mkdir -p /Users/nicolasbonnefon/Sandbox/dcsplan/openspec/changes/2026-05-10-aircraft-performance/specs/performance-regime)",
+      "Bash(openspec schemas *)"
     ]
   }
 }

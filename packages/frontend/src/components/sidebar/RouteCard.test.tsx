@@ -3,6 +3,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { RouteCard } from './FlightPlanZone';
 import type { FlightPlan, LegData, FlightPlanTurnPoint, Regime } from '../../types/flightPlan';
+import { defaultAircraft } from '../../types/flightPlan';
 
 vi.mock('../../utils/flightPlanUtils', async (importOriginal) => {
   const orig = await importOriginal<typeof import('../../utils/flightPlanUtils')>();
@@ -45,17 +46,20 @@ const makeLegData = (overrides: Partial<LegData> = {}): LegData => ({
   ...overrides,
 });
 
-const makePlan = (overrides: Partial<FlightPlan> = {}): FlightPlan => ({
-  theatre: 'syria',
-  points: [makeWpt({ alt: 0 }), makeWpt({ alt: 10000 })],
-  regimes: [],
-  declination: 0,
-  bankAngle: 45,
-  initTimeSec: 43200,
-  initFob: 12000,
-  name: 'Test',
-  ...overrides,
-});
+const makePlan = (overrides: Partial<FlightPlan> & { regimes?: Regime[] } = {}): FlightPlan => {
+  const { regimes, ...rest } = overrides;
+  return {
+    theatre: 'syria',
+    points: [makeWpt({ alt: 0 }), makeWpt({ alt: 10000 })],
+    aircraft: regimes !== undefined ? { ...defaultAircraft(), regimes } : defaultAircraft(),
+    declination: 0,
+    bankAngle: 45,
+    initTimeSec: 43200,
+    initFob: 12000,
+    name: 'Test',
+    ...rest,
+  };
+};
 
 describe('RouteCard', () => {
   const onUpdate = vi.fn();
@@ -224,6 +228,35 @@ describe('RouteCard', () => {
       render(<RouteCard flightPlan={plan} legData={makeLegData()} index={0} onFlightPlanUpdate={onUpdate} />);
       expect(screen.queryByText('↗')).toBeNull();
       expect(screen.queryByText('↘')).toBeNull();
+    });
+  });
+
+  describe('Segment tooltip with T/O row', () => {
+    const toSeg = {
+      kind: 'segmented' as const,
+      takeoff: { time: 75 / 60, distance: 1.8, fuel: 250 },
+      transition: { phase: 'climb' as const, time: 5, distance: 25, fuel: 333 },
+      cruise: { time: 10, distance: 67, fuel: 600 },
+    };
+    const noToSeg = {
+      kind: 'segmented' as const,
+      transition: { phase: 'climb' as const, time: 5, distance: 25, fuel: 333 },
+      cruise: { time: 10, distance: 67, fuel: 600 },
+    };
+
+    it('T/O row appears in tooltip on leg 1 when active', () => {
+      const plan = makePlan({ points: [makeWpt({ alt: 0 }), makeWpt({ alt: 10000 })] });
+      const legData = makeLegData({ segmentsResult: toSeg });
+      render(<RouteCard flightPlan={plan} legData={legData} index={0} onFlightPlanUpdate={onUpdate} />);
+      // Tooltip content is rendered as a hidden CSS span, not a title attribute
+      expect(screen.getByText('Take-off:')).toBeInTheDocument();
+    });
+
+    it('T/O row absent in tooltip on leg 1 when not active', () => {
+      const plan = makePlan({ points: [makeWpt({ alt: 0 }), makeWpt({ alt: 10000 })] });
+      const legData = makeLegData({ segmentsResult: noToSeg });
+      render(<RouteCard flightPlan={plan} legData={legData} index={0} onFlightPlanUpdate={onUpdate} />);
+      expect(screen.queryByText('Take-off:')).toBeNull();
     });
   });
 

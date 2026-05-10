@@ -11,11 +11,36 @@ export type Regime = {
   descent?: { tas: number; ff: number; rod: number }; // fpm
 }
 
+export type TakeoffPerformance = {
+  timeSec: number;   // seconds
+  fuel: number;      // lbs
+  distance: number;  // NM
+}
+
+export type Aircraft = {
+  model: string;
+  takeoffConfiguration: string;
+  taxiFuel: number;  // lbs
+  takeoff: TakeoffPerformance;
+  regimes: Regime[];
+}
+
+export function defaultAircraft(): Aircraft {
+  return {
+    model: '',
+    takeoffConfiguration: '',
+    taxiFuel: 0,
+    takeoff: { timeSec: 0, fuel: 0, distance: 0 },
+    regimes: [],
+  };
+}
+
 export type Wind = { windSpeed: number; windDir: number };
 
 export type LegSegmentsLevel = { kind: 'level'; tas: number; ff: number };
 export type LegSegmentsSegmented = {
   kind: 'segmented';
+  takeoff?: { time: number; distance: number; fuel: number };
   transition: { phase: 'climb' | 'descent'; time: number; distance: number; fuel: number };
   cruise: { time: number; distance: number; fuel: number };
 };
@@ -125,16 +150,22 @@ export type FlightPlan = {
   initTimeSec: number; // Initial time in seconds since midnight
   initFob: number;
   name: string; // Name of the flight plan
-  regimes: Regime[];
+  aircraft: Aircraft;
   attackPlanning?: {        // optional; params are user-supplied, results are computed on Calculate
     params: AttackPlanningParams;
     results?: AttackPlanningResults;
   };
 }
 
-export const FLIGHT_PLAN_VERSION = "1.2";
+export const FLIGHT_PLAN_VERSION = "1.3";
+export const PERFORMANCE_FILE_VERSION = "1.0";
 
 export interface VersionedFlightPlan {
   version: string;
   flightPlan: FlightPlan;
+}
+
+export interface PerformanceFileV1 {
+  version: string;
+  aircraft: Aircraft;
 }

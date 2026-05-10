@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { useFlightPlan } from '../contexts/FlightPlanContext';
-import { generateRegimeId } from '../utils/flightPlanUtils';
+import { generateRegimeId, flightPlanUtils } from '../utils/flightPlanUtils';
 import { propagateRegimeCruiseChange, clearRegimeFromAllWaypoints } from '../utils/regimeUtils';
-import type { FlightPlan, Regime } from '../types/flightPlan';
+import type { FlightPlan, Regime, Aircraft } from '../types/flightPlan';
+import PerformanceImportDialog from './PerformanceImportDialog';
 
 // --- Editor form types ---
 
@@ -250,25 +251,58 @@ const DeleteRegimeDialog: React.FC<{
 
 // --- Main page ---
 
+// --- Take-off time mm:ss parser/formatter ---
+
+function parseMinSec(s: string): number | null {
+  const trimmed = s.trim();
+  if (trimmed === '' || trimmed === '0:00' || trimmed === '00:00') return 0;
+  const match = trimmed.match(/^(\d+):([0-5]\d)$/);
+  if (!match) return null;
+  const m = parseInt(match[1], 10);
+  const sec = parseInt(match[2], 10);
+  return m * 60 + sec;
+}
+
+function formatMinSec(totalSec: number): string {
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
 const PerformancePage: React.FC = () => {
   const { flightPlan, onFlightPlanUpdate } = useFlightPlan();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [newlyAddedId, setNewlyAddedId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Regime | null>(null);
+  const [showImportDialog, setShowImportDialog] = useState(false);
+
+  // Aircraft header state (local string values for editing)
+  const [toTimeStr, setToTimeStr] = useState(() => formatMinSec(flightPlan.aircraft.takeoff.timeSec));
+  const [toFuelStr, setToFuelStr] = useState(() => String(flightPlan.aircraft.takeoff.fuel));
+  const [toDistStr, setToDistStr] = useState(() => String(flightPlan.aircraft.takeoff.distance));
+  const [toTimeError, setToTimeError] = useState<string | null>(null);
+
+  const regimes = flightPlan.aircraft.regimes;
 
   const handleAddRegime = () => {
-    const names = new Set(flightPlan.regimes.map(r => r.name));
+    const names = new Set(regimes.map(r => r.name));
     let n = 1;
     while (names.has(`Regime ${n}`)) n++;
     const newRegime: Regime = { id: generateRegimeId(), name: `Regime ${n}`, cruise: { tas: 400, ff: 3600 } };
-    onFlightPlanUpdate({ ...flightPlan, regimes: [...flightPlan.regimes, newRegime] });
+    onFlightPlanUpdate({
+      ...flightPlan,
+      aircraft: { ...flightPlan.aircraft, regimes: [...regimes, newRegime] },
+    });
     setSelectedId(newRegime.id);
     setNewlyAddedId(newRegime.id);
   };
 
   const handleRegimeChange = (updated: Regime) => {
-    const current = flightPlan.regimes.find(r => r.id === updated.id);
-    let plan: FlightPlan = { ...flightPlan, regimes: flightPlan.regimes.map(r => r.id === updated.id ? updated : r) };
+    const current = regimes.find(r => r.id === updated.id);
+    let plan: FlightPlan = {
+      ...flightPlan,
+      aircraft: { ...flightPlan.aircraft, regimes: regimes.map(r => r.id === updated.id ? updated : r) },
+    };
     if (current && (current.cruise.tas !== updated.cruise.tas || current.cruise.ff !== updated.cruise.ff)) {
       plan = propagateRegimeCruiseChange(plan, updated);
     }
@@ -278,83 +312,215 @@ const PerformancePage: React.FC = () => {
   const handleDeleteConfirm = () => {
     if (!deleteTarget) return;
     let plan = clearRegimeFromAllWaypoints(flightPlan, deleteTarget.id);
-    plan = { ...plan, regimes: plan.regimes.filter(r => r.id !== deleteTarget.id) };
+    plan = {
+      ...plan,
+      aircraft: { ...plan.aircraft, regimes: plan.aircraft.regimes.filter(r => r.id !== deleteTarget.id) },
+    };
     onFlightPlanUpdate(plan);
     if (selectedId === deleteTarget.id) setSelectedId(null);
     setDeleteTarget(null);
   };
 
-  const selectedRegime = flightPlan.regimes.find(r => r.id === selectedId) ?? null;
+  const updateAircraft = (patch: Partial<Aircraft>) => {
+    onFlightPlanUpdate({ ...flightPlan, aircraft: { ...flightPlan.aircraft, ...patch } });
+  };
+
+  const commitTakeoff = (timeSec: number, fuel: number, distance: number) => {
+    const positiveCount = [timeSec, fuel, distance].filter(v => v > 0).length;
+    if (positiveCount > 0 && positiveCount < 3) {
+      setToTimeError('All three take-off fields must be positive, or all zero.');
+      return;
+    }
+    setToTimeError(null);
+    updateAircraft({ takeoff: { timeSec, fuel, distance } });
+  };
+
+  const selectedRegime = regimes.find(r => r.id === selectedId) ?? null;
+
+  const TO_TOOLTIP = 'Time, fuel, and distance covered from brake release through acceleration to climb speed. Use values from your aircraft\'s performance charts for your T/O configuration. Or obtain by flight testing the difference between a cruise climb and the same climb from brake release.';
 
   return (
-    <div className="flex flex-1 w-full overflow-hidden">
-      {/* Left sidebar */}
-      <div className="w-[400px] shrink-0 h-full bg-gray-50 border-r border-gray-300 flex flex-col">
-        <div className="p-4 border-b border-gray-200">
-          <h2 className="text-lg font-aero-label text-gray-900">Performance</h2>
-        </div>
-        <div className="p-3">
-          <button
-            onClick={handleAddRegime}
-            className="w-full text-left px-3 py-2 text-sm font-aero-label text-gray-700 border border-dashed border-gray-300 rounded hover:bg-gray-100 hover:border-gray-400 transition-colors"
-          >
-            + Add regime
-          </button>
-        </div>
-        <div className="flex-1 overflow-y-auto px-3 pb-3 space-y-1">
-          {flightPlan.regimes.map(regime => (
+    <div className="flex flex-col flex-1 w-full overflow-hidden">
+      {/* Aircraft header */}
+      <div className="bg-white border-b border-gray-300 px-6 py-3 space-y-2 shrink-0">
+        {/* Row 1: Aircraft name · T/O Config · export/import links */}
+        <div className="flex items-center gap-4 flex-wrap">
+          <div className="flex items-center gap-2">
+            <label className="text-xs font-aero-label text-gray-500 whitespace-nowrap">Aircraft</label>
+            <input
+              type="text"
+              value={flightPlan.aircraft.model}
+              onChange={e => updateAircraft({ model: e.target.value })}
+              placeholder="e.g. F-15E"
+              className="text-sm font-aero-mono border border-gray-300 rounded px-2 py-0.5 focus:outline-none focus:border-gray-500 w-40"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="text-xs font-aero-label text-gray-500 whitespace-nowrap">T/O Config</label>
+            <input
+              type="text"
+              value={flightPlan.aircraft.takeoffConfiguration}
+              onChange={e => updateAircraft({ takeoffConfiguration: e.target.value })}
+              placeholder="e.g. MIL @ 60klb"
+              className="text-sm font-aero-mono border border-gray-300 rounded px-2 py-0.5 focus:outline-none focus:border-gray-500 w-40"
+            />
+          </div>
+          <div className="flex items-center gap-3 ml-auto">
             <button
-              key={regime.id}
-              onClick={() => { setSelectedId(regime.id); setNewlyAddedId(null); }}
-              className={`w-full text-left px-3 py-2 rounded text-sm transition-colors flex items-center justify-between ${
-                selectedId === regime.id ? 'bg-gray-200 text-gray-900 border border-gray-400' : 'hover:bg-gray-200 text-gray-900'
-              }`}
+              onClick={() => flightPlanUtils.downloadAircraft(flightPlan)}
+              className="text-xs font-aero-label text-gray-400 hover:text-gray-600 transition-colors"
             >
-              <span className="font-aero-label">{regime.name}</span>
-              <span className="flex gap-1">
-                {regime.climb && (
-                  <span className={`text-xs px-1.5 py-0.5 rounded ${selectedId === regime.id ? 'bg-gray-300 text-gray-700' : 'bg-gray-200 text-gray-600'}`}>↑</span>
-                )}
-                {regime.descent && (
-                  <span className={`text-xs px-1.5 py-0.5 rounded ${selectedId === regime.id ? 'bg-gray-300 text-gray-700' : 'bg-gray-200 text-gray-600'}`}>↓</span>
-                )}
-              </span>
+              ⬇ Export
             </button>
-          ))}
+            <button
+              onClick={() => setShowImportDialog(true)}
+              className="text-xs font-aero-label text-gray-400 hover:text-gray-600 transition-colors"
+            >
+              ⬆ Import
+            </button>
+          </div>
+        </div>
+
+        {/* Row 2: Taxi fuel */}
+        <div className="flex items-center gap-2">
+          <label className="text-xs font-aero-label text-gray-500 whitespace-nowrap">Taxi fuel</label>
+          <input
+            type="number"
+            value={flightPlan.aircraft.taxiFuel}
+            min={0}
+            onChange={e => updateAircraft({ taxiFuel: Math.max(0, Number(e.target.value)) })}
+            className="text-sm font-aero-mono border border-gray-300 rounded px-2 py-0.5 focus:outline-none focus:border-gray-500 w-20 text-right"
+          />
+          <span className="text-xs font-aero-label text-gray-400">lbs</span>
+        </div>
+
+        {/* Row 3: T/O performance */}
+        <div className="flex items-start gap-2 flex-wrap">
+          <label className="text-xs font-aero-label text-gray-500 whitespace-nowrap mt-0.5">T/O perf</label>
+          <div className="flex items-center gap-1">
+            <input
+              type="text"
+              value={toTimeStr}
+              onChange={e => setToTimeStr(e.target.value)}
+              onBlur={() => {
+                const secs = parseMinSec(toTimeStr);
+                if (secs === null) {
+                  setToTimeError('Invalid time format. Use mm:ss.');
+                  return;
+                }
+                setToTimeStr(formatMinSec(secs));
+                commitTakeoff(secs, Math.max(0, Number(toFuelStr)), Math.max(0, Number(toDistStr)));
+              }}
+              placeholder="mm:ss"
+              className={`text-sm font-aero-mono border rounded px-2 py-0.5 focus:outline-none w-16 text-right ${toTimeError ? 'border-red-400 bg-red-50' : 'border-gray-300 focus:border-gray-500'}`}
+            />
+            <span className="text-xs font-aero-label text-gray-400">mm:ss</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <input
+              type="number"
+              value={toFuelStr}
+              min={0}
+              onChange={e => setToFuelStr(e.target.value)}
+              onBlur={() => {
+                const secs = parseMinSec(toTimeStr) ?? flightPlan.aircraft.takeoff.timeSec;
+                commitTakeoff(secs, Math.max(0, Number(toFuelStr)), Math.max(0, Number(toDistStr)));
+              }}
+              className={`text-sm font-aero-mono border rounded px-2 py-0.5 focus:outline-none w-20 text-right ${toTimeError ? 'border-red-400 bg-red-50' : 'border-gray-300 focus:border-gray-500'}`}
+            />
+            <span className="text-xs font-aero-label text-gray-400">lbs</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <input
+              type="number"
+              value={toDistStr}
+              min={0}
+              step={0.1}
+              onChange={e => setToDistStr(e.target.value)}
+              onBlur={() => {
+                const secs = parseMinSec(toTimeStr) ?? flightPlan.aircraft.takeoff.timeSec;
+                commitTakeoff(secs, Math.max(0, Number(toFuelStr)), Math.max(0, Number(toDistStr)));
+              }}
+              className={`text-sm font-aero-mono border rounded px-2 py-0.5 focus:outline-none w-20 text-right ${toTimeError ? 'border-red-400 bg-red-50' : 'border-gray-300 focus:border-gray-500'}`}
+            />
+            <span className="text-xs font-aero-label text-gray-400">NM</span>
+          </div>
+          <span
+            title={TO_TOOLTIP}
+            className="text-gray-400 hover:text-gray-600 cursor-help text-sm leading-none mt-0.5"
+            aria-label="Take-off performance info"
+          >ⓘ</span>
+          {toTimeError && <p className="text-xs text-red-500 w-full mt-0.5">{toTimeError}</p>}
         </div>
       </div>
 
-      {/* Right pane */}
-      <div className="flex-1 h-full overflow-y-auto bg-gray-100">
-        {selectedRegime ? (
-          <RegimeEditor
-            key={selectedRegime.id}
-            regime={selectedRegime}
-            allRegimes={flightPlan.regimes}
-            onChange={handleRegimeChange}
-            onDeleteRequest={() => setDeleteTarget(selectedRegime)}
-            autoFocusName={newlyAddedId === selectedRegime.id}
-          />
-        ) : (
-          <div className="flex items-center justify-center h-full">
-            {flightPlan.regimes.length === 0 ? (
-              <div className="max-w-sm text-center space-y-3 px-6">
-                <p className="font-aero-label text-gray-700 text-sm font-semibold">No performance regimes defined</p>
-                <p className="font-aero-label text-gray-500 text-xs leading-relaxed">
-                  A <strong>regime</strong> captures your aircraft&apos;s performance for a given configuration and power setting — cruise speed, fuel flow, and optionally climb and descent parameters.
-                </p>
-                <p className="font-aero-label text-gray-500 text-xs leading-relaxed">
-                  Once you define regimes, you can assign them to individual legs on your route. DCS Plan will then compute fuel burn, time en route, and transition segments automatically.
-                </p>
-                <p className="font-aero-label text-gray-400 text-xs">
-                  Click <span className="text-gray-600">&ldquo;+ Add regime&rdquo;</span> on the left to get started.
-                </p>
-              </div>
-            ) : (
-              <p className="font-aero-label text-gray-500 text-sm">Select a regime to edit.</p>
-            )}
+      {/* Body: regime list + editor */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Left sidebar */}
+        <div className="w-[400px] shrink-0 h-full bg-gray-50 border-r border-gray-300 flex flex-col">
+          <div className="p-3">
+            <button
+              onClick={handleAddRegime}
+              className="w-full text-left px-3 py-2 text-sm font-aero-label text-gray-700 border border-dashed border-gray-300 rounded hover:bg-gray-100 hover:border-gray-400 transition-colors"
+            >
+              + Add regime
+            </button>
           </div>
-        )}
+          <div className="flex-1 overflow-y-auto px-3 pb-3 space-y-1">
+            {regimes.map(regime => (
+              <button
+                key={regime.id}
+                onClick={() => { setSelectedId(regime.id); setNewlyAddedId(null); }}
+                className={`w-full text-left px-3 py-2 rounded text-sm transition-colors flex items-center justify-between ${
+                  selectedId === regime.id ? 'bg-gray-200 text-gray-900 border border-gray-400' : 'hover:bg-gray-200 text-gray-900'
+                }`}
+              >
+                <span className="font-aero-label">{regime.name}</span>
+                <span className="flex gap-1">
+                  {regime.climb && (
+                    <span className={`text-xs px-1.5 py-0.5 rounded ${selectedId === regime.id ? 'bg-gray-300 text-gray-700' : 'bg-gray-200 text-gray-600'}`}>↑</span>
+                  )}
+                  {regime.descent && (
+                    <span className={`text-xs px-1.5 py-0.5 rounded ${selectedId === regime.id ? 'bg-gray-300 text-gray-700' : 'bg-gray-200 text-gray-600'}`}>↓</span>
+                  )}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Right pane */}
+        <div className="flex-1 h-full overflow-y-auto bg-gray-100">
+          {selectedRegime ? (
+            <RegimeEditor
+              key={selectedRegime.id}
+              regime={selectedRegime}
+              allRegimes={regimes}
+              onChange={handleRegimeChange}
+              onDeleteRequest={() => setDeleteTarget(selectedRegime)}
+              autoFocusName={newlyAddedId === selectedRegime.id}
+            />
+          ) : (
+            <div className="flex items-center justify-center h-full">
+              {regimes.length === 0 ? (
+                <div className="max-w-sm text-center space-y-3 px-6">
+                  <p className="font-aero-label text-gray-700 text-sm font-semibold">No performance regimes defined</p>
+                  <p className="font-aero-label text-gray-500 text-xs leading-relaxed">
+                    A <strong>regime</strong> captures your aircraft&apos;s performance for a given configuration and power setting — cruise speed, fuel flow, and optionally climb and descent parameters.
+                  </p>
+                  <p className="font-aero-label text-gray-500 text-xs leading-relaxed">
+                    Once you define regimes, you can assign them to individual legs on your route. DCS Plan will then compute fuel burn, time en route, and transition segments automatically.
+                  </p>
+                  <p className="font-aero-label text-gray-400 text-xs">
+                    Click <span className="text-gray-600">&ldquo;+ Add regime&rdquo;</span> on the left to get started.
+                  </p>
+                </div>
+              ) : (
+                <p className="font-aero-label text-gray-500 text-sm">Select a regime to edit.</p>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       {deleteTarget && (
@@ -363,6 +529,14 @@ const PerformancePage: React.FC = () => {
           refCount={flightPlan.points.filter(p => p.regimeId === deleteTarget.id).length}
           onConfirm={handleDeleteConfirm}
           onCancel={() => setDeleteTarget(null)}
+        />
+      )}
+
+      {showImportDialog && (
+        <PerformanceImportDialog
+          flightPlan={flightPlan}
+          onFlightPlanUpdate={onFlightPlanUpdate}
+          onClose={() => setShowImportDialog(false)}
         />
       )}
     </div>
