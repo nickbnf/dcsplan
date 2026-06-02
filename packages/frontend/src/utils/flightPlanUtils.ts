@@ -1,4 +1,4 @@
-import type { FlightPlan, FlightPlanPointChange, LegData, VersionedFlightPlan, PerformanceFileV1 } from "../types/flightPlan";
+import type { FlightPlan, FlightPlanPointChange, LegData, VersionedFlightPlan, PerformanceFileV1, LibraryObject } from "../types/flightPlan";
 
 /** Returns the effective exit time for a Push waypoint, clamped to be >= ETA. */
 export const getEffectiveExitTime = (exitTimeSec: number | undefined, eta: number): number =>
@@ -135,10 +135,14 @@ export const flightPlanUtils = {
     updateBankAngle: (flightPlan: FlightPlan, bankAngle: number): FlightPlan => {
         return { ...flightPlan, bankAngle }
     },
-    downloadFlightPlan: (flightPlan: FlightPlan): void => {
+    downloadFlightPlan: (flightPlan: FlightPlan, library?: LibraryObject[]): void => {
+        // Embed snapshots of all referenced library entries so the file is standalone
+        const referencedIds = new Set((flightPlan.libraryRefs ?? []).map(r => r.uuid));
+        const snapshot = library?.filter(e => referencedIds.has(e.id)) ?? [];
         const exportData: VersionedFlightPlan = {
             version: FLIGHT_PLAN_VERSION,
-            flightPlan: flightPlan
+            flightPlan: flightPlan,
+            ...(snapshot.length > 0 && { librarySnapshot: snapshot }),
         };
 
         const jsonString = JSON.stringify(exportData, null, 2);

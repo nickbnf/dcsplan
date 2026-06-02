@@ -6,13 +6,15 @@ interface ChangeTheatreDialogProps {
   onOpenChange: (open: boolean) => void;
   onConfirm: () => void;
   theatreName: string;
+  hasLibraryEntries?: boolean;
 }
 
-export const ChangeTheatreDialog: React.FC<ChangeTheatreDialogProps> = ({ 
-  isOpen, 
-  onOpenChange, 
+export const ChangeTheatreDialog: React.FC<ChangeTheatreDialogProps> = ({
+  isOpen,
+  onOpenChange,
   onConfirm,
-  theatreName
+  theatreName,
+  hasLibraryEntries = false,
 }) => {
   return (
     <Dialog.Root open={isOpen} onOpenChange={onOpenChange}>
@@ -20,10 +22,11 @@ export const ChangeTheatreDialog: React.FC<ChangeTheatreDialogProps> = ({
         <Dialog.Overlay className="fixed inset-0 bg-black/50 z-[100]" />
         <Dialog.Content className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-white rounded-lg shadow-lg p-6 w-96 max-w-[90vw] z-[101]">
           <Dialog.Title className="text-lg font-semibold mb-4">Change Theatre</Dialog.Title>
-          
+
           <div className="mb-6">
             <p className="text-sm text-gray-600 mb-4">
-              Changing the theatre to <strong>{theatreName}</strong> will reset your current flight plan. 
+              Changing the theatre to <strong>{theatreName}</strong> will reset your current flight plan
+              {hasLibraryEntries ? ' and clear the current theatre\'s library' : ''}.
             </p>
             <p className="text-sm text-gray-600">
               Are you sure you want to continue? This action cannot be undone.

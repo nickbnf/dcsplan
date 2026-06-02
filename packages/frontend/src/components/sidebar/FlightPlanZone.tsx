@@ -2,20 +2,23 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import * as Separator from '@radix-ui/react-separator';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import type { FlightPlan, LegData, WaypointType, Regime, LegSegmentsResult } from '../../types/flightPlan';
+import type { DrawingState } from '../../hooks/useDrawing';
 import { flightPlanUtils, getEffectiveExitTime } from '../../utils/flightPlanUtils';
 import { applyRegimeToWaypoint, clearRegimeBinding } from '../../utils/regimeUtils';
 import { formatCoordinate } from '../../utils/coordinateUtils';
 import { GenerateDialog } from './GenerateDialog';
 import { DeleteWaypointDialog } from './DeleteWaypointDialog';
-import { ImportFlightPlanDialog } from './ImportFlightPlanDialog';
-import { useFlightPlan } from '../../contexts/FlightPlanContext';
 import { useWaypointSelection } from '../../contexts/WaypointSelectionContext';
+import { useLibrary } from '../../contexts/LibraryContext';
 
 interface FlightPlanZoneProps {
   flightPlan: FlightPlan;
   onFlightPlanUpdate: (flightPlan: FlightPlan) => void;
   projection?: any;
   navigationMode: string;
+  drawingState: DrawingState;
+  onStartDrawing: (map: any, existingFlightPlan?: any) => void;
+  onStopDrawing: (map: any) => void;
 }
 
 interface EditableFieldProps {
@@ -822,37 +825,31 @@ export const FlightPlanZone: React.FC<FlightPlanZoneProps> = ({
   flightPlan,
   onFlightPlanUpdate,
   projection,
-  navigationMode
+  navigationMode,
+  drawingState,
+  onStartDrawing,
+  onStopDrawing,
 }) => {
-  const { requestFitToFlightPlan } = useFlightPlan();
-  const fligthPlanZoneContent = useMemo(() => {
+  const { library } = useLibrary();
+
+  const handleAddWPTsClick = () => {
+    const mapInstance = (window as any).mapInstance;
+    if (!mapInstance) return;
+    if (drawingState.isDrawing === 'NEW_POINT') {
+      onStopDrawing(mapInstance);
+    } else {
+      onStartDrawing(mapInstance, flightPlan);
+    }
+  };
+
+  const scrollableContent = useMemo(() => {
     const legData = projection
       ? flightPlanUtils.calculateAllLegData(flightPlan, projection, navigationMode)
       : [];
     const planName = flightPlan.name
 
     return (
-    <div className="flex-1 p-4 bg-gray-50 flex flex-col">
-      {/* Scrollable content area */}
-      <div className="flex-1 overflow-y-auto mb-4">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-aero-label text-gray-700 uppercase">Flight Plan</h3>
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => flightPlanUtils.downloadFlightPlan(flightPlan)}
-              className="text-xs font-aero-label text-gray-400 hover:text-gray-600 transition-colors"
-            >
-              ⬇ Export
-            </button>
-            <ImportFlightPlanDialog
-              onImport={(importedFlightPlan) => {
-                onFlightPlanUpdate(importedFlightPlan);
-                requestFitToFlightPlan();
-              }}
-            />
-          </div>
-        </div>
-        
+      <div className="flex-1 min-h-0 overflow-y-auto mb-4">
         {/* Flight Plan Header */}
         <div className="space-y-3 mb-2">
           <div className="flex items-center space-x-1">
@@ -933,12 +930,29 @@ export const FlightPlanZone: React.FC<FlightPlanZoneProps> = ({
           )}
         </div>
       </div>
-      
-      {/* Generate button at the bottom */}
-      <GenerateDialog flightPlan={flightPlan} />
+    );
+  }, [flightPlan, onFlightPlanUpdate, projection, navigationMode]);
+
+  return (
+    <div className="flex-1 min-h-0 bg-gray-50 flex flex-col overflow-hidden">
+      {/* Toolbar */}
+      <div className="flex items-center gap-2 p-3 border-b border-gray-200 bg-white shrink-0">
+        <button
+          onClick={handleAddWPTsClick}
+          className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded border transition-colors ${
+            drawingState.isDrawing === 'NEW_POINT'
+              ? 'border-red-300 bg-red-50 hover:bg-red-100 text-red-700'
+              : 'border-gray-300 bg-white hover:bg-gray-50 text-gray-700'
+          }`}
+        >
+          {drawingState.isDrawing === 'NEW_POINT' ? '■ Stop Adding' : '+ Add Waypoints'}
+        </button>
+      </div>
+      {/* List area */}
+      <div className="flex-1 min-h-0 p-4 flex flex-col">
+        {scrollableContent}
+        <GenerateDialog flightPlan={flightPlan} library={library} />
+      </div>
     </div>
   );
-}, [flightPlan, onFlightPlanUpdate, projection, navigationMode, requestFitToFlightPlan]);
-
-return fligthPlanZoneContent
 };

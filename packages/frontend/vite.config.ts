@@ -15,6 +15,7 @@ export default defineConfig({
     alias: {
       // Mock @plausible-analytics/tracker for tests
       '@plausible-analytics/tracker': path.resolve(__dirname, './src/test/mocks/plausible.ts'),
+      '@shared': path.resolve(__dirname, '../shared'),
     },
   },
 })

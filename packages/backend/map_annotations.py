@@ -6,28 +6,35 @@ waypoints, and other visual markers.
 """
 
 import os
-from typing import Callable, Tuple, Optional
+from typing import Callable, Tuple, Optional, List
 from PIL import Image, ImageDraw, ImageFont
 import logging
 import math
-from flight_plan import FlightPlan, FlightPlanData, FlightPlanTurnPoint, LegData, Point, get_effective_exit_time
+from flight_plan import (
+    FlightPlan,
+    FlightPlanData,
+    FlightPlanTurnPoint,
+    LegData,
+    Point,
+    get_effective_exit_time,
+)
 
 # Set up logger
 logger = logging.getLogger(__name__)
 
 # Frontend color: #0066CC = RGB(0, 102, 204)
 # Using alpha ~200 (78% opacity)
-OUTLINE_COLOR_RGBA = (0, 50, 130, 200) # Blue with a bit of transparency
-TEXT_COLOR_RGBA = (0, 50, 130, 255)    # Solid blue
+OUTLINE_COLOR_RGBA = (0, 50, 130, 200)  # Blue with a bit of transparency
+TEXT_COLOR_RGBA = (0, 50, 130, 255)  # Solid blue
 RED_COLOR_RGBA = (204, 0, 0, 200)
 
 # Tier colors for leg emphasis on kneeboard pages
-FOCUS_LINE_COLOR     = (0, 50, 130, 240)    # Dark navy blue, very opaque
-FOCUS_TEXT_COLOR     = (0, 50, 130, 255)    # Solid dark navy
-ADJACENT_LINE_COLOR  = (0, 50, 130, 200)   # Standard blue, semi-transparent
-ADJACENT_TEXT_COLOR  = (0, 50, 130, 220)   # Standard blue for labels
-CONTEXT_LINE_COLOR   = (0, 50, 130, 120)    # Standard blue, mostly transparent
-CONTEXT_TEXT_COLOR   = (0, 50, 130, 160)   # Standard blue for labels
+FOCUS_LINE_COLOR = (0, 50, 130, 240)  # Dark navy blue, very opaque
+FOCUS_TEXT_COLOR = (0, 50, 130, 255)  # Solid dark navy
+ADJACENT_LINE_COLOR = (0, 50, 130, 200)  # Standard blue, semi-transparent
+ADJACENT_TEXT_COLOR = (0, 50, 130, 220)  # Standard blue for labels
+CONTEXT_LINE_COLOR = (0, 50, 130, 120)  # Standard blue, mostly transparent
+CONTEXT_TEXT_COLOR = (0, 50, 130, 160)  # Standard blue for labels
 
 # Halo alpha is computed proportionally from the line's own alpha (see draw_leg)
 
@@ -35,10 +42,13 @@ BACKGROUND_OPACITY = 0.5  # Opacity for annotation backgrounds
 
 FONTS_DIR = os.path.join(os.path.dirname(__file__), "config", "fonts")
 
-def _load_fonts() -> Tuple[ImageFont.FreeTypeFont, ImageFont.FreeTypeFont, ImageFont.FreeTypeFont]:
+
+def _load_fonts() -> Tuple[
+    ImageFont.FreeTypeFont, ImageFont.FreeTypeFont, ImageFont.FreeTypeFont
+]:
     """
     Load fonts for map annotations with fallback support.
-    
+
     Returns:
         Tuple of (large_font, medium_font, small_font) for use in annotations
     """
@@ -48,11 +58,11 @@ def _load_fonts() -> Tuple[ImageFont.FreeTypeFont, ImageFont.FreeTypeFont, Image
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",  # Linux
         "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",  # Alternative Linux
     ]
-    
+
     large_size = 24
     medium_size = 20
     small_size = 18
-    
+
     # Try to load a TrueType font
     for font_path in font_paths:
         try:
@@ -67,7 +77,7 @@ def _load_fonts() -> Tuple[ImageFont.FreeTypeFont, ImageFont.FreeTypeFont, Image
         except (OSError, IOError) as e:
             logger.warning(f"Failed to load font from {font_path}: {e}")
             continue
-    
+
     # Fall back to default font
     logger.warning("Using default font (no TrueType fonts found)")
     default_font = ImageFont.load_default()
@@ -79,6 +89,7 @@ LARGE_FONT, MEDIUM_FONT, SMALL_FONT = _load_fonts()
 
 
 TURNPOINT_RADIUS = 12
+
 
 def draw_turnpoint(
     draw: ImageDraw.ImageDraw,
@@ -116,30 +127,43 @@ def draw_turnpoint(
         # Clamp to image bounds
         def _clamp(val, lo, hi):
             return max(lo, min(val, hi))
+
         x = _clamp(x_px, 0, image_width - 1)
         y = _clamp(y_px, 0, image_height - 1)
 
-        wpt_type = point.waypointType or 'normal'
+        wpt_type = point.waypointType or "normal"
         r = TURNPOINT_RADIUS
         stroke = 3
         color = outline_color if outline_color is not None else OUTLINE_COLOR_RGBA
         halo_stroke = stroke + 4
         halo_color = (255, 255, 255, int(color[3] * 0.4)) if halo else None
 
-        if wpt_type == 'ip':
-            base = inbound_screen_angle if inbound_screen_angle is not None else -math.pi / 2
+        if wpt_type == "ip":
+            base = (
+                inbound_screen_angle
+                if inbound_screen_angle is not None
+                else -math.pi / 2
+            )
             square = []
             for k in range(4):
                 angle = base + math.pi / 4 + k * math.pi / 2
                 square.append((x + r * math.cos(angle), y + r * math.sin(angle)))
             if halo_color:
                 for j in range(len(square)):
-                    draw.line([square[j], square[(j + 1) % len(square)]], fill=halo_color, width=halo_stroke)
+                    draw.line(
+                        [square[j], square[(j + 1) % len(square)]],
+                        fill=halo_color,
+                        width=halo_stroke,
+                    )
             if not halo_only:
                 draw.polygon(square, outline=color, fill=None)
                 for j in range(len(square)):
-                    draw.line([square[j], square[(j + 1) % len(square)]], fill=color, width=stroke)
-        elif wpt_type == 'tgt':
+                    draw.line(
+                        [square[j], square[(j + 1) % len(square)]],
+                        fill=color,
+                        width=stroke,
+                    )
+        elif wpt_type == "tgt":
             h = r * math.sqrt(3)
             triangle = [
                 (x, y - r),
@@ -148,11 +172,19 @@ def draw_turnpoint(
             ]
             if halo_color:
                 for j in range(len(triangle)):
-                    draw.line([triangle[j], triangle[(j + 1) % len(triangle)]], fill=halo_color, width=halo_stroke)
+                    draw.line(
+                        [triangle[j], triangle[(j + 1) % len(triangle)]],
+                        fill=halo_color,
+                        width=halo_stroke,
+                    )
             if not halo_only:
                 draw.polygon(triangle, outline=color, fill=None)
                 for j in range(len(triangle)):
-                    draw.line([triangle[j], triangle[(j + 1) % len(triangle)]], fill=color, width=stroke)
+                    draw.line(
+                        [triangle[j], triangle[(j + 1) % len(triangle)]],
+                        fill=color,
+                        width=stroke,
+                    )
         else:
             # Normal / Push / None: circle
             if halo_color:
@@ -162,11 +194,7 @@ def draw_turnpoint(
                     width=halo_stroke,
                 )
             if not halo_only:
-                draw.ellipse(
-                    (x - r, y - r, x + r, y + r),
-                    outline=color,
-                    width=stroke
-                )
+                draw.ellipse((x - r, y - r, x + r, y + r), outline=color, width=stroke)
 
         logger.debug(f"Drew turnpoint ({wpt_type}) at ({x_px:.1f}, {y_px:.1f})")
     except Exception as e:
@@ -226,8 +254,9 @@ def draw_connected_label(
     draw.rectangle((box_left, box_top, box_right, box_bottom), fill=bg_color)
 
     # Border
-    draw.rectangle((box_left, box_top, box_right, box_bottom),
-                    outline=outline_color, width=stroke)
+    draw.rectangle(
+        (box_left, box_top, box_right, box_bottom), outline=outline_color, width=stroke
+    )
 
     # Connecting line from waypoint edge to the closest point on the box edge.
     # Target point on box: clamp waypoint_y to the box vertical range,
@@ -242,12 +271,13 @@ def draw_connected_label(
     # Start from waypoint edge (offset by radius toward the target)
     dx = target_x - waypoint_x
     dy = target_y - waypoint_y
-    dist = math.sqrt(dx ** 2 + dy ** 2)
+    dist = math.sqrt(dx**2 + dy**2)
     if dist > TURNPOINT_RADIUS:
         start_x = waypoint_x + TURNPOINT_RADIUS * dx / dist
         start_y = waypoint_y + TURNPOINT_RADIUS * dy / dist
-        draw.line([(start_x, start_y), (target_x, target_y)],
-                  fill=outline_color, width=stroke)
+        draw.line(
+            [(start_x, start_y), (target_x, target_y)], fill=outline_color, width=stroke
+        )
 
     # Draw text centered in box
     text_x = box_left + padding - bbox[0]
@@ -268,11 +298,11 @@ def draw_leg(
 ) -> None:
     """
     Draw a leg line between two waypoints on an image.
-    
+
     This function converts lat/lon coordinates to pixel coordinates using the provided
     converter function and draws a blue line with transparency, matching the frontend style.
     The line is shortened at both ends to stop at the circle edge (radius 12 pixels).
-    
+
     Args:
         draw: The ImageDraw object to draw on (must be RGBA mode for transparency)
         leg_data: The leg data containing the course and distance
@@ -282,23 +312,33 @@ def draw_leg(
     try:
         # Convert lat/lon coordinates to pixel coordinates using the provided converter function
         ox, oy = coord_to_pixel(leg_data.origin.lat, leg_data.origin.lon)
-        sx, sy = coord_to_pixel(leg_data.straigthening_point.lat, leg_data.straigthening_point.lon)
+        sx, sy = coord_to_pixel(
+            leg_data.straigthening_point.lat, leg_data.straigthening_point.lon
+        )
         dx, dy = coord_to_pixel(leg_data.destination.lat, leg_data.destination.lon)
-        center_x_px, center_y_px = coord_to_pixel(leg_data.turn_data.center.lat, leg_data.turn_data.center.lon)
+        center_x_px, center_y_px = coord_to_pixel(
+            leg_data.turn_data.center.lat, leg_data.turn_data.center.lon
+        )
         color = line_color if line_color is not None else OUTLINE_COLOR_RGBA
-        
+
         # Turnpoint circle radius in pixels
         circle_radius = 12
-        
+
         # Draw the turning arc (only if the straightening point is outside the turnpoint circle)
-        if math.sqrt((sx - ox)**2 + (sy - oy)**2) > circle_radius:
-            turn_radius_px = math.sqrt((sx - center_x_px)**2 + (sy - center_y_px)**2)
+        if math.sqrt((sx - ox) ** 2 + (sy - oy) ** 2) > circle_radius:
+            turn_radius_px = math.sqrt(
+                (sx - center_x_px) ** 2 + (sy - center_y_px) ** 2
+            )
             logger.debug(f"turn_radius_px: {turn_radius_px:.1f}")
-            
+
             # Calculate angles from turn center to intersection point and straightening point
             # Pillow's draw.arc uses: 0° = 3 o'clock (east), angles increase counterclockwise
-            angle_start = math.degrees(math.atan2(oy - center_y_px, ox - center_x_px)) % 360
-            angle_end = math.degrees(math.atan2(sy - center_y_px, sx - center_x_px)) % 360
+            angle_start = (
+                math.degrees(math.atan2(oy - center_y_px, ox - center_x_px)) % 360
+            )
+            angle_end = (
+                math.degrees(math.atan2(sy - center_y_px, sx - center_x_px)) % 360
+            )
             logger.debug(f"angle_start: {angle_start:.1f}, angle_end: {angle_end:.1f}")
 
             # Pillow draws arcs counterclockwise. If start > end, it still goes counterclockwise
@@ -307,12 +347,14 @@ def draw_leg(
             # Calculate both possible paths and choose the shorter one
             diff_forward = (angle_end - angle_start) % 360
             diff_backward = (angle_start - angle_end) % 360
-            
+
             ratio = min(1, circle_radius / turn_radius_px)
             tpcircle_angle = math.degrees(math.asin(ratio))
             logger.debug(f"Turnpoint circle angle: {tpcircle_angle:.1f}")
 
-            logger.debug(f"Diff forward: {diff_forward:.1f}, Diff backward: {diff_backward:.1f}")
+            logger.debug(
+                f"Diff forward: {diff_forward:.1f}, Diff backward: {diff_backward:.1f}"
+            )
             logger.debug(f"Turn angle: {math.degrees(leg_data.turn_angle_rad):.1f}")
 
             if leg_data.turn_angle_rad < math.pi:
@@ -332,7 +374,7 @@ def draw_leg(
                         angle_start -= tpcircle_angle
                 else:
                     angle_start += tpcircle_angle
-            
+
             logger.debug(f"Angle start before: {angle_start}")
             angle_start = round(angle_start, 1) % 360
             angle_end = round(angle_end, 1) % 360
@@ -347,10 +389,12 @@ def draw_leg(
                 # centered on the same circle as the main arc.
                 halo_expand = (halo_w - line_width) / 2
                 draw.arc(
-                    (center_x_px - turn_radius_px - halo_expand,
-                     center_y_px - turn_radius_px - halo_expand,
-                     center_x_px + turn_radius_px + halo_expand,
-                     center_y_px + turn_radius_px + halo_expand),
+                    (
+                        center_x_px - turn_radius_px - halo_expand,
+                        center_y_px - turn_radius_px - halo_expand,
+                        center_x_px + turn_radius_px + halo_expand,
+                        center_y_px + turn_radius_px + halo_expand,
+                    ),
                     start=angle_start,
                     end=angle_end,
                     fill=halo_color,
@@ -358,11 +402,16 @@ def draw_leg(
                 )
             if not halo_only:
                 draw.arc(
-                    (center_x_px - turn_radius_px, center_y_px - turn_radius_px, center_x_px + turn_radius_px, center_y_px + turn_radius_px),
+                    (
+                        center_x_px - turn_radius_px,
+                        center_y_px - turn_radius_px,
+                        center_x_px + turn_radius_px,
+                        center_y_px + turn_radius_px,
+                    ),
                     start=angle_start,
                     end=angle_end,
                     fill=color,
-                    width=line_width
+                    width=line_width,
                 )
 
         # Calculate direction vector and length
@@ -384,17 +433,33 @@ def draw_leg(
                 halo_w = line_width + 4
                 halo_alpha = int(color[3] * 0.4)
                 halo_color = (255, 255, 255, halo_alpha)
-                draw.line([(sx, sy), (shortened_dx, shortened_dy)], fill=halo_color, width=halo_w)
+                draw.line(
+                    [(sx, sy), (shortened_dx, shortened_dy)],
+                    fill=halo_color,
+                    width=halo_w,
+                )
             if not halo_only:
-                draw.line([(sx, sy), (shortened_dx, shortened_dy)], fill=color, width=line_width)
-            logger.debug(f"Drew straight leg line from ({sx:.1f}, {sy:.1f}) to ({shortened_dx:.1f}, {shortened_dy:.1f})")
+                draw.line(
+                    [(sx, sy), (shortened_dx, shortened_dy)],
+                    fill=color,
+                    width=line_width,
+                )
+            logger.debug(
+                f"Drew straight leg line from ({sx:.1f}, {sy:.1f}) to ({shortened_dx:.1f}, {shortened_dy:.1f})"
+            )
         else:
             # If the leg is too short, don't draw it
-            logger.debug(f"Leg too short to draw (length: {leg_length:.1f}px, need > {2 * circle_radius}px)")
-        
-        logger.debug(f"Drew leg overlay on image: O=({ox:.1f},{oy:.1f}) D=({dx:.1f},{dy:.1f})")
+            logger.debug(
+                f"Leg too short to draw (length: {leg_length:.1f}px, need > {2 * circle_radius}px)"
+            )
+
+        logger.debug(
+            f"Drew leg overlay on image: O=({ox:.1f},{oy:.1f}) D=({dx:.1f},{dy:.1f})"
+        )
     except Exception as e:
-        logger.warning(f"Failed to draw leg overlay on image: {e} {ox} {oy} {sx} {sy} {dx} {dy} {center_x_px} {center_y_px}")
+        logger.warning(
+            f"Failed to draw leg overlay on image: {e} {ox} {oy} {sx} {sy} {dx} {dy} {center_x_px} {center_y_px}"
+        )
 
 
 def annotate_leg(
@@ -414,19 +479,23 @@ def annotate_leg(
     # Convert lat/lon coordinates to pixel coordinates using the provided converter function
     origin_x_px, origin_y_px = coord_to_pixel(origin.lat, origin.lon)
     dest_x_px, dest_y_px = coord_to_pixel(destination.lat, destination.lon)
-    straightening_x_px, straightening_y_px = coord_to_pixel(leg_data.straigthening_point.lat, leg_data.straigthening_point.lon)
+    straightening_x_px, straightening_y_px = coord_to_pixel(
+        leg_data.straigthening_point.lat, leg_data.straigthening_point.lon
+    )
 
     dx = dest_x_px - straightening_x_px
     dy = dest_y_px - straightening_y_px
     leg_length_px = math.sqrt(dx**2 + dy**2)
-    
+
     time_to_straightening_s = leg_data.time_to_straightening_s
 
     if leg_length_px == 0:
         logger.warning("Leg has zero length, cannot annotate")
         return
 
-    logger.debug(f"Leg endpoints on image: O=({origin_x_px:.1f}, {origin_y_px:.1f}), D=({dest_x_px:.1f}, {dest_y_px:.1f})")
+    logger.debug(
+        f"Leg endpoints on image: O=({origin_x_px:.1f}, {origin_y_px:.1f}), D=({dest_x_px:.1f}, {dest_y_px:.1f})"
+    )
 
     try:
         # Draw a tick every minute
@@ -454,79 +523,105 @@ def annotate_leg(
             x = straightening_x_px + dx_per_min * sec_from_straightening / 60
             y = straightening_y_px + dy_per_min * sec_from_straightening / 60
             logger.debug(f"Minute {minute_s} at {x:.1f} {y:.1f}")
-            
+
             # Calculate perpendicular vector to the leg for tick orientation
             # Perpendicular to (dx, dy) is (-dy, dx) or (dy, -dx)
             # Normalize and scale to tick length (5 pixels)
             perp_dx = -dy / leg_length_px * 5
             perp_dy = dx / leg_length_px * 5
-            
-            draw.line([(x - perp_dx, y - perp_dy), (x + perp_dx, y + perp_dy)], fill=OUTLINE_COLOR_RGBA, width=3)
-            
-            distance_from_origin_px = math.sqrt((x - origin_x_px)**2 + (y - origin_y_px)**2)
-            distance_from_dest_px = math.sqrt((x - dest_x_px)**2 + (y - dest_y_px)**2)
+
+            draw.line(
+                [(x - perp_dx, y - perp_dy), (x + perp_dx, y + perp_dy)],
+                fill=OUTLINE_COLOR_RGBA,
+                width=3,
+            )
+
+            distance_from_origin_px = math.sqrt(
+                (x - origin_x_px) ** 2 + (y - origin_y_px) ** 2
+            )
+            distance_from_dest_px = math.sqrt(
+                (x - dest_x_px) ** 2 + (y - dest_y_px) ** 2
+            )
 
             NO_LABEL_ZONE_PX = 60
-            if distance_from_origin_px > NO_LABEL_ZONE_PX and distance_from_dest_px > NO_LABEL_ZONE_PX:
+            if (
+                distance_from_origin_px > NO_LABEL_ZONE_PX
+                and distance_from_dest_px > NO_LABEL_ZONE_PX
+            ):
                 # Draw minute number rotated perpendicular to the leg, slightly to the right of the tick
                 if hack_offset_sec is not None:
                     hack_rel = round((minute_s - hack_offset_sec) / 60)
                     label_txt = f"+{hack_rel:02d}"
                 else:
                     label_txt = f"{minute_s // 3600:02d}:{minute_s % 3600 // 60:02d}"
-                
+
                 # Calculate leg angle for text rotation (perpendicular = leg_angle + 90)
                 leg_angle_rad = math.atan2(dx, dy)
                 leg_angle_deg = math.degrees(leg_angle_rad)
                 # Text should be perpendicular to leg
                 text_rotation_angle = leg_angle_deg + 180
-                
+
                 # Position text slightly to the right of the tick (perpendicular to the leg)
                 text_offset_distance = 10
                 text_offset_x = perp_dx * text_offset_distance
                 text_offset_y = perp_dy * text_offset_distance
                 text_x = x + text_offset_x
                 text_y = y + text_offset_y
-                
+
                 # Create temporary image for rotated text
                 # Estimate text size (small font) - use a temporary image to measure
-                temp_measure = Image.new('RGBA', (100, 100), (0, 0, 0, 0))
+                temp_measure = Image.new("RGBA", (100, 100), (0, 0, 0, 0))
                 temp_measure_draw = ImageDraw.Draw(temp_measure)
-                text_bbox = temp_measure_draw.textbbox((0, 0), label_txt, font=SMALL_FONT)
+                text_bbox = temp_measure_draw.textbbox(
+                    (0, 0), label_txt, font=SMALL_FONT
+                )
                 text_width = text_bbox[2] - text_bbox[0]
                 text_height = text_bbox[3] - text_bbox[1]
-                
+
                 # Create temp image with padding for rotation
                 temp_size = int(math.sqrt(text_width**2 + text_height**2)) + 20
-                temp_image = Image.new('RGBA', (temp_size, temp_size), (0, 0, 0, 0))
-                temp_draw = ImageDraw.Draw(temp_image, mode='RGBA')
-                
+                temp_image = Image.new("RGBA", (temp_size, temp_size), (0, 0, 0, 0))
+                temp_draw = ImageDraw.Draw(temp_image, mode="RGBA")
+
                 # Draw text centered in temp image
                 # Account for bbox offsets to properly center the text
                 MARGIN_PX = 2
                 temp_text_x = (temp_size - text_width) / 2 - text_bbox[0]
                 temp_text_y = (temp_size - text_height) / 2 - text_bbox[1]
-                temp_draw.rectangle((temp_text_x - MARGIN_PX, temp_text_y, temp_text_x + text_width + MARGIN_PX, temp_text_y + text_height + MARGIN_PX*3), fill=(255, 255, 255, int(255 * BACKGROUND_OPACITY)))
-                temp_draw.text((temp_text_x, temp_text_y), label_txt, fill=TEXT_COLOR_RGBA, font=SMALL_FONT)
-                
+                temp_draw.rectangle(
+                    (
+                        temp_text_x - MARGIN_PX,
+                        temp_text_y,
+                        temp_text_x + text_width + MARGIN_PX,
+                        temp_text_y + text_height + MARGIN_PX * 3,
+                    ),
+                    fill=(255, 255, 255, int(255 * BACKGROUND_OPACITY)),
+                )
+                temp_draw.text(
+                    (temp_text_x, temp_text_y),
+                    label_txt,
+                    fill=TEXT_COLOR_RGBA,
+                    font=SMALL_FONT,
+                )
+
                 # Rotate the temporary image
                 rotated_temp = temp_image.rotate(
                     text_rotation_angle,
                     center=(temp_size / 2, temp_size / 2),
                     expand=True,
-                    resample=Image.Resampling.BILINEAR
+                    resample=Image.Resampling.BILINEAR,
                 )
-                
+
                 # Calculate paste position (center of rotated text at text_x, text_y)
                 rotated_center_x = rotated_temp.width / 2
                 rotated_center_y = rotated_temp.height / 2
                 paste_x = int(text_x - rotated_center_x)
                 paste_y = int(text_y - rotated_center_y)
-                
+
                 # Create temporary overlay and paste rotated text
-                temp_overlay = Image.new('RGBA', overlay_image.size, (0, 0, 0, 0))
+                temp_overlay = Image.new("RGBA", overlay_image.size, (0, 0, 0, 0))
                 temp_overlay.paste(rotated_temp, (paste_x, paste_y))
-                
+
                 # Alpha composite onto main overlay
                 overlay_image.paste(Image.alpha_composite(overlay_image, temp_overlay))
 
@@ -566,13 +661,14 @@ def annotate_turnpoint(
         # Clamp to image bounds
         def _clamp(val, lo, hi):
             return max(lo, min(val, hi))
+
         x = _clamp(x_px, 0, image_width - 1)
         y = _clamp(y_px, 0, image_height - 1)
 
         t_color = text_color if text_color is not None else TEXT_COLOR_RGBA
 
         # Build ETA string from flightPlanData
-        wpt_type = point.waypointType or 'normal'
+        wpt_type = point.waypointType or "normal"
         if index < len(flightPlanData.turnpointData):
             tp_data = flightPlanData.turnpointData[index]
             eta_sec = tp_data.etaSec
@@ -585,12 +681,12 @@ def annotate_turnpoint(
                 e_h = elapsed // 3600
                 e_m = (elapsed % 3600) // 60
                 eta_str = f"+{e_h:02d}:{e_m:02d}"
-            elif tp_data.hackEtaSec is not None and wpt_type != 'push':
+            elif tp_data.hackEtaSec is not None and wpt_type != "push":
                 # After a HACK point: show only the delta
                 hack_min = tp_data.hackEtaSec // 60
                 hack_sec = tp_data.hackEtaSec % 60
                 eta_str = f"+{hack_min:02d}:{hack_sec:02d}"
-            elif wpt_type == 'push' and tp_data.exitTimeSec is not None:
+            elif wpt_type == "push" and tp_data.exitTimeSec is not None:
                 # PUSH point: show "ETA - DepartureTime"
                 exit_sec = tp_data.exitTimeSec
                 exit_h = exit_sec // 3600
@@ -616,11 +712,15 @@ def annotate_turnpoint(
         text_y_left = y - text_height_large // 2  # Center vertically with turnpoint
 
         # Draw number (left, bigger font)
-        draw.text((text_x_left, text_y_left), turnpoint_number, fill=t_color, font=LARGE_FONT)
+        draw.text(
+            (text_x_left, text_y_left), turnpoint_number, fill=t_color, font=LARGE_FONT
+        )
 
         if not show_details:
             # Context tier: only show the turnpoint number, skip name/ETA/PUSH labels
-            logger.debug(f"Annotated turnpoint {index + 1} (context, number only) at ({x_px:.1f}, {y_px:.1f})")
+            logger.debug(
+                f"Annotated turnpoint {index + 1} (context, number only) at ({x_px:.1f}, {y_px:.1f})"
+            )
             return
 
         # Draw turnpoint name and ETA on the right (superposed/stacked)
@@ -643,8 +743,12 @@ def annotate_turnpoint(
         text_y_right_eta = y - total_height // 2 + text_height_name + spacing
 
         # Calculate bounding box for name and ETA only (exclude the number)
-        bbox_name_actual = draw.textbbox((text_x_right, text_y_right_name), turnpoint_name, font=MEDIUM_FONT)
-        bbox_eta_actual = draw.textbbox((text_x_right, text_y_right_eta), eta_str, font=MEDIUM_FONT)
+        bbox_name_actual = draw.textbbox(
+            (text_x_right, text_y_right_name), turnpoint_name, font=MEDIUM_FONT
+        )
+        bbox_eta_actual = draw.textbbox(
+            (text_x_right, text_y_right_eta), eta_str, font=MEDIUM_FONT
+        )
 
         # Draw transparent white foundation behind name and ETA
         pad = 4
@@ -657,23 +761,35 @@ def annotate_turnpoint(
         draw.rectangle(foundation, fill=(255, 255, 255, int(255 * BACKGROUND_OPACITY)))
 
         # Draw name and ETA (right, stacked, smaller font)
-        draw.text((text_x_right, text_y_right_name), turnpoint_name, fill=t_color, font=MEDIUM_FONT)
-        draw.text((text_x_right, text_y_right_eta), eta_str, fill=t_color, font=MEDIUM_FONT)
+        draw.text(
+            (text_x_right, text_y_right_name),
+            turnpoint_name,
+            fill=t_color,
+            font=MEDIUM_FONT,
+        )
+        draw.text(
+            (text_x_right, text_y_right_eta), eta_str, fill=t_color, font=MEDIUM_FONT
+        )
 
         # Draw PUSH/HCK label below the annotation, connected to the waypoint
-        if wpt_type == 'push':
+        if wpt_type == "push":
             push_text = "PUSH/HCK" if point.hack else "PUSH"
             # Position below the foundation box, aligned with its left edge
             label_gap = 6
             label_x = foundation[0]
             label_y = foundation[3] + label_gap
             draw_connected_label(
-                draw, x, y,
-                label_x, label_y,
+                draw,
+                x,
+                y,
+                label_x,
+                label_y,
                 push_text,
             )
 
-        logger.debug(f"Annotated turnpoint {index + 1} at ({x_px:.1f}, {y_px:.1f}) with ETA {eta_str}")
+        logger.debug(
+            f"Annotated turnpoint {index + 1} at ({x_px:.1f}, {y_px:.1f}) with ETA {eta_str}"
+        )
     except Exception as e:
         logger.warning(f"Failed to annotate turnpoint: {e}")
 
@@ -685,11 +801,11 @@ def _calculate_doghouse_position(
     image_width: int,
     image_height: int,
     offset_distance: float = 80,
-    position: str = "middle"
+    position: str = "middle",
 ) -> Tuple[Optional[float], Optional[float], Optional[float], Optional[float]]:
     """
     Calculate the position and orientation of a doghouse relative to a leg.
-    
+
     Args:
         origin: The origin turnpoint of the leg
         destination: The destination turnpoint of the leg
@@ -698,7 +814,7 @@ def _calculate_doghouse_position(
         image_height: Height of the image (for clamping)
         offset_distance: Distance in pixels to offset the doghouse from the leg (perpendicular)
         position: Position along the leg - "beginning", "middle", or "end"
-        
+
     Returns:
         Tuple of (doghouse_center_x, doghouse_center_y, reference_x, reference_y)
         Returns (None, None, None, None) if leg has zero length
@@ -706,35 +822,36 @@ def _calculate_doghouse_position(
     # Convert leg endpoints to pixel coordinates
     origin_x_px, origin_y_px = coord_to_pixel(origin.lat, origin.lon)
     dest_x_px, dest_y_px = coord_to_pixel(destination.lat, destination.lon)
-    
+
     # Clamp to image bounds
     def _clamp(val, lo, hi):
         return max(lo, min(val, hi))
+
     ox = _clamp(origin_x_px, 0, image_width - 1)
     oy = _clamp(origin_y_px, 0, image_height - 1)
     dx = _clamp(dest_x_px, 0, image_width - 1)
     dy = _clamp(dest_y_px, 0, image_height - 1)
-    
+
     # Calculate the direction vector of the leg
     leg_dx = dx - ox
     leg_dy = dy - oy
     leg_length = math.sqrt(leg_dx**2 + leg_dy**2)
-    
+
     if leg_length == 0:
         logger.warning("Leg has zero length, cannot calculate doghouse position")
         return None, None, None, None
-    
+
     # Normalize the leg direction vector
     leg_dir_x = leg_dx / leg_length
     leg_dir_y = leg_dy / leg_length
-    
+
     # Calculate perpendicular vector pointing to the left (rotate 90 degrees counterclockwise)
     perp_x = -leg_dir_y
     perp_y = leg_dir_x
-    
+
     # Hardcoded pixel offset for beginning/end positioning
     POSITION_OFFSET_PIXELS = 60
-    
+
     # Determine position along the leg
     if position == "beginning":
         # Position at absolute pixel offset from beginning
@@ -748,11 +865,11 @@ def _calculate_doghouse_position(
         # Position at midpoint
         ref_x = (ox + dx) / 2
         ref_y = (oy + dy) / 2
-    
+
     # Calculate doghouse position (offset to the left)
     doghouse_center_x = ref_x - perp_x * offset_distance
     doghouse_center_y = ref_y - perp_y * offset_distance
-    
+
     return doghouse_center_x, doghouse_center_y, ref_x, ref_y
 
 
@@ -767,11 +884,11 @@ def _draw_doghouse_roof(
     font: ImageFont.FreeTypeFont,
     text_color: Tuple[int, int, int, int],
     outline_color: Tuple[int, int, int, int],
-    line_width: int
+    line_width: int,
 ) -> None:
     """
     Draw the roof of a doghouse with the turnpoint number.
-    
+
     Args:
         draw: The ImageDraw object to draw on
         roof_left_x: Left edge X coordinate
@@ -787,7 +904,7 @@ def _draw_doghouse_roof(
     """
     roof_center_x = roof_left_x + (roof_right_x - roof_left_x) / 2
     roof_top_center_y = roof_top_y + roof_height * 0.15  # Peak of roof
-    
+
     # Draw roof (triangular shape) - outline only
     roof_points = [
         (roof_left_x, roof_bottom_y),  # Bottom left
@@ -798,9 +915,9 @@ def _draw_doghouse_roof(
     draw.line([roof_points[0], roof_points[1]], fill=outline_color, width=line_width)
     draw.line([roof_points[1], roof_points[2]], fill=outline_color, width=line_width)
     draw.line([roof_points[2], roof_points[0]], fill=outline_color, width=line_width)
-    
+
     # Draw turnpoint number in the roof
-    turnpoint_str = str(int(turnpoint_number)+1)
+    turnpoint_str = str(int(turnpoint_number) + 1)
     bbox_roof = draw.textbbox((0, 0), turnpoint_str, font=font)
     text_width_roof = bbox_roof[2] - bbox_roof[0]
     text_height_roof = bbox_roof[3] - bbox_roof[1]
@@ -826,11 +943,11 @@ def _draw_doghouse_boxes(
     font: ImageFont.FreeTypeFont,
     text_color: Tuple[int, int, int, int],
     outline_color: Tuple[int, int, int, int],
-    line_width: int
+    line_width: int,
 ) -> None:
     """
     Draw boxes below the roof with values.
-    
+
     Args:
         draw: The ImageDraw object to draw on
         box_left_x: Left edge X coordinate of boxes
@@ -848,17 +965,33 @@ def _draw_doghouse_boxes(
         box_top = box_y
         box_bottom = box_y + box_height
         box_right = box_left_x + box_width
-        
+
         # Draw box lines explicitly to ensure consistent thickness for all lines
         # Top horizontal line
-        draw.line([(box_left_x, box_top), (box_right, box_top)], fill=outline_color, width=line_width)
+        draw.line(
+            [(box_left_x, box_top), (box_right, box_top)],
+            fill=outline_color,
+            width=line_width,
+        )
         # Bottom horizontal line
-        draw.line([(box_left_x, box_bottom), (box_right, box_bottom)], fill=outline_color, width=line_width)
+        draw.line(
+            [(box_left_x, box_bottom), (box_right, box_bottom)],
+            fill=outline_color,
+            width=line_width,
+        )
         # Left vertical line
-        draw.line([(box_left_x, box_top), (box_left_x, box_bottom)], fill=outline_color, width=line_width)
+        draw.line(
+            [(box_left_x, box_top), (box_left_x, box_bottom)],
+            fill=outline_color,
+            width=line_width,
+        )
         # Right vertical line
-        draw.line([(box_right, box_top), (box_right, box_bottom)], fill=outline_color, width=line_width)
-        
+        draw.line(
+            [(box_right, box_top), (box_right, box_bottom)],
+            fill=outline_color,
+            width=line_width,
+        )
+
         # Draw value centered in the box
         # Get text bounding box to calculate dimensions
         bbox_value = draw.textbbox((0, 0), value, font=font)
@@ -887,11 +1020,11 @@ def _draw_doghouse_background(
     box_bottom_y: float,
     fill_color: Tuple[int, int, int, int],
     fill_overhang: int,
-    line_width: int
+    line_width: int,
 ) -> None:
     """
     Draw the unified background fill for a doghouse.
-    
+
     Args:
         draw: The ImageDraw object to draw on
         roof_left_x: Left edge X coordinate of roof
@@ -907,16 +1040,28 @@ def _draw_doghouse_background(
     """
     roof_center_x = roof_left_x + (roof_right_x - roof_left_x) / 2
     roof_top_center_y = roof_top_y + roof_height * 0.15  # Peak of roof
-    
+
     # Draw unified background fill as a polygon: triangular roof + rectangular body (with overhang)
     background_polygon = [
         (roof_center_x, roof_top_center_y - fill_overhang),  # Peak - moved up
-        (roof_left_x - fill_overhang, box_start_y - fill_overhang + line_width),  # Bottom left of roof
-        (roof_left_x - fill_overhang, box_bottom_y + fill_overhang),  # Bottom left of boxes
-        (roof_right_x + fill_overhang, box_bottom_y + fill_overhang),  # Bottom right of boxes
-        (roof_right_x + fill_overhang, box_start_y - fill_overhang + line_width),  # Bottom right of roof
+        (
+            roof_left_x - fill_overhang,
+            box_start_y - fill_overhang + line_width,
+        ),  # Bottom left of roof
+        (
+            roof_left_x - fill_overhang,
+            box_bottom_y + fill_overhang,
+        ),  # Bottom left of boxes
+        (
+            roof_right_x + fill_overhang,
+            box_bottom_y + fill_overhang,
+        ),  # Bottom right of boxes
+        (
+            roof_right_x + fill_overhang,
+            box_start_y - fill_overhang + line_width,
+        ),  # Bottom right of roof
     ]
-    
+
     draw.polygon(background_polygon, fill=fill_color)
 
 
@@ -926,15 +1071,15 @@ def draw_doghouse(
     destination_turnpoint_index: int,
     coord_to_pixel: Callable[[float, float], Tuple[float, float]],
     image_width: int,
-    image_height: int
+    image_height: int,
 ) -> None:
     """
     Draw a "doghouse" diagram on the left of the focus leg.
-    
+
     The doghouse consists of:
     - A roof containing the destination turnpoint number
     - Five boxes showing (from top to bottom): Heading, Distance, ETE, TAS, Alt
-    
+
     Args:
         draw: The ImageDraw object to draw on (must be RGBA mode for transparency)
         leg_data: The leg data containing heading, distance, ETE
@@ -945,69 +1090,94 @@ def draw_doghouse(
     """
     try:
         # Calculate doghouse position
-        doghouse_center_x, doghouse_center_y, ref_x, ref_y = _calculate_doghouse_position(
-            leg_data.straigthening_point, leg_data.destination, coord_to_pixel, image_width, image_height, offset_distance=80
+        doghouse_center_x, doghouse_center_y, ref_x, ref_y = (
+            _calculate_doghouse_position(
+                leg_data.straigthening_point,
+                leg_data.destination,
+                coord_to_pixel,
+                image_width,
+                image_height,
+                offset_distance=80,
+            )
         )
-        
+
         if doghouse_center_x is None:
             return
-        
+
         # Doghouse dimensions (enlarged to fit large font)
         box_width = 95
         box_height = 40
         roof_height = 35
         line_width = 3  # Consistent line width for all lines
         num_boxes = 5
-        
+
         # Total height of doghouse (roof + boxes)
         total_height = roof_height + num_boxes * box_height
-        
+
         # Starting position (top of roof)
         doghouse_top_x = doghouse_center_x - box_width / 2
         doghouse_top_y = doghouse_center_y - total_height / 2
-        
+
         # Transparent white fill at 30% opacity
         fill_color = (255, 255, 255, int(255 * BACKGROUND_OPACITY))
         fill_overhang = 4  # Pixels to extend fill beyond outline
-        
+
         # Calculate boundaries for the entire doghouse
         roof_top_y = doghouse_top_y
         roof_bottom_y = doghouse_top_y + roof_height
         roof_left_x = doghouse_top_x
         roof_right_x = doghouse_top_x + box_width
-        
+
         # Calculate bottom of last box
         box_start_y = roof_bottom_y
         box_bottom_y = box_start_y + num_boxes * box_height
-        
+
         # Draw unified background fill
         _draw_doghouse_background(
-            draw, roof_left_x, roof_right_x, roof_top_y, roof_bottom_y,
-            roof_height, box_start_y, box_bottom_y, fill_color, fill_overhang, line_width
+            draw,
+            roof_left_x,
+            roof_right_x,
+            roof_top_y,
+            roof_bottom_y,
+            roof_height,
+            box_start_y,
+            box_bottom_y,
+            fill_color,
+            fill_overhang,
+            line_width,
         )
-        
+
         # Draw roof with turnpoint number
         turnpoint_number = str(destination_turnpoint_index + 1)  # 1-based for display
         _draw_doghouse_roof(
-            draw, roof_left_x, roof_right_x, roof_top_y, roof_bottom_y,
-            roof_height, turnpoint_number, LARGE_FONT, TEXT_COLOR_RGBA, OUTLINE_COLOR_RGBA, line_width
+            draw,
+            roof_left_x,
+            roof_right_x,
+            roof_top_y,
+            roof_bottom_y,
+            roof_height,
+            turnpoint_number,
+            LARGE_FONT,
+            TEXT_COLOR_RGBA,
+            OUTLINE_COLOR_RGBA,
+            line_width,
         )
-        
+
         # Format leg data
         heading_str = f"{leg_data.heading:.0f}°M"
         distance_str = f"{leg_data.distanceNm:.1f}NM"
-        
+
         # Format ETE (Estimated Time En route) in MM:SS format
         ete_minutes = leg_data.eteSec // 60
         ete_seconds = leg_data.eteSec % 60
         ete_str = f"{ete_minutes:02d}+{ete_seconds:02d}"
-        
+
         # TAS from destination turnpoint
         tas_str = f"{leg_data.tas:.0f}K"
-        
+
         # Altitude from destination turnpoint, with climb/descent glyph
         alt_delta = leg_data.alt - leg_data.prev_alt
-        alt_glyph = '↑' if alt_delta > 0 else ('↓' if alt_delta < 0 else '')
+        alt_glyph = "↑" if alt_delta > 0 else ("↓" if alt_delta < 0 else "")
         alt_str = f"{alt_glyph}{leg_data.alt:.0f}'"
 
         # Values for each box (from top to bottom: Heading, Distance, ETE, TAS, Alt)
@@ -1018,13 +1188,21 @@ def draw_doghouse(
             tas_str,
             alt_str,
         ]
-        
+
         # Draw boxes
         _draw_doghouse_boxes(
-            draw, doghouse_top_x, box_start_y, box_width, box_height,
-            box_values, LARGE_FONT, TEXT_COLOR_RGBA, OUTLINE_COLOR_RGBA, line_width
+            draw,
+            doghouse_top_x,
+            box_start_y,
+            box_width,
+            box_height,
+            box_values,
+            LARGE_FONT,
+            TEXT_COLOR_RGBA,
+            OUTLINE_COLOR_RGBA,
+            line_width,
         )
-        
+
         logger.debug(f"Drew doghouse for leg at ({ref_x:.1f}, {ref_y:.1f})")
     except Exception as e:
         logger.warning(f"Failed to draw doghouse: {e}")
@@ -1037,15 +1215,15 @@ def draw_mini_doghouse(
     coord_to_pixel: Callable[[float, float], Tuple[float, float]],
     image_width: int,
     image_height: int,
-    position: str = "end"
+    position: str = "end",
 ) -> None:
     """
     Draw a "mini-doghouse" diagram on the left of a leg, rotated to be parallel to the leg.
-    
+
     The mini-doghouse consists of:
     - A roof containing the destination turnpoint number
     - Three boxes showing (from top to bottom): Heading, Alt, TAS
-    
+
     Args:
         draw: The ImageDraw object to draw on (must be RGBA mode for transparency)
         overlay_image: The overlay image to paste the rotated doghouse onto
@@ -1060,39 +1238,49 @@ def draw_mini_doghouse(
         # Calculate doghouse position
         origin = leg_data.origin
         destination = leg_data.destination
-        doghouse_center_x, doghouse_center_y, ref_x, ref_y = _calculate_doghouse_position(
-            leg_data.straigthening_point, leg_data.destination, coord_to_pixel, image_width, image_height, 
-            offset_distance=70, position=position
+        doghouse_center_x, doghouse_center_y, ref_x, ref_y = (
+            _calculate_doghouse_position(
+                leg_data.straigthening_point,
+                leg_data.destination,
+                coord_to_pixel,
+                image_width,
+                image_height,
+                offset_distance=70,
+                position=position,
+            )
         )
-        
+
         if doghouse_center_x is None:
             return
-        
+
         # Convert leg endpoints to pixel coordinates to calculate leg angle
-        origin_x_px, origin_y_px = coord_to_pixel(leg_data.straigthening_point.lat, leg_data.straigthening_point.lon)
+        origin_x_px, origin_y_px = coord_to_pixel(
+            leg_data.straigthening_point.lat, leg_data.straigthening_point.lon
+        )
         dest_x_px, dest_y_px = coord_to_pixel(destination.lat, destination.lon)
-        
+
         # Clamp to image bounds
         def _clamp(val, lo, hi):
             return max(lo, min(val, hi))
+
         ox = _clamp(origin_x_px, 0, image_width - 1)
         oy = _clamp(origin_y_px, 0, image_height - 1)
         dx = _clamp(dest_x_px, 0, image_width - 1)
         dy = _clamp(dest_y_px, 0, image_height - 1)
-        
+
         logger.info(f"Origin: ({ox:.1f}, {oy:.1f}), Destination: ({dx:.1f}, {dy:.1f})")
 
         # Calculate leg direction vector and angle
         leg_dx = dest_x_px - origin_x_px
         leg_dy = dest_y_px - origin_y_px
         leg_length = math.sqrt(leg_dx**2 + leg_dy**2)
-        
+
         logger.info(f"leg_dx: {leg_dx:.1f}, leg_dy: {leg_dy:.1f}")
 
         if leg_length == 0:
             logger.warning("Leg has zero length, cannot draw mini-doghouse")
             return
-        
+
         # Calculate rotation angle in degrees
         # The doghouse is drawn vertically (roof at top, boxes below)
         # To make it parallel to the leg, we need to rotate by leg_angle - 90 degrees
@@ -1100,26 +1288,26 @@ def draw_mini_doghouse(
         leg_angle_deg = math.degrees(leg_angle_rad)
         logger.info(f"Leg angle: {leg_angle_deg:.1f}°")
         rotation_angle = 180 + leg_angle_deg
-        
+
         # Mini-doghouse dimensions (smaller to fit small font)
         box_width = 70
         box_height = 28
         roof_height = 25
         line_width = 2  # Thinner lines for mini version
         num_boxes = 3
-        
+
         # Total height of mini-doghouse (roof + 3 boxes)
         total_height = roof_height + num_boxes * box_height
-        
+
         # Calculate size needed for rotated image (diagonal)
         diagonal = math.sqrt(box_width**2 + total_height**2)
         temp_size = int(diagonal) + 20  # Add padding
         temp_center = temp_size / 2
-        
+
         # Create temporary image for drawing the doghouse (ensure RGBA mode)
-        temp_image = Image.new('RGBA', (temp_size, temp_size), (0, 0, 0, 0))
-        temp_draw = ImageDraw.Draw(temp_image, mode='RGBA')
-        
+        temp_image = Image.new("RGBA", (temp_size, temp_size), (0, 0, 0, 0))
+        temp_draw = ImageDraw.Draw(temp_image, mode="RGBA")
+
         # Calculate positions relative to temp image center
         temp_box_left_x = temp_center - box_width / 2
         temp_roof_top_y = temp_center - total_height / 2
@@ -1128,75 +1316,105 @@ def draw_mini_doghouse(
         temp_roof_right_x = temp_box_left_x + box_width
         temp_box_start_y = temp_roof_bottom_y
         temp_box_bottom_y = temp_box_start_y + num_boxes * box_height
-        
+
         # Transparent white fill at 30% opacity
         fill_color = (255, 255, 255, int(255 * BACKGROUND_OPACITY))
         fill_overhang = 3  # Smaller overhang for mini version
-        
+
         # Draw unified background fill on temp image
         _draw_doghouse_background(
-            temp_draw, temp_roof_left_x, temp_roof_right_x, temp_roof_top_y, temp_roof_bottom_y,
-            roof_height, temp_box_start_y, temp_box_bottom_y, fill_color, fill_overhang, line_width
+            temp_draw,
+            temp_roof_left_x,
+            temp_roof_right_x,
+            temp_roof_top_y,
+            temp_roof_bottom_y,
+            roof_height,
+            temp_box_start_y,
+            temp_box_bottom_y,
+            fill_color,
+            fill_overhang,
+            line_width,
         )
-        
+
         # Draw roof with turnpoint number on temp image
         turnpoint_number = str(destination_turnpoint_index + 1)  # 1-based for display
         _draw_doghouse_roof(
-            temp_draw, temp_roof_left_x, temp_roof_right_x, temp_roof_top_y, temp_roof_bottom_y,
-            roof_height, turnpoint_number, MEDIUM_FONT, TEXT_COLOR_RGBA, OUTLINE_COLOR_RGBA, line_width
+            temp_draw,
+            temp_roof_left_x,
+            temp_roof_right_x,
+            temp_roof_top_y,
+            temp_roof_bottom_y,
+            roof_height,
+            turnpoint_number,
+            MEDIUM_FONT,
+            TEXT_COLOR_RGBA,
+            OUTLINE_COLOR_RGBA,
+            line_width,
         )
-        
+
         # Format heading from leg data
         heading_str = f"{leg_data.heading:.0f}°M"
-        
+
         # Format Alt and TAS from destination turnpoint, with climb/descent glyph
         tas_str = f"{leg_data.tas:.0f}K"
         alt_delta = leg_data.alt - leg_data.prev_alt
-        alt_glyph = '↑' if alt_delta > 0 else ('↓' if alt_delta < 0 else '')
+        alt_glyph = "↑" if alt_delta > 0 else ("↓" if alt_delta < 0 else "")
         alt_str = f"{alt_glyph}{leg_data.alt:.0f}'"
-        
+
         # Values for each box (from top to bottom: Heading, Alt, TAS)
         box_values = [heading_str, alt_str, tas_str]
-        
+
         # Draw boxes on temp image
         _draw_doghouse_boxes(
-            temp_draw, temp_box_left_x, temp_box_start_y, box_width, box_height,
-            box_values, MEDIUM_FONT, TEXT_COLOR_RGBA, OUTLINE_COLOR_RGBA, line_width
+            temp_draw,
+            temp_box_left_x,
+            temp_box_start_y,
+            box_width,
+            box_height,
+            box_values,
+            MEDIUM_FONT,
+            TEXT_COLOR_RGBA,
+            OUTLINE_COLOR_RGBA,
+            line_width,
         )
-        
+
         # Rotate the temporary image around its center
         # Use expand=True to ensure the rotated image isn't clipped
         # Use resample=Image.Resampling.BILINEAR for better quality
         rotated_temp = temp_image.rotate(
-           rotation_angle, 
-           center=(temp_center, temp_center), 
-           expand=True, 
-           resample=Image.Resampling.BILINEAR
+            rotation_angle,
+            center=(temp_center, temp_center),
+            expand=True,
+            resample=Image.Resampling.BILINEAR,
         )
 
         # After rotation with expand=True, the image size changes, so recalculate center
         rotated_center_x = rotated_temp.width / 2
         rotated_center_y = rotated_temp.height / 2
-        
+
         # Calculate paste position (center of rotated image should be at doghouse_center)
         paste_x = int(doghouse_center_x - rotated_center_x)
         paste_y = int(doghouse_center_y - rotated_center_y)
-        
+
         # Create a temporary overlay the same size as the main overlay
         # Paste the rotated doghouse onto it at the correct position
-        temp_overlay = Image.new('RGBA', overlay_image.size, (0, 0, 0, 0))
+        temp_overlay = Image.new("RGBA", overlay_image.size, (0, 0, 0, 0))
         temp_overlay.paste(rotated_temp, (paste_x, paste_y))
-        
+
         # Alpha composite the temporary overlay onto the main overlay
         # This properly blends the alpha channels
         overlay_image.paste(Image.alpha_composite(overlay_image, temp_overlay))
-        
-        logger.debug(f"Drew mini-doghouse for leg at ({ref_x:.1f}, {ref_y:.1f}) with rotation {rotation_angle:.1f}° (leg angle: {leg_angle_deg:.1f}°)")
+
+        logger.debug(
+            f"Drew mini-doghouse for leg at ({ref_x:.1f}, {ref_y:.1f}) with rotation {rotation_angle:.1f}° (leg angle: {leg_angle_deg:.1f}°)"
+        )
     except Exception as e:
         logger.warning(f"Failed to draw mini-doghouse: {e}")
 
 
-def _format_coord_ddm(deg: float, pos_char: str, neg_char: str, deg_width: int = 2) -> str:
+def _format_coord_ddm(
+    deg: float, pos_char: str, neg_char: str, deg_width: int = 2
+) -> str:
     """Format a coordinate in degrees/decimal minutes (e.g. N34°12.55').
 
     Args:
@@ -1219,7 +1437,7 @@ def draw_info_box(
     focus_leg_index: int,
     details: set[str],
     image_width: int,
-    image_height: int
+    image_height: int,
 ) -> tuple[int, int, int, int] | None:
     """
     Draw an info box at the bottom-left of the kneeboard page.
@@ -1272,9 +1490,13 @@ def draw_info_box(
     fill_color = (255, 255, 255, int(255 * BACKGROUND_OPACITY))
     overhang = 4
     draw.rectangle(
-        (box_left - overhang, box_top - overhang,
-         box_left + box_width + overhang, box_top + total_height + overhang),
-        fill=fill_color
+        (
+            box_left - overhang,
+            box_top - overhang,
+            box_left + box_width + overhang,
+            box_top + total_height + overhang,
+        ),
+        fill=fill_color,
     )
 
     # Draw header row (destination name)
@@ -1287,18 +1509,31 @@ def draw_info_box(
 
     # Draw separator line below header
     sep_y = box_top + header_height
-    draw.line([(box_left, sep_y), (box_left + box_width, sep_y)], fill=OUTLINE_COLOR_RGBA, width=line_width)
+    draw.line(
+        [(box_left, sep_y), (box_left + box_width, sep_y)],
+        fill=OUTLINE_COLOR_RGBA,
+        width=line_width,
+    )
 
     # Draw detail rows
     _draw_doghouse_boxes(
-        draw, box_left, sep_y, box_width, box_height,
-        rows, font, TEXT_COLOR_RGBA, OUTLINE_COLOR_RGBA, line_width
+        draw,
+        box_left,
+        sep_y,
+        box_width,
+        box_height,
+        rows,
+        font,
+        TEXT_COLOR_RGBA,
+        OUTLINE_COLOR_RGBA,
+        line_width,
     )
 
     # Draw outer border
     draw.rectangle(
         (box_left, box_top, box_left + box_width, box_top + total_height),
-        outline=OUTLINE_COLOR_RGBA, width=line_width
+        outline=OUTLINE_COLOR_RGBA,
+        width=line_width,
     )
 
     logger.debug(f"Drew info box at ({box_left}, {box_top})")
@@ -1379,7 +1614,7 @@ def draw_comment_strip(
         last = lines[max_lines - 1]
         while last and draw.textlength(last + "…", font=font) > text_max_w:
             last = last[:-1]
-        lines = lines[:max_lines - 1] + [last + "…"]
+        lines = lines[: max_lines - 1] + [last + "…"]
 
     strip_height = len(lines) * line_height_px + padding * 2
     strip_top = ib_bottom - strip_height
@@ -1387,20 +1622,265 @@ def draw_comment_strip(
     fill_color = (255, 255, 255, int(255 * BACKGROUND_OPACITY))
     overhang = 4
     draw.rectangle(
-        (strip_left - overhang, strip_top - overhang,
-         strip_left + strip_width + overhang, strip_top + strip_height + overhang),
-        fill=fill_color
+        (
+            strip_left - overhang,
+            strip_top - overhang,
+            strip_left + strip_width + overhang,
+            strip_top + strip_height + overhang,
+        ),
+        fill=fill_color,
     )
     draw.rectangle(
         (strip_left, strip_top, strip_left + strip_width, strip_top + strip_height),
-        outline=OUTLINE_COLOR_RGBA, width=1
+        outline=OUTLINE_COLOR_RGBA,
+        width=1,
     )
 
     text_start_y = strip_top + padding
     for i, line in enumerate(lines):
-        draw.text((strip_left + padding, text_start_y + i * line_height_px), line, fill=TEXT_COLOR_RGBA, font=font)
+        draw.text(
+            (strip_left + padding, text_start_y + i * line_height_px),
+            line,
+            fill=TEXT_COLOR_RGBA,
+            font=font,
+        )
 
     logger.debug(f"Drew comment strip at ({strip_left}, {strip_top}): {comment[:40]!r}")
+
+
+# ── Plan objects (pictograms, threat rings) ────────────────────────────────────
+
+import json as _json
+import io as _io
+from functools import lru_cache as _lru_cache
+
+OBJECT_RADIUS = 15  # px
+PICTO_HALO_COLOR = (255, 255, 255, 100)  # semi-transparent white halo behind symbol
+
+_CATEGORY_COLORS = {
+    "threat":    (190,   0,   0, 230),
+    "friendly":  (  0, 120,  50, 230),
+    "landmark":  ( 80,  55,  10, 230),
+    "reference": ( 60,  60, 120, 230),
+}
+
+# Load the shared catalog (lives at packages/shared/pictogramCatalog.json)
+_CATALOG_PATH = os.path.join(os.path.dirname(__file__), '..', 'shared', 'pictogramCatalog.json')
+with open(_CATALOG_PATH) as _f:
+    _CATALOG: dict = _json.load(_f)
+
+
+def _picto_color(ptype: str) -> tuple:
+    cat = _CATALOG.get(ptype, {}).get("category", "reference")
+    return _CATEGORY_COLORS.get(cat, _CATEGORY_COLORS["reference"])
+
+
+def _text_color(ptype: str) -> tuple:
+    return _picto_color(ptype)
+
+
+def _is_ranged(ptype: str) -> bool:
+    return bool(_CATALOG.get(ptype, {}).get("isRanged", False))
+
+
+@_lru_cache(maxsize=256)
+def _rasterize_pictogram(ptype: str, color_hex: str, size: int) -> Image.Image:
+    """Rasterize a pictogram SVG to a PIL RGBA image (cached by type+colour+size)."""
+    import cairosvg
+    entry = _CATALOG.get(ptype) or _CATALOG.get("generic_marker")
+    svg_content = entry["svgContent"]
+    svg = (
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" '
+        f'width="{size}" height="{size}" color="{color_hex}">'
+        f'{svg_content}</svg>'
+    )
+    png_bytes = cairosvg.svg2png(bytestring=svg.encode(), output_width=size, output_height=size)
+    return Image.open(_io.BytesIO(png_bytes)).convert("RGBA")
+
+
+def _pt_to_seg_dist2(
+    px: float, py: float, ax: float, ay: float, bx: float, by: float
+) -> float:
+    """Squared distance from point (px,py) to segment (ax,ay)-(bx,by)."""
+    dx, dy = bx - ax, by - ay
+    if dx == 0 and dy == 0:
+        return (px - ax) ** 2 + (py - ay) ** 2
+    t = max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)))
+    cx, cy = ax + t * dx, ay + t * dy
+    return (px - cx) ** 2 + (py - cy) ** 2
+
+
+def draw_pictogram(
+    overlay: Image.Image,
+    x: float,
+    y: float,
+    ptype: str,
+    color: tuple,
+    size: int = OBJECT_RADIUS * 2,
+) -> None:
+    """Composite a rasterized SVG pictogram centred at (x, y) onto an RGBA overlay."""
+    try:
+        r, g, b = color[0], color[1], color[2]
+        color_hex = f"#{r:02x}{g:02x}{b:02x}"
+        icon = _rasterize_pictogram(ptype, color_hex, size)
+        # Halo disc drawn directly on the overlay
+        hr = size // 2 + 3
+        hd = ImageDraw.Draw(overlay)
+        hd.ellipse((x - hr, y - hr, x + hr, y + hr), fill=PICTO_HALO_COLOR)
+        # Icon composited on top of the halo
+        ox = int(x - size / 2)
+        oy = int(y - size / 2)
+        overlay.alpha_composite(icon, dest=(ox, oy))
+    except Exception as e:
+        logger.debug(f"draw_pictogram({ptype}): {e}")
+
+
+def draw_plan_objects(
+    overlay: Image.Image,
+    flight_plan: FlightPlan,
+    coord_to_pixel: Callable[[float, float], Tuple[float, float]],
+    route_segments: Optional[List[Tuple[float, float, float, float]]] = None,
+) -> None:
+    """Draw pictograms and labels for all in-plan objects (refs + markers).
+
+    overlay: RGBA Image to composite pictograms and labels onto.
+    route_segments: list of (x0,y0,x1,y1) pixel segments for the focus leg,
+    used to pick label positions that avoid the route line.
+    """
+    from flight_plan import PlanLibraryRef, LibraryObject, PlanMarker
+
+    snapshot_map: dict = {}
+    if flight_plan.librarySnapshot:
+        snapshot_map = {e.id: e for e in flight_plan.librarySnapshot}
+
+    draw = ImageDraw.Draw(overlay)
+    w, h = overlay.width, overlay.height
+    gap = OBJECT_RADIUS + 4  # px gap between symbol edge and label box
+
+    def _best_label_offset(
+        px: float, py: float, tw: float, th: float
+    ) -> Tuple[float, float]:
+        """Return (tx, ty) for the label box origin that maximises distance to route segments."""
+        pad = 3
+        # Four candidates: right, left, above, below
+        candidates = [
+            (px + gap, py - th // 2),  # right
+            (px - gap - tw - pad * 2, py - th // 2),  # left
+            (px - tw // 2, py - gap - th - pad * 2),  # above
+            (px - tw // 2, py + gap),  # below
+        ]
+        if not route_segments:
+            return candidates[0]  # default: right
+
+        def _min_dist2(tx: float, ty: float) -> float:
+            # Score = min squared distance from any corner of the label box to any route segment
+            corners = [
+                (tx - pad, ty - pad),
+                (tx + tw + pad, ty - pad),
+                (tx + tw + pad, ty + th + pad),
+                (tx - pad, ty + th + pad),
+            ]
+            best = float("inf")
+            for cx2, cy2 in corners:
+                for x0, y0, x1, y1 in route_segments:
+                    d2 = _pt_to_seg_dist2(cx2, cy2, x0, y0, x1, y1)
+                    if d2 < best:
+                        best = d2
+            return best
+
+        return max(candidates, key=lambda pos: _min_dist2(pos[0], pos[1]))
+
+    def _draw_object(
+        lat: float, lon: float, ptype: str, label: str, comment: str
+    ) -> None:
+        try:
+            px, py = coord_to_pixel(lat, lon)
+            if px < -OBJECT_RADIUS * 3 or px > w + OBJECT_RADIUS * 3:
+                return
+            if py < -OBJECT_RADIUS * 3 or py > h + OBJECT_RADIUS * 3:
+                return
+            draw_pictogram(overlay, px, py, ptype, color=_picto_color(ptype))
+            text_parts = [p for p in [label, comment] if p]
+            if text_parts:
+                text = " · ".join(text_parts)
+                tcolor = _text_color(ptype)
+                bbox = draw.textbbox((0, 0), text, font=SMALL_FONT)
+                tw = bbox[2] - bbox[0]
+                th = bbox[3] - bbox[1]
+                pad = 3
+                tx, ty = _best_label_offset(px, py, tw, th)
+                bg = (255, 255, 255, 155)
+                draw.rectangle(
+                    (tx - pad, ty - pad, tx + tw + pad, ty + th + pad), fill=bg
+                )
+                draw.text((tx, ty), text, fill=tcolor, font=SMALL_FONT)
+        except Exception as e:
+            logger.debug(f"draw_plan_objects: {e}")
+
+    # Library refs
+    for ref in flight_plan.libraryRefs or []:
+        entry = snapshot_map.get(ref.uuid)
+        if not entry:
+            continue
+        effective_comment = ref.comment or entry.defaultComment or ""
+        _draw_object(
+            entry.lat, entry.lon, entry.type, entry.name or "", effective_comment
+        )
+
+    # Plan-local markers
+    for marker in flight_plan.markers or []:
+        _draw_object(
+            marker.lat, marker.lon, marker.type, marker.name or "", marker.comment or ""
+        )
+
+
+def draw_threat_rings(
+    draw: ImageDraw.ImageDraw,
+    image: Image.Image,
+    flight_plan: FlightPlan,
+    coord_to_pixel: Callable[[float, float], Tuple[float, float]],
+    n_points: int = 64,
+) -> None:
+    """Draw threat range rings for ranged in-plan objects."""
+    NM_TO_METERS = 1852
+
+    snapshot_map: dict = {}
+    if flight_plan.librarySnapshot:
+        snapshot_map = {e.id: e for e in flight_plan.librarySnapshot}
+
+    def _draw_ring(
+        center_lat: float, center_lon: float, range_nm: float, color: tuple
+    ) -> None:
+        radius_m = range_nm * NM_TO_METERS
+        ring_px = []
+        for i in range(n_points + 1):
+            angle = 2 * math.pi * i / n_points
+            dlat = (radius_m / 111320.0) * math.cos(angle)
+            cos_lat = math.cos(math.radians(center_lat))
+            dlon = (
+                (radius_m / (111320.0 * cos_lat)) * math.sin(angle)
+                if cos_lat > 1e-6
+                else 0.0
+            )
+            try:
+                px, py = coord_to_pixel(center_lat + dlat, center_lon + dlon)
+                ring_px.append((px, py))
+            except Exception:
+                pass
+        if len(ring_px) >= 2:
+            ring_color = (*color[:3], 160)
+            draw.line(ring_px, fill=ring_color, width=2)
+
+    for ref in flight_plan.libraryRefs or []:
+        entry = snapshot_map.get(ref.uuid)
+        if not entry or not _is_ranged(entry.type) or not entry.range:
+            continue
+        _draw_ring(entry.lat, entry.lon, entry.range, _picto_color(entry.type))
+
+    for marker in flight_plan.markers or []:
+        if not _is_ranged(marker.type) or not marker.range:
+            continue
+        _draw_ring(marker.lat, marker.lon, marker.range, _picto_color(marker.type))
 
 
 def annotate_map(
@@ -1408,14 +1888,14 @@ def annotate_map(
     flight_plan: FlightPlan,
     flight_plan_data: FlightPlanData,
     focus_leg_index: int,
-    coord_to_pixel: Callable[[float, float], Tuple[float, float]]
+    coord_to_pixel: Callable[[float, float], Tuple[float, float]],
 ) -> None:
     """
     Annotate a map image with leg lines and turnpoints.
-    
+
     This function draws all legs and turnpoints from the flight plan on the image.
     Uses an overlay layer with transparency to support RGBA drawing on any image mode.
-    
+
     Args:
         image: The PIL Image to annotate (will be modified in place)
         flight_plan: The flight plan
@@ -1428,11 +1908,11 @@ def annotate_map(
         if len(flight_plan.points) < 2:
             logger.warning("Flight plan has no points to draw")
             return
-        
+
         # Create an overlay layer in RGBA mode for drawing with transparency
-        overlay = Image.new('RGBA', image.size, (0, 0, 0, 0))
+        overlay = Image.new("RGBA", image.size, (0, 0, 0, 0))
         overlay_draw = ImageDraw.Draw(overlay)
-        
+
         # Compute hack offset for each leg (the origin turnpoint's hackEtaSec tells us if we're in hack mode)
         def _hack_offset_for_leg(leg_index: int) -> int | None:
             """Return the hack offset (absolute seconds) for tick labels on this leg, or None."""
@@ -1451,29 +1931,29 @@ def annotate_map(
         def _leg_tier(i: int) -> str:
             """Classify a leg index as 'focus', 'adjacent', or 'context'."""
             if i == focus_leg_index:
-                return 'focus'
+                return "focus"
             if abs(i - focus_leg_index) == 1:
-                return 'adjacent'
-            return 'context'
+                return "adjacent"
+            return "context"
 
         def _tp_tier(i: int) -> str:
             """Classify a turnpoint index using the highest tier of its adjacent legs."""
             if i == focus_leg_index or i == focus_leg_index + 1:
-                return 'focus'
+                return "focus"
             if i == focus_leg_index - 1 or i == focus_leg_index + 2:
-                return 'adjacent'
-            return 'context'
+                return "adjacent"
+            return "context"
 
         TIER_LINE_COLOR = {
-            'focus':    FOCUS_LINE_COLOR,
-            'adjacent': ADJACENT_LINE_COLOR,
-            'context':  CONTEXT_LINE_COLOR,
+            "focus": FOCUS_LINE_COLOR,
+            "adjacent": ADJACENT_LINE_COLOR,
+            "context": CONTEXT_LINE_COLOR,
         }
-        TIER_LINE_WIDTH = {'focus': 3, 'adjacent': 2, 'context': 1}
+        TIER_LINE_WIDTH = {"focus": 3, "adjacent": 2, "context": 1}
         TIER_TEXT_COLOR = {
-            'focus':    FOCUS_TEXT_COLOR,
-            'adjacent': ADJACENT_TEXT_COLOR,
-            'context':  CONTEXT_TEXT_COLOR,
+            "focus": FOCUS_TEXT_COLOR,
+            "adjacent": ADJACENT_TEXT_COLOR,
+            "context": CONTEXT_TEXT_COLOR,
         }
 
         # Compute inbound screen angle for each turnpoint (used to orient IP squares)
@@ -1481,7 +1961,9 @@ def annotate_map(
             if i == 0 or i - 1 >= len(flight_plan_data.legData):
                 return None
             leg = flight_plan_data.legData[i - 1]
-            sx, sy = coord_to_pixel(leg.straigthening_point.lat, leg.straigthening_point.lon)
+            sx, sy = coord_to_pixel(
+                leg.straigthening_point.lat, leg.straigthening_point.lon
+            )
             dx, dy = coord_to_pixel(leg.destination.lat, leg.destination.lon)
             ddx, ddy = dx - sx, dy - sy
             if ddx == 0 and ddy == 0:
@@ -1489,7 +1971,29 @@ def annotate_map(
             return math.atan2(ddy, ddx)
 
         # What do we draw? (context, adjacent, focus)
-        tiers_to_draw = {'adjacent', 'focus'}
+        tiers_to_draw = {"adjacent", "focus"}
+
+        # ── Pass 0: plan objects — pictograms then rings (lowest z-order) ─────
+        # Build focus-leg segments in pixel space for route-aware label placement.
+        _route_segs: List[Tuple[float, float, float, float]] = []
+        if focus_leg_index < len(flight_plan_data.legData):
+            leg = flight_plan_data.legData[focus_leg_index]
+            pts_geo = [leg.origin, leg.straigthening_point, leg.destination]
+            _route_px = []
+            for pt in pts_geo:
+                try:
+                    _route_px.append(coord_to_pixel(pt.lat, pt.lon))
+                except Exception:
+                    pass
+            for i in range(len(_route_px) - 1):
+                x0, y0 = _route_px[i]
+                x1, y1 = _route_px[i + 1]
+                _route_segs.append((x0, y0, x1, y1))
+
+        draw_plan_objects(
+            overlay, flight_plan, coord_to_pixel, route_segments=_route_segs
+        )
+        draw_threat_rings(overlay_draw, image, flight_plan, coord_to_pixel)
 
         # ── Pass 1: all halos (legs then turnpoints, back-to-front) ──────────
         # Drawn first so no halo ever overwrites a colored line or symbol.
@@ -1498,21 +2002,28 @@ def annotate_map(
                 if _leg_tier(i) != tier:
                     continue
                 draw_leg(
-                    overlay_draw, flight_plan_data.legData[i], coord_to_pixel,
+                    overlay_draw,
+                    flight_plan_data.legData[i],
+                    coord_to_pixel,
                     line_color=TIER_LINE_COLOR[tier],
                     line_width=TIER_LINE_WIDTH[tier],
-                    halo=True, halo_only=True,
+                    halo=True,
+                    halo_only=True,
                 )
         for tier in tiers_to_draw:
             for i, point in enumerate(flight_plan.points):
                 if _tp_tier(i) != tier:
                     continue
                 draw_turnpoint(
-                    overlay_draw, point, coord_to_pixel,
-                    image.width, image.height,
+                    overlay_draw,
+                    point,
+                    coord_to_pixel,
+                    image.width,
+                    image.height,
                     _inbound_screen_angle(i),
                     outline_color=TIER_LINE_COLOR[tier],
-                    halo=True, halo_only=True,
+                    halo=True,
+                    halo_only=True,
                 )
 
         # ── Pass 2: all content (legs then turnpoints, back-to-front) ────────
@@ -1522,15 +2033,20 @@ def annotate_map(
                     continue
                 logger.info(f"Drawing leg {i} (tier={tier})")
                 draw_leg(
-                    overlay_draw, flight_plan_data.legData[i], coord_to_pixel,
+                    overlay_draw,
+                    flight_plan_data.legData[i],
+                    coord_to_pixel,
                     line_color=TIER_LINE_COLOR[tier],
                     line_width=TIER_LINE_WIDTH[tier],
                 )
-                if tier == 'focus':
+                if tier == "focus":
                     annotate_leg(
-                        overlay_draw, overlay,
-                        _time_at_origin(i), flight_plan_data.legData[i],
-                        coord_to_pixel, _hack_offset_for_leg(i),
+                        overlay_draw,
+                        overlay,
+                        _time_at_origin(i),
+                        flight_plan_data.legData[i],
+                        coord_to_pixel,
+                        _hack_offset_for_leg(i),
                     )
 
         for tier in tiers_to_draw:
@@ -1539,16 +2055,24 @@ def annotate_map(
                     continue
                 logger.debug(f"Drawing turnpoint {i} (tier={tier})")
                 draw_turnpoint(
-                    overlay_draw, point, coord_to_pixel,
-                    image.width, image.height,
+                    overlay_draw,
+                    point,
+                    coord_to_pixel,
+                    image.width,
+                    image.height,
                     _inbound_screen_angle(i),
                     outline_color=TIER_LINE_COLOR[tier],
                 )
                 annotate_turnpoint(
-                    overlay_draw, point, i, flight_plan_data,
-                    coord_to_pixel, image.width, image.height,
+                    overlay_draw,
+                    point,
+                    i,
+                    flight_plan_data,
+                    coord_to_pixel,
+                    image.width,
+                    image.height,
                     text_color=TIER_TEXT_COLOR[tier],
-                    show_details=(tier != 'context'),
+                    show_details=(tier != "context"),
                 )
 
         # Add the doghouses for this leg
@@ -1557,7 +2081,7 @@ def annotate_map(
         # logger.info(f"Straigthening point: {leg_data.straigthening_point.lat}, {leg_data.straigthening_point.lon}")
         # cx, cy = coord_to_pixel(leg_data.turn_data.center.lat, leg_data.turn_data.center.lon)
         # x, y = coord_to_pixel(leg_data.straigthening_point.lat, leg_data.straigthening_point.lon)
-        
+
         # Temp: Draw turn circle
         # radius_outer = 4
         # overlay_draw.ellipse(
@@ -1581,27 +2105,34 @@ def annotate_map(
                 focus_leg_index,  # This leg's index
                 coord_to_pixel,
                 image.width,
-                image.height
+                image.height,
             )
         if focus_leg_index > 0:
             draw_mini_doghouse(
                 overlay,
                 flight_plan_data.legData[focus_leg_index - 1],
-                focus_leg_index - 1,  # Destination turnpoint index (where it connects to focus leg)
+                focus_leg_index
+                - 1,  # Destination turnpoint index (where it connects to focus leg)
                 coord_to_pixel,
-                image.width, image.height, position="end")
+                image.width,
+                image.height,
+                position="end",
+            )
         if focus_leg_index < len(flight_plan_data.legData) - 1:
             draw_mini_doghouse(
                 overlay,
                 flight_plan_data.legData[focus_leg_index + 1],
                 focus_leg_index + 1,  # Destination turnpoint index (0-based)
                 coord_to_pixel,
-                image.width, image.height, position="beginning")
+                image.width,
+                image.height,
+                position="beginning",
+            )
 
         # Composite the overlay onto the image
-        if image.mode != 'RGBA':
+        if image.mode != "RGBA":
             # Convert to RGBA for compositing
-            image_rgba = image.convert('RGBA')
+            image_rgba = image.convert("RGBA")
             # Composite the overlay onto the image
             image_composited = Image.alpha_composite(image_rgba, overlay)
             # Convert back to original mode
@@ -1613,8 +2144,10 @@ def annotate_map(
             image_composited = Image.alpha_composite(image, overlay)
             # Update the original image by copying pixel data
             image.paste(image_composited, (0, 0))
-        
-        logger.debug(f"Annotated map with {len(flight_plan.points)} turnpoints and {max(0, len(flight_plan.points) - 1)} legs")
+
+        logger.debug(
+            f"Annotated map with {len(flight_plan.points)} turnpoints and {max(0, len(flight_plan.points) - 1)} legs"
+        )
     except Exception as e:
         logger.warning(f"Failed to annotate map image: {e}")
 
@@ -1645,7 +2178,7 @@ def annotate_overview_map(
         if len(flight_plan.points) < 2:
             return
 
-        overlay = Image.new('RGBA', image.size, (0, 0, 0, 0))
+        overlay = Image.new("RGBA", image.size, (0, 0, 0, 0))
         overlay_draw = ImageDraw.Draw(overlay)
 
         # Departure time used as the base for elapsed-time labels.
@@ -1653,7 +2186,11 @@ def annotate_overview_map(
 
         def _time_at_origin(leg_index: int) -> int:
             origin_tp = flight_plan_data.turnpointData[leg_index]
-            return origin_tp.exitTimeSec if origin_tp.exitTimeSec is not None else origin_tp.etaSec
+            return (
+                origin_tp.exitTimeSec
+                if origin_tp.exitTimeSec is not None
+                else origin_tp.etaSec
+            )
 
         def _hack_offset_for_leg(leg_index: int) -> int | None:
             origin_tp = flight_plan_data.turnpointData[leg_index]
@@ -1670,7 +2207,9 @@ def annotate_overview_map(
             if i == 0 or i - 1 >= len(flight_plan_data.legData):
                 return None
             leg = flight_plan_data.legData[i - 1]
-            sx, sy = coord_to_pixel(leg.straigthening_point.lat, leg.straigthening_point.lon)
+            sx, sy = coord_to_pixel(
+                leg.straigthening_point.lat, leg.straigthening_point.lon
+            )
             dx, dy = coord_to_pixel(leg.destination.lat, leg.destination.lon)
             ddx, ddy = dx - sx, dy - sy
             if ddx == 0 and ddy == 0:
@@ -1679,19 +2218,27 @@ def annotate_overview_map(
 
         for i, point in enumerate(flight_plan.points):
             draw_turnpoint(
-                overlay_draw, point, coord_to_pixel,
-                image.width, image.height,
+                overlay_draw,
+                point,
+                coord_to_pixel,
+                image.width,
+                image.height,
                 _inbound_screen_angle(i),
             )
             annotate_turnpoint(
-                overlay_draw, point, i, flight_plan_data,
-                coord_to_pixel, image.width, image.height,
+                overlay_draw,
+                point,
+                i,
+                flight_plan_data,
+                coord_to_pixel,
+                image.width,
+                image.height,
                 elapsed_from_sec=departure_sec,
             )
 
         # Composite overlay onto the image.
-        if image.mode != 'RGBA':
-            image_rgba = image.convert('RGBA')
+        if image.mode != "RGBA":
+            image_rgba = image.convert("RGBA")
             result = Image.alpha_composite(image_rgba, overlay).convert(image.mode)
             image.paste(result, (0, 0))
         else:
@@ -1724,8 +2271,8 @@ def _draw_north_arrow(
     # North direction vector in screen (pixel) space.
     # When the image is rotated CCW by θ, north (originally up=(0,-1)) moves to
     # the left for θ=90°, giving direction (-sin(θ), -cos(θ)).
-    ndx = -math.sin(angle_rad)   # positive = rightward on screen
-    ndy = -math.cos(angle_rad)   # negative = upward on screen
+    ndx = -math.sin(angle_rad)  # positive = rightward on screen
+    ndy = -math.cos(angle_rad)  # negative = upward on screen
 
     cx, cy = center
 
@@ -1734,7 +2281,9 @@ def _draw_north_arrow(
     bg_color = (255, 255, 255, 180)
     draw.ellipse(
         (cx - bg_r, cy - bg_r, cx + bg_r, cy + bg_r),
-        fill=bg_color, outline=OUTLINE_COLOR_RGBA, width=2,
+        fill=bg_color,
+        outline=OUTLINE_COLOR_RGBA,
+        width=2,
     )
 
     # Arrow shaft from base to just before the arrowhead.
@@ -1743,7 +2292,9 @@ def _draw_north_arrow(
     shaft_end_y = cy + ndy * (length // 2 - head_len)
     base_x = cx - ndx * (length // 2 - head_len)
     base_y = cy - ndy * (length // 2 - head_len)
-    draw.line([(base_x, base_y), (shaft_end_x, shaft_end_y)], fill=OUTLINE_COLOR_RGBA, width=3)
+    draw.line(
+        [(base_x, base_y), (shaft_end_x, shaft_end_y)], fill=OUTLINE_COLOR_RGBA, width=3
+    )
 
     # Filled arrowhead triangle at the north tip.
     tip_x = cx + ndx * (length // 2)
@@ -1767,7 +2318,9 @@ def _draw_north_arrow(
     h = bbox[3] - bbox[1]
     draw.text(
         (label_x - w / 2 - bbox[0], label_y - h / 2 - bbox[1]),
-        "N", fill=OUTLINE_COLOR_RGBA, font=MEDIUM_FONT,
+        "N",
+        fill=OUTLINE_COLOR_RGBA,
+        font=MEDIUM_FONT,
     )
 
 
@@ -1816,7 +2369,9 @@ def _draw_route_summary(
     fill_color = (255, 255, 255, int(255 * BACKGROUND_OPACITY))
     draw.rectangle(
         (box_left, box_top, box_right, box_bottom),
-        fill=fill_color, outline=OUTLINE_COLOR_RGBA, width=LINE_W,
+        fill=fill_color,
+        outline=OUTLINE_COLOR_RGBA,
+        width=LINE_W,
     )
 
     # NM row
@@ -1826,9 +2381,12 @@ def _draw_route_summary(
 
     # Separator line
     sep_y = box_top + PADDING + LINE_H
-    draw.line([(box_left, sep_y), (box_right, sep_y)], fill=OUTLINE_COLOR_RGBA, width=LINE_W)
+    draw.line(
+        [(box_left, sep_y), (box_right, sep_y)], fill=OUTLINE_COLOR_RGBA, width=LINE_W
+    )
 
     # Time row
     time_x = box_left + (box_w - (time_bbox[2] - time_bbox[0])) / 2 - time_bbox[0]
     time_y = sep_y + PADDING - time_bbox[1]
     draw.text((time_x, time_y), time_str, fill=TEXT_COLOR_RGBA, font=font)
+

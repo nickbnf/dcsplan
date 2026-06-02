@@ -141,6 +141,57 @@ export type AttackPlanningResults = {
   pupToTgtTime: number;         // seconds (straight-line at diveTas, no wind)
 }
 
+// Pictogram type identifier from the closed catalog
+export type PictogramType =
+  | 'sam_site'
+  | 'aaa'
+  | 'manpads'
+  | 'radar'
+  | 'troops'
+  | 'flot'
+  | 'radio_tower'
+  | 'bridge'
+  | 'city'
+  | 'village'
+  | 'church'
+  | 'factory'
+  | 'farm'
+  | 'farp'
+  | 'friendly_forces'
+  | 'checkpoint'
+  | 'generic_marker'
+  | 'marker_1'
+  | 'marker_2'
+  | 'marker_3';
+
+// A library entry: a reusable per-theatre map object
+export type LibraryObject = {
+  id: string;               // stable UUID, immutable, generated on creation
+  type: PictogramType;
+  lat: number;
+  lon: number;
+  name?: string;
+  defaultComment?: string;
+  range?: number;           // NM — only present when type is ranged
+}
+
+// A flight-plan reference to a library object with optional per-plan comment override
+export type PlanLibraryRef = {
+  uuid: string;     // references LibraryObject.id
+  comment?: string; // per-plan override
+}
+
+// A plan-local marker (not backed by the library)
+export type PlanMarker = {
+  id: string;       // stable UUID, generated on creation
+  type: PictogramType;
+  lat: number;
+  lon: number;
+  name?: string;
+  range?: number;   // NM — only present when type is ranged
+  comment?: string;
+}
+
 // Main type containing the full flight plan
 export type FlightPlan = {
   theatre: string;
@@ -151,21 +202,30 @@ export type FlightPlan = {
   initFob: number;
   name: string; // Name of the flight plan
   aircraft: Aircraft;
+  libraryRefs?: PlanLibraryRef[];
+  markers?: PlanMarker[];
   attackPlanning?: {        // optional; params are user-supplied, results are computed on Calculate
     params: AttackPlanningParams;
     results?: AttackPlanningResults;
   };
 }
 
-export const FLIGHT_PLAN_VERSION = "1.3";
+export const FLIGHT_PLAN_VERSION = "1.4";
 export const PERFORMANCE_FILE_VERSION = "1.0";
+export const LIBRARY_FILE_VERSION = "1.0";
 
 export interface VersionedFlightPlan {
   version: string;
   flightPlan: FlightPlan;
+  librarySnapshot?: LibraryObject[]; // embedded on export for standalone files
 }
 
 export interface PerformanceFileV1 {
   version: string;
   aircraft: Aircraft;
+}
+
+export interface LibraryFile {
+  version: string;
+  library: LibraryObject[];
 }

@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
-import type { FlightPlan } from '../../types/flightPlan';
+import type { FlightPlan, LibraryObject } from '../../types/flightPlan';
 import { slugifyPlanName } from '../../utils/flightPlanUtils';
 import { getApiUrl } from '../../config/api';
 import { trackEvent } from '../../utils/plausible';
 
 interface GenerateDialogProps {
   flightPlan?: FlightPlan;
+  library?: LibraryObject[];
 }
 
 interface TaskStatus {
@@ -17,7 +18,7 @@ interface TaskStatus {
   error?: string;
 }
 
-export const GenerateDialog: React.FC<GenerateDialogProps> = ({ flightPlan }) => {
+export const GenerateDialog: React.FC<GenerateDialogProps> = ({ flightPlan, library }) => {
   const [output, setOutput] = useState<'zip' | number>('zip');
   const [includeFuelCalculations, setIncludeFuelCalculations] = useState(true);
   const [includeCoordinates, setIncludeCoordinates] = useState(true);
@@ -193,12 +194,21 @@ export const GenerateDialog: React.FC<GenerateDialogProps> = ({ flightPlan }) =>
         params.append('details', detailsList.join(','));
       }
 
+      // Embed library snapshot so the backend can resolve libraryRefs
+      const referencedIds = new Set((flightPlan?.libraryRefs ?? []).map(r => r.uuid));
+      const snapshotFromLibrary = (library ?? []).filter((e: LibraryObject) => referencedIds.has(e.id));
+      const snapshot = snapshotFromLibrary;
+      const planToSend: FlightPlan & { librarySnapshot?: LibraryObject[] } = {
+        ...flightPlan,
+        ...(snapshot.length > 0 && { librarySnapshot: snapshot }),
+      };
+
       const response = await fetch(`${getApiUrl('kneeboard')}?${params.toString()}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(flightPlan),
+        body: JSON.stringify(planToSend),
       });
 
       if (!response.ok) {

@@ -1,6 +1,7 @@
 {
   "permissions": {
     "allow": [
+      "Bash(source venv/bin/activate && python -m pytest *)",
       "Bash(python -m pytest test_straigthening_point.py -v)",
       "Bash(python -m pytest test_flight_plan_data.py -v)",
       "Bash(npx tsc:*)",
@@ -57,7 +58,13 @@
       "Bash(npm list *)",
       "Bash(mkdir -p /Users/nicolasbonnefon/Sandbox/dcsplan/openspec/changes/2026-05-10-aircraft-performance/specs/aircraft-performance)",
       "Bash(mkdir -p /Users/nicolasbonnefon/Sandbox/dcsplan/openspec/changes/2026-05-10-aircraft-performance/specs/performance-regime)",
-      "Bash(openspec schemas *)"
+      "Bash(openspec schemas *)",
+      "Bash(python -m pytest -x -q)",
+      "mcp__plugin_playwright_playwright__browser_wait_for",
+      "Bash(curl -s http://localhost:8000/api/theatres/syria.json)",
+      "Bash(curl -s http://localhost:8000/theatres/syria.json)",
+      "Bash(curl -s http://localhost:8001/api/theatres/syria.json)",
+      "Bash(echo \"EXIT=$?\")"
     ]
   }
 }

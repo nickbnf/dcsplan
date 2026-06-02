@@ -45,7 +45,7 @@ describe('usePersistedFlightPlan migration', () => {
     expect(result.current[0].name).toBe('Legacy Plan');
     expect(result.current[0].declination).toBe(12.5);
     expect(console.info).toHaveBeenCalledWith(
-      expect.stringContaining('Migrating flight plan from version legacy to 1.3')
+      expect.stringContaining('Migrating flight plan from version legacy to 1.4')
     );
   });
 
@@ -70,7 +70,7 @@ describe('usePersistedFlightPlan migration', () => {
     expect(result.current[0].name).toBe('V1.0 Plan');
     expect(result.current[0].declination).toBe(8.2);
     expect(console.info).toHaveBeenCalledWith(
-      expect.stringContaining('Migrating flight plan from version 1.0 to 1.3')
+      expect.stringContaining('Migrating flight plan from version 1.0 to 1.4')
     );
   });
 
@@ -96,7 +96,7 @@ describe('usePersistedFlightPlan migration', () => {
     expect(result.current[0].name).toBe('V1.1 Plan');
     expect(result.current[0].aircraft.regimes).toEqual([]);
     expect(console.info).toHaveBeenCalledWith(
-      expect.stringContaining('Migrating flight plan from version 1.1 to 1.3')
+      expect.stringContaining('Migrating flight plan from version 1.1 to 1.4')
     );
   });
 

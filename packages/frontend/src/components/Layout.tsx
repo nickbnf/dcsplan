@@ -5,6 +5,7 @@ const tabs = [
   { label: 'NAV', to: '/' },
   { label: 'PERF', to: '/performance' },
   { label: 'ATTACK', to: '/attack' },
+  { label: 'LIBRARY', to: '/library' },
 ];
 
 const Layout: React.FC = () => {

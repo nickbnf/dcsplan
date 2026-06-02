@@ -5,8 +5,10 @@ import Layout from './Layout';
 import PlannerApp from './PlannerApp';
 import PerformancePage from './PerformancePage';
 import AttackPlanningPage from './AttackPlanningPage';
+import { TheatreLibraryPage } from './TheatreLibraryPage';
 import { About } from './About';
 import { FlightPlanProvider } from '../contexts/FlightPlanContext';
+import { LibraryProvider } from '../contexts/LibraryContext';
 
 const App: React.FC = () => {
   return (
@@ -19,10 +21,11 @@ const App: React.FC = () => {
         />
       </Helmet>
       <Routes>
-        <Route element={<FlightPlanProvider><Layout /></FlightPlanProvider>}>
+        <Route element={<FlightPlanProvider><LibraryProvider><Layout /></LibraryProvider></FlightPlanProvider>}>
           <Route path="/" element={<PlannerApp />} />
           <Route path="/performance" element={<PerformancePage />} />
           <Route path="/attack" element={<AttackPlanningPage />} />
+          <Route path="/library" element={<TheatreLibraryPage />} />
         </Route>
         <Route path="/about" element={<About />} />
       </Routes>

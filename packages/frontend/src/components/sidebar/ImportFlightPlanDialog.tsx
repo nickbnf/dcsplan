@@ -1,10 +1,12 @@
 import React, { useState, useRef } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
-import type { FlightPlan } from '../../types/flightPlan';
+import type { FlightPlan, LibraryObject } from '../../types/flightPlan';
 import { getApiUrl } from '../../config/api';
 
 interface ImportFlightPlanDialogProps {
   onImport: (flightPlan: FlightPlan) => void;
+  onLibrarySnapshot?: (snapshot: LibraryObject[]) => void;
+  currentLibrary?: LibraryObject[];
 }
 
 function parseValidationError(error: any): string {
@@ -20,11 +22,16 @@ function parseValidationError(error: any): string {
   return error.message ?? 'An unknown error occurred while importing the flight plan.';
 }
 
-export const ImportFlightPlanDialog: React.FC<ImportFlightPlanDialogProps> = ({ onImport }) => {
+export const ImportFlightPlanDialog: React.FC<ImportFlightPlanDialogProps> = ({
+  onImport,
+  onLibrarySnapshot,
+  currentLibrary = [],
+}) => {
   const [isOpen, setIsOpen] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
   const [fileName, setFileName] = useState<string | null>(null);
   const [validatedPlan, setValidatedPlan] = useState<FlightPlan | null>(null);
+  const [snapshotEntries, setSnapshotEntries] = useState<LibraryObject[]>([]);
   const [errors, setErrors] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -34,6 +41,7 @@ export const ImportFlightPlanDialog: React.FC<ImportFlightPlanDialogProps> = ({ 
 
     setFileName(file.name);
     setValidatedPlan(null);
+    setSnapshotEntries([]);
     setErrors([]);
     setIsValidating(true);
 
@@ -50,6 +58,12 @@ export const ImportFlightPlanDialog: React.FC<ImportFlightPlanDialogProps> = ({ 
         setErrors(['Invalid flight plan format: missing version or flightPlan field.']);
         return;
       }
+
+      // Extract library snapshot before sending to backend (backend doesn't know about it)
+      const snapshot: LibraryObject[] = Array.isArray(jsonData.librarySnapshot)
+        ? jsonData.librarySnapshot
+        : [];
+      setSnapshotEntries(snapshot);
 
       const response = await fetch(getApiUrl('flightplan/import'), {
         method: 'POST',
@@ -75,6 +89,9 @@ export const ImportFlightPlanDialog: React.FC<ImportFlightPlanDialogProps> = ({ 
   const handleReplace = () => {
     if (!validatedPlan) return;
     onImport(validatedPlan);
+    if (onLibrarySnapshot && snapshotEntries.length > 0) {
+      onLibrarySnapshot(snapshotEntries);
+    }
     handleClose();
   };
 
@@ -82,10 +99,16 @@ export const ImportFlightPlanDialog: React.FC<ImportFlightPlanDialogProps> = ({ 
     setIsOpen(false);
     setFileName(null);
     setValidatedPlan(null);
+    setSnapshotEntries([]);
     setErrors([]);
     setIsValidating(false);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
+
+  // Compute merge preview
+  const existingIds = new Set(currentLibrary.map(e => e.id));
+  const toAdd = snapshotEntries.filter(e => !existingIds.has(e.id)).length;
+  const kept = snapshotEntries.length - toAdd;
 
   return (
     <>
@@ -98,9 +121,9 @@ export const ImportFlightPlanDialog: React.FC<ImportFlightPlanDialogProps> = ({ 
       />
       <button
         onClick={() => setIsOpen(true)}
-        className="text-xs font-aero-label text-gray-400 hover:text-gray-600 transition-colors"
+        className="px-2.5 py-1.5 text-xs font-aero-label rounded border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 transition-colors"
       >
-        ⬆ Import
+        <span aria-hidden>⬆</span> Import
       </button>
 
       <Dialog.Root open={isOpen} onOpenChange={open => !open && handleClose()}>
@@ -128,6 +151,13 @@ export const ImportFlightPlanDialog: React.FC<ImportFlightPlanDialogProps> = ({ 
                     <div><span className="text-gray-500">File:</span> {fileName}</div>
                     <div><span className="text-gray-500">Plan:</span> {validatedPlan.name || '—'}</div>
                     <div><span className="text-gray-500">Waypoints:</span> {validatedPlan.points.length}</div>
+                    {snapshotEntries.length > 0 && (
+                      <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-xs">
+                        <div className="font-medium text-blue-800 mb-1">Library objects in file:</div>
+                        {toAdd > 0 && <div className="text-green-700">+ {toAdd} new {toAdd === 1 ? 'entry' : 'entries'} will be added to your library</div>}
+                        {kept > 0 && <div className="text-gray-500">= {kept} {kept === 1 ? 'entry' : 'entries'} already present (kept unchanged)</div>}
+                      </div>
+                    )}
                   </>
                 ) : (
                   <div><span className="text-gray-500">File:</span> {fileName}</div>

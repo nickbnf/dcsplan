@@ -10,7 +10,7 @@ import { createMapProjection, transformBoundsToTransverseMercator, calculateTran
 import { createGridLayer } from '../utils/latLonGrid';
 import { createTileLayer, calculateResolutions } from '../utils/tileLayer';
 import type { MapInfo } from '../utils/tileLayer';
-import type { FlightPlan } from '../types/flightPlan';
+import type { FlightPlan, LibraryObject, PictogramType } from '../types/flightPlan';
 import { flightPlanUtils } from '../utils/flightPlanUtils';
 import { createFlightPlanLayer } from '../utils/flightPlanLayer';
 import type { DrawingState } from '../hooks/useDrawing';
@@ -21,7 +21,17 @@ import { DisplayButton } from './map/DisplayButton';
 import { MapCoordinatesOverlay } from './MapCoordinatesOverlay';
 import { saveMapViewState, getMapViewState, fitMapToFlightPlan } from '../utils/mapViewState';
 import { useWaypointSelection } from '../contexts/WaypointSelectionContext';
+import { useObjectSelection } from '../contexts/ObjectSelectionContext';
 import { initCoordEntry, applyKey, parseCoordEntry, formatTemplate } from '../utils/coordEntryUtils';
+import {
+  buildPlanObjectsSource,
+  buildThreatRingsSource,
+  buildLibraryGhostsSource,
+  createPlanObjectsLayer,
+  createThreatRingsLayer,
+  createLibraryGhostsLayer,
+} from '../utils/planObjectsLayer';
+import { getPictogramDef } from '../utils/pictogramCatalog';
 
 interface MapComponentProps {
   flightPlan: FlightPlan;
@@ -34,6 +44,15 @@ interface MapComponentProps {
   updatePreviewLine: (coordinate: [number, number]) => void;
   onMapNavInfoChange?: (info: { projection: any; navigationMode: string }) => void;
   fitToFlightPlanTrigger?: number;
+  /** When provided, overrides the default waypoint commit logic for coord-entry. */
+  onCoordEntryCommit?: (lat: number, lon: number) => void;
+  library?: LibraryObject[];
+  activeTab?: 'flightplan' | 'objects';
+  isAddMarkerMode?: boolean;
+  addMarkerType?: PictogramType;
+  onAddLibraryRef?: (uuid: string) => void;
+  onAddMarker?: (lat: number, lon: number) => void;
+  onObjectTabActivate?: () => void;
 }
 
 const MapComponent: React.FC<MapComponentProps> = ({
@@ -47,9 +66,19 @@ const MapComponent: React.FC<MapComponentProps> = ({
   updatePreviewLine,
   onMapNavInfoChange,
   fitToFlightPlanTrigger = 0,
+  onCoordEntryCommit,
+  library = [],
+  activeTab = 'flightplan',
+  isAddMarkerMode = false,
+  addMarkerType = 'sam_site',
+  onAddLibraryRef,
+  onAddMarker,
+  onObjectTabActivate,
 }) => {
   const { selectedIndex, setSelectedIndex, coordEntry, setCoordEntry } = useWaypointSelection();
+  const { selectedId: selectedObjectId, setSelectedId: setSelectedObjectId, coordEntry: objectCoordEntry, setCoordEntry: setObjectCoordEntry } = useObjectSelection();
   const [hoverCoord, setHoverCoord] = useState<{ raw_x: number; raw_y: number; lat: number; lon: number } | null>(null);
+  const [hoverTooltip, setHoverTooltip] = useState<{ text: string; pixel: [number, number] } | null>(null);
   const hoverCoordRef = useRef<{ raw_x: number; raw_y: number } | null>(null);
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<Map | null>(null);
@@ -57,6 +86,9 @@ const MapComponent: React.FC<MapComponentProps> = ({
   const snapInteractionRef = useRef<Snap | null>(null);
   const isUpdatingFromModifyRef = useRef<boolean>(false);
   const gridLayerRef = useRef<VectorLayer | null>(null);
+  const planObjectsLayerRef = useRef<VectorLayer<any> | null>(null);
+  const threatRingsLayerRef = useRef<VectorLayer<any> | null>(null);
+  const libGhostsLayerRef = useRef<VectorLayer<any> | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [mapInfo, setMapInfo] = useState<MapInfo | null>(null);
@@ -65,12 +97,30 @@ const MapComponent: React.FC<MapComponentProps> = ({
   const navigationModeRef = useRef<string>("geographic");
   const lastFitTriggerRef = useRef<number>(fitToFlightPlanTrigger);
 
+  const markerModifyRef = useRef<Modify | null>(null);
+  const onFlightPlanUpdateRef = useRef(onFlightPlanUpdate);
+  onFlightPlanUpdateRef.current = onFlightPlanUpdate;
+
+  // Always-current refs so event handlers see fresh values without re-registering
+  const flightPlanRef = useRef(flightPlan);
+  flightPlanRef.current = flightPlan;
+  const libraryRef = useRef(library);
+  libraryRef.current = library;
+  const activeTabRef = useRef(activeTab);
+  activeTabRef.current = activeTab;
+  const isAddMarkerModeRef = useRef(isAddMarkerMode);
+  isAddMarkerModeRef.current = isAddMarkerMode;
+  const addMarkerTypeRef = useRef(addMarkerType);
+  addMarkerTypeRef.current = addMarkerType;
+  const selectedObjectIdRef = useRef(selectedObjectId);
+  selectedObjectIdRef.current = selectedObjectId;
+
   // Safe function to fetch and parse tile info JSON
   const fetchMapInfo = async (): Promise<MapInfo | null> => {
     try {
       setIsLoading(true);
       setError(null);
-      
+
       const theatre = flightPlan.theatre || "syria";
       const response = await fetch(getApiUrl(`theatres/${theatre}.json`), {
         method: 'GET',
@@ -78,8 +128,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
           'Accept': 'application/json',
           'Content-Type': 'application/json',
         },
-        // Add timeout to prevent hanging requests
-        signal: AbortSignal.timeout(10000), // 10 second timeout
+        signal: AbortSignal.timeout(10000),
       });
 
       if (!response.ok) {
@@ -92,8 +141,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
       }
 
       const data = await response.json();
-      
-      // Validate the structure (basic validation)
+
       if (typeof data !== 'object' || data === null) {
         throw new Error('Invalid JSON structure');
       }
@@ -110,7 +158,6 @@ const MapComponent: React.FC<MapComponentProps> = ({
     }
   };
 
-  // Fetch map info when theatre changes
   useEffect(() => {
     const loadMapInfo = async () => {
       const info = await fetchMapInfo();
@@ -130,34 +177,42 @@ const MapComponent: React.FC<MapComponentProps> = ({
     const navigationMode = mapInfo?.navigation_mode || "geographic";
     navigationModeRef.current = navigationMode;
 
-    // Notify parent of projection and navigation mode
     if (onMapNavInfoChange) {
       onMapNavInfoChange({ projection: mapProjection, navigationMode });
     }
 
-    // Transform geographic bounds to transverse Mercator coordinates
     const mapProjectionExtent = transformBoundsToTransverseMercator(regionBounds, mapProjection);
-    
-    // Set the projection extent
     (mapProjection as any).setExtent(mapProjectionExtent);
-
-    // Calculate center in transverse Mercator coordinates
     const mapProjectionCenter = calculateTransverseMercatorCenter(regionBounds, mapProjection);
-
-    // Calculate resolutions once — shared by TileGrid and View so zoom levels align exactly
     const tileResolutions = calculateResolutions(mapInfo, mapProjection);
 
-    // Create tile layer and grid layer
     const tileLayer = createTileLayer(mapInfo, mapProjection, getTilesBaseUrl(flightPlan.theatre || "syria"));
     const gridLayer = createGridLayer(regionBounds, mapProjection);
     gridLayer.set('name', 'grid');
     gridLayerRef.current = gridLayer;
-    // Set initial grid visibility based on state
     gridLayer.setVisible(gridEnabled);
-    const flightPlanLayer = createFlightPlanLayer(flightPlan, mapProjection, navigationMode);
+
+    // Object layers — z-order: icons (bottom), rings, ghosts, then flightplan on top
+    const refs = flightPlanRef.current.libraryRefs ?? [];
+    const markers = flightPlanRef.current.markers ?? [];
+    const lib = libraryRef.current;
+
+    const planObjectsLayer = createPlanObjectsLayer(refs, markers, lib, mapProjection, selectedObjectIdRef.current);
+    planObjectsLayer.set('name', 'planobjects');
+    planObjectsLayerRef.current = planObjectsLayer;
+
+    const threatRingsLayer = createThreatRingsLayer(refs, markers, lib, mapProjection);
+    threatRingsLayer.set('name', 'threatrings');
+    threatRingsLayerRef.current = threatRingsLayer;
+
+    const libGhostsLayer = createLibraryGhostsLayer(lib, refs, mapProjection);
+    libGhostsLayer.set('name', 'libghosts');
+    libGhostsLayer.setVisible(activeTabRef.current === 'objects');
+    libGhostsLayerRef.current = libGhostsLayer;
+
+    const flightPlanLayer = createFlightPlanLayer(flightPlanRef.current, mapProjection, navigationMode);
     flightPlanLayer.set('name', 'flightplan');
-    
-    // Create drawing layer
+
     const drawingLayer = new VectorLayer({
       source: new VectorSource()
     });
@@ -171,31 +226,30 @@ const MapComponent: React.FC<MapComponentProps> = ({
       layers: [
         tileLayer,
         gridLayer,
+        libGhostsLayer,      // ghosts at bottom so coloured icons render on top
+        planObjectsLayer,    // coloured plan objects above ghosts
+        threatRingsLayer,
         flightPlanLayer,
-        drawingLayer
+        drawingLayer,
       ],
       view: new View({
         projection: mapProjection as any,
         center: savedState ? savedState.center : mapProjectionCenter,
         zoom: savedState ? savedState.zoom : 2,
-        resolutions: tileResolutions,  // Must match TileGrid resolutions for 1:1 tile pixels
+        resolutions: tileResolutions,
         minZoom: 1,
-        // extent: transverseMercatorExtent, // Constraint the view to the map only
-        constrainResolution: true,  // Snap to zoom levels
+        constrainResolution: true,
         multiWorld: false
       })
     });
 
-    // Auto-zoom to fit the flight plan if no saved view state and trigger is active
     if (!savedState && fitToFlightPlanTrigger > 0 && flightPlan.points.length > 0) {
       fitMapToFlightPlan(mapInstanceRef.current, flightPlan, mapProjection);
       lastFitTriggerRef.current = fitToFlightPlanTrigger;
     }
 
-    // Expose map instance to window for access from sidebar
     (window as any).mapInstance = mapInstanceRef.current;
 
-    // Initialize interactions immediately after map creation
     installInteractions(flightPlanLayer,
       drawingState,
       mapInstanceRef,
@@ -209,7 +263,6 @@ const MapComponent: React.FC<MapComponentProps> = ({
 
     return () => {
       if (mapInstanceRef.current) {
-        // Save current view state before unmounting (for tab switch restore)
         const view = mapInstanceRef.current.getView();
         const center = view.getCenter();
         const zoom = view.getZoom();
@@ -217,17 +270,14 @@ const MapComponent: React.FC<MapComponentProps> = ({
           saveMapViewState(center as [number, number], zoom, flightPlan.theatre);
         }
 
-        // Remove click handler if it exists
         const clickHandler = (mapInstanceRef.current as any).__clickHandler;
         if (clickHandler) {
           mapInstanceRef.current.un('click', clickHandler);
         }
-        // Remove move handler if it exists
         const moveHandler = (mapInstanceRef.current as any).__moveHandler;
         if (moveHandler) {
           mapInstanceRef.current.un('pointermove', moveHandler);
         }
-        // Remove interactions if they exist
         if (modifyInteractionRef.current) {
           mapInstanceRef.current.removeInteraction(modifyInteractionRef.current);
         }
@@ -238,65 +288,98 @@ const MapComponent: React.FC<MapComponentProps> = ({
         mapInstanceRef.current = null;
       }
     };
-  }, [mapInfo, isLoading]); // This effect runs when mapInfo or isLoading changes
+  }, [mapInfo, isLoading]);
 
   // Update click handler when drawing state changes
   useEffect(() => {
     if (!mapInstanceRef.current) return;
 
-    // Remove existing click handler
     const existingHandler = (mapInstanceRef.current as any).__clickHandler;
     if (existingHandler) {
       mapInstanceRef.current.un('click', existingHandler);
     }
 
-    // Add new click handler
     const clickHandler = (event: any) => {
       const coordinate = event.coordinate;
       if (!coordinate) return;
 
-      // Hit-test waypoint features first; hitTolerance extends click zone around circle
+      // 1. Check coloured plan object features
+      let hitObjectId: string | null = null;
+      mapInstanceRef.current?.forEachFeatureAtPixel(event.pixel, (feature: any) => {
+        hitObjectId = feature.get('objectId') ?? null;
+        return true;
+      }, { layerFilter: (l: any) => l.get('name') === 'planobjects', hitTolerance: 8 });
+
+      if (hitObjectId !== null) {
+        setSelectedObjectId(selectedObjectIdRef.current === hitObjectId ? null : hitObjectId);
+        setSelectedIndex(null);
+        onObjectTabActivate?.();
+        return;
+      }
+
+      // 2. Check library ghost features (only when Objects tab is active)
+      if (activeTabRef.current === 'objects') {
+        let hitGhostId: string | null = null;
+        mapInstanceRef.current?.forEachFeatureAtPixel(event.pixel, (feature: any) => {
+          hitGhostId = feature.get('ghostId') ?? null;
+          return true;
+        }, { layerFilter: (l: any) => l.get('name') === 'libghosts', hitTolerance: 8 });
+
+        if (hitGhostId !== null) {
+          onAddLibraryRef?.(hitGhostId);
+          return;
+        }
+
+        // 3. Add Marker placement mode
+        if (isAddMarkerModeRef.current) {
+          const [lon, lat] = transform(coordinate, mapInstanceRef.current!.getView().getProjection().getCode(), 'EPSG:4326');
+          onAddMarker?.(lat, lon);
+          return;
+        }
+      }
+
+      // 4. Waypoint hit-test
       let hitWaypointIndex: number | null = null;
       mapInstanceRef.current?.forEachFeatureAtPixel(event.pixel, (feature: any) => {
         if (feature.get('type') === 'turnpoint') {
           hitWaypointIndex = feature.get('waypointIndex');
-          return true; // stop iteration
+          return true;
         }
       }, { hitTolerance: 8 });
 
       if (hitWaypointIndex !== null) {
         setSelectedIndex(hitWaypointIndex);
+        setSelectedObjectId(null);
         return;
       }
 
+      // 5. Drawing mode — add new waypoint
       if (drawingState.isDrawing === 'NEW_POINT') {
         addPoint(coordinate);
       } else {
-        // Click on empty map → deselect
+        // Empty map click → deselect
         setSelectedIndex(null);
+        setSelectedObjectId(null);
       }
     };
-    
+
     mapInstanceRef.current.on('click', clickHandler);
     (mapInstanceRef.current as any).__clickHandler = clickHandler;
-  }, [drawingState.isDrawing === 'NEW_POINT', addPoint, flightPlan, onFlightPlanUpdate, setSelectedIndex]);
+  }, [drawingState.isDrawing === 'NEW_POINT', addPoint, flightPlan, onFlightPlanUpdate, setSelectedIndex, setSelectedObjectId, onAddLibraryRef, onAddMarker, onObjectTabActivate]);
 
-  // Set up mouse move handler for coordinate display
+  // Set up mouse move handler for coordinate display and hover tooltip
   useEffect(() => {
     if (!mapInstanceRef.current) return;
 
-    // Remove existing mouse move handler
     const existingMoveHandler = (mapInstanceRef.current as any).__moveHandler;
     if (existingMoveHandler) {
       mapInstanceRef.current.un('pointermove', existingMoveHandler);
     }
 
-    // Add new mouse move handler
     const moveHandler = (event: any) => {
       const coordinate = event.coordinate;
       if (!coordinate) return;
 
-      // Update coordinate display
       const geographicCoordinate = transform(coordinate, mapInstanceRef.current!.getView().getProjection().getCode(), 'EPSG:4326');
       hoverCoordRef.current = { raw_x: coordinate[0], raw_y: coordinate[1] };
       setHoverCoord({
@@ -306,9 +389,58 @@ const MapComponent: React.FC<MapComponentProps> = ({
         lat: geographicCoordinate[1]
       });
 
-      // Update preview line if in drawing mode
       if (drawingState.isDrawing !== 'NO_DRAWING') {
         updatePreviewLine(coordinate);
+      }
+
+      // Hover tooltip for plan objects and library ghosts
+      let tooltipText: string | null = null;
+
+      mapInstanceRef.current?.forEachFeatureAtPixel(event.pixel, (feature: any) => {
+        const objectId = feature.get('objectId') as string | undefined;
+        if (objectId) {
+          const fp = flightPlanRef.current;
+          const lib = libraryRef.current;
+          const ref_ = (fp.libraryRefs ?? []).find(r => r.uuid === objectId);
+          if (ref_) {
+            const entry = lib.find(e => e.id === objectId);
+            if (entry) {
+              const effectiveComment = ref_.comment || entry.defaultComment;
+              let text = entry.name || 'Unnamed';
+              if (effectiveComment) text += `\n${effectiveComment}`;
+              if (entry.range) text += `\nRange: ${entry.range} NM`;
+              tooltipText = text;
+              return true;
+            }
+          }
+          const marker = (fp.markers ?? []).find(m => m.id === objectId);
+          if (marker) {
+            let text = marker.name || getPictogramDef(marker.type).label;
+            if (marker.comment) text += `\n${marker.comment}`;
+            if (marker.range) text += `\nRange: ${marker.range} NM`;
+            tooltipText = text;
+            return true;
+          }
+        }
+        const ghostId = feature.get('ghostId') as string | undefined;
+        if (ghostId) {
+          tooltipText = (feature.get('ghostName') as string) || 'Library entry';
+          return true;
+        }
+      }, { hitTolerance: 8 });
+
+      setHoverTooltip(tooltipText !== null ? { text: tooltipText, pixel: [event.pixel[0], event.pixel[1]] } : null);
+
+      // Cursor style
+      const target = mapInstanceRef.current?.getTargetElement() as HTMLElement | undefined;
+      if (!target) return;
+      const hitFeature = mapInstanceRef.current?.forEachFeatureAtPixel(event.pixel, (f: any) => f, { hitTolerance: 8 });
+      if (hitFeature?.get('objectId') || hitFeature?.get('ghostId')) {
+        target.style.cursor = 'pointer';
+      } else if (isAddMarkerModeRef.current && activeTabRef.current === 'objects') {
+        target.style.cursor = 'crosshair';
+      } else {
+        target.style.cursor = '';
       }
     };
 
@@ -323,19 +455,16 @@ const MapComponent: React.FC<MapComponentProps> = ({
       return;
     }
 
-    // Only proceed if interactions exist
     if (!modifyInteractionRef.current || !snapInteractionRef.current) {
       console.log('Interaction management: interactions not ready yet');
       return;
     }
 
     if (drawingState.isDrawing === 'NEW_POINT') {
-      // Remove interactions when drawing
       console.log('Removing Modify/Snap interactions (drawing mode)');
       mapInstanceRef.current.removeInteraction(modifyInteractionRef.current);
       mapInstanceRef.current.removeInteraction(snapInteractionRef.current);
     } else if (drawingState.isDrawing === 'NO_DRAWING') {
-      // Add interactions when not drawing (only if not already added)
       console.log('Adding Modify/Snap interactions (normal mode)');
       const interactions = mapInstanceRef.current.getInteractions().getArray();
       if (!interactions.includes(modifyInteractionRef.current)) {
@@ -350,19 +479,16 @@ const MapComponent: React.FC<MapComponentProps> = ({
   // Handle adding points to flight plan during drawing
   useEffect(() => {
     console.log('Drawing state changed:', drawingState);
-    // Add points to flight plan as they're drawn (when currentPoints changes)
     if (drawingState.isDrawing === 'NEW_POINT' && drawingState.currentPoint) {
       const latestPoint = drawingState.currentPoint;
-      
-      // Only add if this point isn't already in the flight plan
-      const pointExists = flightPlan.points.some(p => 
+
+      const pointExists = flightPlan.points.some(p =>
         Math.abs(p.lat - latestPoint.getCoordinates()[1]) < 0.0001 && Math.abs(p.lon - latestPoint.getCoordinates()[0]) < 0.0001
       );
-      
+
       if (!pointExists) {
         let updatedPlan = flightPlanUtils.addTurnPoint(flightPlan, latestPoint.getCoordinates()[1], latestPoint.getCoordinates()[0]);
         console.log('Updated flightplan:', updatedPlan.points.length, 'points');
-        
         onFlightPlanUpdate(updatedPlan);
       }
     }
@@ -373,9 +499,8 @@ const MapComponent: React.FC<MapComponentProps> = ({
     console.log('Flight plan changed:', flightPlan);
     if (!mapInstanceRef.current) return;
 
-    // Find and remove the existing flight plan layer
     const layers = mapInstanceRef.current.getLayers().getArray();
-    const existingFlightPlanLayer = layers.find((layer: any) => 
+    const existingFlightPlanLayer = layers.find((layer: any) =>
       layer.get('name') === 'flightplan'
     );
 
@@ -383,14 +508,11 @@ const MapComponent: React.FC<MapComponentProps> = ({
       mapInstanceRef.current.removeLayer(existingFlightPlanLayer);
     }
 
-    // Create a new flight plan layer with current data
     const newFlightPlanLayer = createFlightPlanLayer(flightPlan, mapInstanceRef.current.getView().getProjection(), navigationModeRef.current, drawingState.draggedWaypointIndex ?? undefined, selectedIndex ?? undefined);
     newFlightPlanLayer.set('name', 'flightplan');
-    
-    // Add the new layer to the map
+
     mapInstanceRef.current.addLayer(newFlightPlanLayer);
 
-    // Install the right interactions
     if (drawingState.isDrawing !== 'DRAG_POINT') {
       installInteractions(newFlightPlanLayer,
         drawingState,
@@ -417,14 +539,13 @@ const MapComponent: React.FC<MapComponentProps> = ({
       return;
     }
 
-    // If we're in normal mode but interactions don't exist, reinstall them
     if (!modifyInteractionRef.current || !snapInteractionRef.current) {
       console.log('Reinstalling interactions after drawing mode');
       const layers = mapInstanceRef.current.getLayers().getArray();
-      const flightPlanLayer = layers.find((layer: any) => 
+      const flightPlanLayer = layers.find((layer: any) =>
         layer.get('name') === 'flightplan'
       );
-      
+
       if (flightPlanLayer && flightPlanLayer instanceof VectorLayer) {
         installInteractions(flightPlanLayer,
           drawingState,
@@ -440,6 +561,51 @@ const MapComponent: React.FC<MapComponentProps> = ({
     }
   }, [drawingState.isDrawing]);
 
+  // Refresh plan objects and threat rings when plan data, library, or selection changes
+  useEffect(() => {
+    if (!mapInstanceRef.current || !planObjectsLayerRef.current || !threatRingsLayerRef.current) return;
+    const proj = mapInstanceRef.current.getView().getProjection();
+    const refs = flightPlan.libraryRefs ?? [];
+    const markers = flightPlan.markers ?? [];
+    const newSource = buildPlanObjectsSource(refs, markers, library, proj, selectedObjectId);
+    planObjectsLayerRef.current.setSource(newSource);
+    threatRingsLayerRef.current.setSource(buildThreatRingsSource(refs, markers, library, proj));
+
+    // Rebuild marker Modify interaction so dragging plan markers moves them
+    if (markerModifyRef.current) {
+      mapInstanceRef.current.removeInteraction(markerModifyRef.current);
+      markerModifyRef.current = null;
+    }
+    const markerFeatures = newSource.getFeatures().filter((f: any) => f.get('objectKind') === 'marker');
+    if (markerFeatures.length > 0) {
+      const markerModify = new Modify({ features: new Collection(markerFeatures), style: () => [] });
+      markerModify.on('modifyend', (event: any) => {
+        event.features.getArray().forEach((feat: any) => {
+          if (feat.get('objectKind') !== 'marker') return;
+          const id = feat.get('objectId') as string;
+          const coords = (feat.getGeometry() as any).getCoordinates();
+          const [lon, lat] = transform(coords, mapInstanceRef.current!.getView().getProjection().getCode(), 'EPSG:4326');
+          const fp = flightPlanRef.current;
+          onFlightPlanUpdateRef.current({
+            ...fp,
+            markers: (fp.markers ?? []).map(m => m.id === id ? { ...m, lat, lon } : m),
+          });
+        });
+      });
+      mapInstanceRef.current.addInteraction(markerModify);
+      markerModifyRef.current = markerModify;
+    }
+  }, [flightPlan.libraryRefs, flightPlan.markers, library, selectedObjectId]);
+
+  // Refresh library ghost layer when library, refs, or tab changes
+  useEffect(() => {
+    if (!mapInstanceRef.current || !libGhostsLayerRef.current) return;
+    const proj = mapInstanceRef.current.getView().getProjection();
+    const refs = flightPlan.libraryRefs ?? [];
+    libGhostsLayerRef.current.setSource(buildLibraryGhostsSource(library, refs, proj));
+    libGhostsLayerRef.current.setVisible(activeTab === 'objects');
+  }, [library, flightPlan.libraryRefs, activeTab]);
+
   // Global keydown handler: selection cycling, Escape, coord entry mode
   useEffect(() => {
     const isInputFocused = () => {
@@ -448,18 +614,46 @@ const MapComponent: React.FC<MapComponentProps> = ({
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      // --- Coord entry mode active ---
+      // --- Object coord entry active (for selected marker) ---
+      if (objectCoordEntry !== null) {
+        e.preventDefault();
+        if (e.key === 'Escape') { setObjectCoordEntry(null); return; }
+        if (e.key === 'Enter') {
+          const inLonPhase = objectCoordEntry.cursor === 'lonDeg' || objectCoordEntry.cursor === 'lonMin';
+          if (!inLonPhase) {
+            setObjectCoordEntry(applyKey(objectCoordEntry, 'Enter'));
+          } else {
+            const coords = parseCoordEntry(objectCoordEntry);
+            if (!coords) { setObjectCoordEntry({ ...objectCoordEntry, hasError: true }); return; }
+            // Move the selected marker
+            const selectedId = selectedObjectIdRef.current;
+            if (selectedId) {
+              const fp = flightPlanRef.current;
+              const markers = fp.markers ?? [];
+              const idx = markers.findIndex(m => m.id === selectedId);
+              if (idx >= 0) {
+                const updated = { ...fp, markers: markers.map((m, i) => i === idx ? { ...m, lat: coords.lat, lon: coords.lon } : m) };
+                onFlightPlanUpdate(updated);
+              }
+            }
+            setObjectCoordEntry(null);
+          }
+          return;
+        }
+        setObjectCoordEntry(applyKey(objectCoordEntry, e.key));
+        return;
+      }
+
+      // --- Waypoint coord entry mode active ---
       if (coordEntry !== null) {
         e.preventDefault();
 
         if (e.key === 'Escape') {
-          // Cancel entry; waypoint stays selected
           setCoordEntry(null);
           return;
         }
 
         if (e.key === 'Enter') {
-          // In lat phase: advance cursor; in lon phase: try to commit
           const inLonPhase = coordEntry.cursor === 'lonDeg' || coordEntry.cursor === 'lonMin';
           if (!inLonPhase) {
             const next = applyKey(coordEntry, 'Enter');
@@ -468,17 +662,16 @@ const MapComponent: React.FC<MapComponentProps> = ({
             const coords = parseCoordEntry(coordEntry);
             if (!coords) { setCoordEntry({ ...coordEntry, hasError: true }); return; }
 
-            if (selectedIndex !== null) {
-              // Move existing waypoint
+            if (onCoordEntryCommit) {
+              onCoordEntryCommit(coords.lat, coords.lon);
+              setCoordEntry(null);
+            } else if (selectedIndex !== null) {
               const updated = flightPlanUtils.moveTurnPoint(flightPlan, selectedIndex, coords.lat, coords.lon);
               onFlightPlanUpdate(updated);
               setCoordEntry(null);
             } else if (drawingState.isDrawing === 'NEW_POINT') {
-              // Create new waypoint, keep drawing mode
               const updated = flightPlanUtils.addTurnPoint(flightPlan, coords.lat, coords.lon);
               onFlightPlanUpdate(updated);
-              // Update the drawing anchor synchronously so the preview line starts
-              // from the new waypoint on the very next updatePreviewLine call.
               confirmKeyboardWaypoint(coords.lat, coords.lon);
               if (hoverCoordRef.current) {
                 updatePreviewLine([hoverCoordRef.current.raw_x, hoverCoordRef.current.raw_y]);
@@ -499,7 +692,18 @@ const MapComponent: React.FC<MapComponentProps> = ({
 
       const key = e.key;
 
-      // Coord entry triggers: N, S, or digit, when waypoint selected or drawing new point
+      // Coord entry for selected marker (N/S/digit when a marker is selected)
+      if ((key === 'N' || key === 'S' || /^\d$/.test(key)) && selectedObjectId !== null) {
+        const fp = flightPlanRef.current;
+        const isMarker = (fp.markers ?? []).some(m => m.id === selectedObjectId);
+        if (isMarker) {
+          e.preventDefault();
+          setObjectCoordEntry(initCoordEntry(key));
+          return;
+        }
+      }
+
+      // Coord entry for waypoint (N/S/digit when waypoint selected or drawing)
       if ((key === 'N' || key === 'S' || /^\d$/.test(key)) &&
           (selectedIndex !== null || drawingState.isDrawing === 'NEW_POINT')) {
         e.preventDefault();
@@ -507,7 +711,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
         return;
       }
 
-      // Selection cycling
+      // Selection cycling for waypoints
       if (key === '+' || key === '=') {
         e.preventDefault();
         const count = flightPlan.points.length;
@@ -524,15 +728,15 @@ const MapComponent: React.FC<MapComponentProps> = ({
       }
 
       // Escape deselects
-      if (key === 'Escape' && selectedIndex !== null) {
-        e.preventDefault();
-        setSelectedIndex(null);
+      if (key === 'Escape') {
+        if (selectedIndex !== null) { e.preventDefault(); setSelectedIndex(null); }
+        if (selectedObjectId !== null) { e.preventDefault(); setSelectedObjectId(null); }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [coordEntry, selectedIndex, flightPlan, drawingState.isDrawing, setCoordEntry, setSelectedIndex, onFlightPlanUpdate]);
+  }, [objectCoordEntry, coordEntry, selectedIndex, selectedObjectId, flightPlan, drawingState.isDrawing, setCoordEntry, setObjectCoordEntry, setSelectedIndex, setSelectedObjectId, onFlightPlanUpdate, onCoordEntryCommit]);
 
   // Cancel coord entry when drag ends
   useEffect(() => {
@@ -541,14 +745,12 @@ const MapComponent: React.FC<MapComponentProps> = ({
     }
   }, [drawingState.isDrawing]);
 
-  // Toggle grid layer visibility when gridEnabled changes
   useEffect(() => {
     if (gridLayerRef.current) {
       gridLayerRef.current.setVisible(gridEnabled);
     }
   }, [gridEnabled]);
 
-  // Fit map to flight plan when the trigger increments (e.g. after import)
   useEffect(() => {
     if (!mapInstanceRef.current) return;
     if (fitToFlightPlanTrigger <= lastFitTriggerRef.current) return;
@@ -556,7 +758,6 @@ const MapComponent: React.FC<MapComponentProps> = ({
     fitMapToFlightPlan(mapInstanceRef.current, flightPlan, mapInstanceRef.current.getView().getProjection());
   }, [fitToFlightPlanTrigger]);
 
-  // Show loading state
   if (isLoading) {
     return (
       <div className="w-full h-full flex items-center justify-center bg-gray-100">
@@ -568,7 +769,6 @@ const MapComponent: React.FC<MapComponentProps> = ({
     );
   }
 
-  // Show error state
   if (error) {
     return (
       <div className="w-full h-full flex items-center justify-center bg-red-50">
@@ -576,8 +776,8 @@ const MapComponent: React.FC<MapComponentProps> = ({
           <div className="text-red-600 text-2xl mb-2">⚠️</div>
           <h3 className="text-red-800 font-semibold mb-2">Failed to load map configuration</h3>
           <p className="text-red-600 text-sm mb-4">{error}</p>
-          <button 
-            onClick={() => window.location.reload()} 
+          <button
+            onClick={() => window.location.reload()}
             className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 transition-colors"
           >
             Retry
@@ -586,6 +786,8 @@ const MapComponent: React.FC<MapComponentProps> = ({
       </div>
     );
   }
+
+  const activeCoordEntry = objectCoordEntry ?? coordEntry;
 
   return (
     <div className="w-full h-full relative">
@@ -598,9 +800,17 @@ const MapComponent: React.FC<MapComponentProps> = ({
       />
       <MapCoordinatesOverlay
         coordinate={hoverCoord}
-        entryTemplate={coordEntry ? formatTemplate(coordEntry) : null}
-        entryHasError={coordEntry?.hasError ?? false}
+        entryTemplate={activeCoordEntry ? formatTemplate(activeCoordEntry) : null}
+        entryHasError={activeCoordEntry?.hasError ?? false}
       />
+      {hoverTooltip && (
+        <div
+          className="absolute pointer-events-none z-50 bg-gray-900 bg-opacity-80 text-white text-xs font-aero-label rounded px-2 py-1 whitespace-pre-line max-w-[200px]"
+          style={{ left: hoverTooltip.pixel[0] + 12, top: hoverTooltip.pixel[1] - 8 }}
+        >
+          {hoverTooltip.text}
+        </div>
+      )}
     </div>
   );
 };
@@ -617,7 +827,6 @@ const installInteractions = (flightPlanLayer: VectorLayer<any>,
   flightPlan: FlightPlan) => {
   const source = flightPlanLayer.getSource();
   if (source) {
-    // Remove interactions if they exist
     if (modifyInteractionRef.current) {
       mapInstanceRef.current?.removeInteraction(modifyInteractionRef.current);
     }
@@ -625,7 +834,6 @@ const installInteractions = (flightPlanLayer: VectorLayer<any>,
       mapInstanceRef.current?.removeInteraction(snapInteractionRef.current);
     }
 
-    // Create Modify interaction for editing waypoints only
     const waypointFeatures = source.getFeatures().filter((feature: any) =>
       feature.get('type') === 'turnpoint'
     );
@@ -635,16 +843,13 @@ const installInteractions = (flightPlanLayer: VectorLayer<any>,
       style: () => [],
     });
 
-    // Create Snap interaction for snapping to waypoints
     const snapInteraction = new Snap({
       features: new Collection(waypointFeatures)
     });
 
-    // Store references
     modifyInteractionRef.current = modifyInteraction;
     snapInteractionRef.current = snapInteraction;
 
-    // Add interactions to map (only when not drawing and not already added)
     if (drawingState.isDrawing === 'NO_DRAWING' && mapInstanceRef.current) {
       const interactions = mapInstanceRef.current.getInteractions().getArray();
       if (!interactions.includes(modifyInteraction)) {
@@ -655,10 +860,8 @@ const installInteractions = (flightPlanLayer: VectorLayer<any>,
       }
     }
 
-    // Handle modify start event to hide lines around dragged waypoint
     if (modifyInteractionRef.current) {
       console.log('Setting up event handlers for Modify interaction');
-      // Remove existing event listeners to avoid duplicates
       modifyInteractionRef.current.un('modifystart', () => { });
       modifyInteractionRef.current.un('modifyend', () => { });
 
@@ -677,7 +880,6 @@ const installInteractions = (flightPlanLayer: VectorLayer<any>,
       });
     }
 
-    // Handle modify events to update flight plan
     if (modifyInteractionRef.current) {
       modifyInteractionRef.current.on('modifyend', (event: any) => {
         console.log('Modify end event triggered', event);
@@ -688,7 +890,6 @@ const installInteractions = (flightPlanLayer: VectorLayer<any>,
             const coordinates = feature.getGeometry().getCoordinates();
             const [lon, lat] = transform(coordinates, mapInstanceRef.current!.getView().getProjection().getCode(), 'EPSG:4326');
 
-            // Get the waypoint index directly from the feature
             const waypointIndex = feature.get('waypointIndex');
             console.log('Moving waypoint', waypointIndex, 'to', lat, lon);
 

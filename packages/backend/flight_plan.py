@@ -79,6 +79,34 @@ class FlightPlanTurnPoint(BaseModel):
     regimeId: str | None = Field(default=None, description="Optional reference to a regime in the plan")
 
 
+class PlanLibraryRef(BaseModel):
+    """A reference to a library entry in the plan."""
+    uuid: str
+    comment: Optional[str] = None
+
+
+class LibraryObject(BaseModel):
+    """A library entry snapshot embedded in the plan on export."""
+    id: str
+    type: str
+    lat: float
+    lon: float
+    name: Optional[str] = None
+    defaultComment: Optional[str] = None
+    range: Optional[float] = None  # nautical miles
+
+
+class PlanMarker(BaseModel):
+    """A plan-local marker (not from the library)."""
+    id: str
+    type: str
+    lat: float
+    lon: float
+    name: Optional[str] = None
+    range: Optional[float] = None  # nautical miles
+    comment: Optional[str] = None
+
+
 class FlightPlan(BaseModel):
     """Represents a complete flight plan with waypoints and initial conditions."""
     theatre: str = Field(..., description="Theatre name")
@@ -89,6 +117,9 @@ class FlightPlan(BaseModel):
     initTimeSec: int = Field(..., ge=0, le=86399, description="Initial time seconds (0-86399)")
     initFob: float = Field(..., ge=0, description="Initial fuel on board")
     name: str | None = Field(default=None, description="Name of the flight plan")
+    libraryRefs: Optional[List[PlanLibraryRef]] = Field(default=None)
+    markers: Optional[List[PlanMarker]] = Field(default=None)
+    librarySnapshot: Optional[List[LibraryObject]] = Field(default=None)
 
     @model_validator(mode='before')
     @classmethod
