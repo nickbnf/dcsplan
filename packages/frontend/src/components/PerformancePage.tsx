@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { useFlightPlan } from '../contexts/FlightPlanContext';
+import { usePerformance } from '../contexts/PerformanceContext';
 import { generateRegimeId, flightPlanUtils } from '../utils/flightPlanUtils';
 import { propagateRegimeCruiseChange, clearRegimeFromAllWaypoints } from '../utils/regimeUtils';
-import type { FlightPlan, Regime, Aircraft } from '../types/flightPlan';
+import type { Regime, Aircraft } from '../types/flightPlan';
 import PerformanceImportDialog from './PerformanceImportDialog';
 
 // --- Editor form types ---
@@ -271,58 +272,48 @@ function formatMinSec(totalSec: number): string {
 
 const PerformancePage: React.FC = () => {
   const { flightPlan, onFlightPlanUpdate } = useFlightPlan();
+  const { performance, setPerformance } = usePerformance();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [newlyAddedId, setNewlyAddedId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Regime | null>(null);
   const [showImportDialog, setShowImportDialog] = useState(false);
 
   // Aircraft header state (local string values for editing)
-  const [toTimeStr, setToTimeStr] = useState(() => formatMinSec(flightPlan.aircraft.takeoff.timeSec));
-  const [toFuelStr, setToFuelStr] = useState(() => String(flightPlan.aircraft.takeoff.fuel));
-  const [toDistStr, setToDistStr] = useState(() => String(flightPlan.aircraft.takeoff.distance));
+  const [toTimeStr, setToTimeStr] = useState(() => formatMinSec(performance.takeoff.timeSec));
+  const [toFuelStr, setToFuelStr] = useState(() => String(performance.takeoff.fuel));
+  const [toDistStr, setToDistStr] = useState(() => String(performance.takeoff.distance));
   const [toTimeError, setToTimeError] = useState<string | null>(null);
 
-  const regimes = flightPlan.aircraft.regimes;
+  const regimes = performance.regimes;
 
   const handleAddRegime = () => {
     const names = new Set(regimes.map(r => r.name));
     let n = 1;
     while (names.has(`Regime ${n}`)) n++;
     const newRegime: Regime = { id: generateRegimeId(), name: `Regime ${n}`, cruise: { tas: 400, ff: 3600 } };
-    onFlightPlanUpdate({
-      ...flightPlan,
-      aircraft: { ...flightPlan.aircraft, regimes: [...regimes, newRegime] },
-    });
+    setPerformance({ ...performance, regimes: [...regimes, newRegime] });
     setSelectedId(newRegime.id);
     setNewlyAddedId(newRegime.id);
   };
 
   const handleRegimeChange = (updated: Regime) => {
     const current = regimes.find(r => r.id === updated.id);
-    let plan: FlightPlan = {
-      ...flightPlan,
-      aircraft: { ...flightPlan.aircraft, regimes: regimes.map(r => r.id === updated.id ? updated : r) },
-    };
+    setPerformance({ ...performance, regimes: regimes.map(r => r.id === updated.id ? updated : r) });
     if (current && (current.cruise.tas !== updated.cruise.tas || current.cruise.ff !== updated.cruise.ff)) {
-      plan = propagateRegimeCruiseChange(plan, updated);
+      onFlightPlanUpdate(propagateRegimeCruiseChange(flightPlan, updated));
     }
-    onFlightPlanUpdate(plan);
   };
 
   const handleDeleteConfirm = () => {
     if (!deleteTarget) return;
-    let plan = clearRegimeFromAllWaypoints(flightPlan, deleteTarget.id);
-    plan = {
-      ...plan,
-      aircraft: { ...plan.aircraft, regimes: plan.aircraft.regimes.filter(r => r.id !== deleteTarget.id) },
-    };
-    onFlightPlanUpdate(plan);
+    onFlightPlanUpdate(clearRegimeFromAllWaypoints(flightPlan, deleteTarget.id));
+    setPerformance({ ...performance, regimes: regimes.filter(r => r.id !== deleteTarget.id) });
     if (selectedId === deleteTarget.id) setSelectedId(null);
     setDeleteTarget(null);
   };
 
   const updateAircraft = (patch: Partial<Aircraft>) => {
-    onFlightPlanUpdate({ ...flightPlan, aircraft: { ...flightPlan.aircraft, ...patch } });
+    setPerformance({ ...performance, ...patch });
   };
 
   const commitTakeoff = (timeSec: number, fuel: number, distance: number) => {
@@ -349,7 +340,7 @@ const PerformancePage: React.FC = () => {
             <label className="text-xs font-aero-label text-gray-500 whitespace-nowrap">Aircraft</label>
             <input
               type="text"
-              value={flightPlan.aircraft.model}
+              value={performance.model}
               onChange={e => updateAircraft({ model: e.target.value })}
               placeholder="e.g. F-15E"
               className="text-sm font-aero-mono border border-gray-300 rounded px-2 py-0.5 focus:outline-none focus:border-gray-500 w-40"
@@ -359,7 +350,7 @@ const PerformancePage: React.FC = () => {
             <label className="text-xs font-aero-label text-gray-500 whitespace-nowrap">T/O Config</label>
             <input
               type="text"
-              value={flightPlan.aircraft.takeoffConfiguration}
+              value={performance.takeoffConfiguration}
               onChange={e => updateAircraft({ takeoffConfiguration: e.target.value })}
               placeholder="e.g. MIL @ 60klb"
               className="text-sm font-aero-mono border border-gray-300 rounded px-2 py-0.5 focus:outline-none focus:border-gray-500 w-40"
@@ -367,7 +358,7 @@ const PerformancePage: React.FC = () => {
           </div>
           <div className="flex items-center gap-3 ml-auto">
             <button
-              onClick={() => flightPlanUtils.downloadAircraft(flightPlan)}
+              onClick={() => flightPlanUtils.downloadAircraft(performance)}
               className="text-xs font-aero-label text-gray-400 hover:text-gray-600 transition-colors"
             >
               ⬇ Export
@@ -386,7 +377,7 @@ const PerformancePage: React.FC = () => {
           <label className="text-xs font-aero-label text-gray-500 whitespace-nowrap">Taxi fuel</label>
           <input
             type="number"
-            value={flightPlan.aircraft.taxiFuel}
+            value={performance.taxiFuel}
             min={0}
             onChange={e => updateAircraft({ taxiFuel: Math.max(0, Number(e.target.value)) })}
             className="text-sm font-aero-mono border border-gray-300 rounded px-2 py-0.5 focus:outline-none focus:border-gray-500 w-20 text-right"
@@ -423,7 +414,7 @@ const PerformancePage: React.FC = () => {
               min={0}
               onChange={e => setToFuelStr(e.target.value)}
               onBlur={() => {
-                const secs = parseMinSec(toTimeStr) ?? flightPlan.aircraft.takeoff.timeSec;
+                const secs = parseMinSec(toTimeStr) ?? performance.takeoff.timeSec;
                 commitTakeoff(secs, Math.max(0, Number(toFuelStr)), Math.max(0, Number(toDistStr)));
               }}
               className={`text-sm font-aero-mono border rounded px-2 py-0.5 focus:outline-none w-20 text-right ${toTimeError ? 'border-red-400 bg-red-50' : 'border-gray-300 focus:border-gray-500'}`}
@@ -438,7 +429,7 @@ const PerformancePage: React.FC = () => {
               step={0.1}
               onChange={e => setToDistStr(e.target.value)}
               onBlur={() => {
-                const secs = parseMinSec(toTimeStr) ?? flightPlan.aircraft.takeoff.timeSec;
+                const secs = parseMinSec(toTimeStr) ?? performance.takeoff.timeSec;
                 commitTakeoff(secs, Math.max(0, Number(toFuelStr)), Math.max(0, Number(toDistStr)));
               }}
               className={`text-sm font-aero-mono border rounded px-2 py-0.5 focus:outline-none w-20 text-right ${toTimeError ? 'border-red-400 bg-red-50' : 'border-gray-300 focus:border-gray-500'}`}
@@ -534,8 +525,6 @@ const PerformancePage: React.FC = () => {
 
       {showImportDialog && (
         <PerformanceImportDialog
-          flightPlan={flightPlan}
-          onFlightPlanUpdate={onFlightPlanUpdate}
           onClose={() => setShowImportDialog(false)}
         />
       )}

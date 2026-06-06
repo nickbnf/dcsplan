@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { calculateAllLegData, computeLegSegments, applyWind } from './legCalculations';
 import { get as getProjection } from 'ol/proj';
-import type { FlightPlan, Regime } from '../types/flightPlan';
+import type { FlightPlan, Aircraft, Regime } from '../types/flightPlan';
 import { defaultAircraft } from '../types/flightPlan';
 // LegSegmentsResult types are in flightPlan.ts and re-exported from legCalculations.ts
 
@@ -9,20 +9,22 @@ import { defaultAircraft } from '../types/flightPlan';
 const projection = getProjection('EPSG:4326')!;
 const navigationMode = 'projected';
 
-// Helper: build a minimal flight plan
-function makePlan(overrides: Partial<FlightPlan> & { regimes?: Regime[] } = {}): FlightPlan {
-  const { regimes, ...rest } = overrides;
+// Helper: build a minimal flight plan (no aircraft field — passed separately to calculateAllLegData)
+function makePlan(overrides: Partial<FlightPlan> = {}): FlightPlan {
   return {
     theatre: 'test',
     points: [],
-    aircraft: regimes !== undefined ? { ...defaultAircraft(), regimes } : defaultAircraft(),
     declination: 0,
     bankAngle: 45,
     initTimeSec: 12 * 3600, // 12:00:00
     initFob: 10000,
     name: 'Test',
-    ...rest,
+    ...overrides,
   };
+}
+
+function makeAircraft(overrides: Partial<Aircraft> & { regimes?: Regime[] } = {}): Aircraft {
+  return { ...defaultAircraft(), ...overrides };
 }
 
 // Helper: build a waypoint at a given position
@@ -54,7 +56,7 @@ describe('calculateAllLegData with Push waypoints', () => {
       ],
     });
 
-    const legs = calculateAllLegData(plan, projection, navigationMode);
+    const legs = calculateAllLegData(plan, projection, navigationMode, defaultAircraft());
     expect(legs).toHaveLength(2);
 
     // const leg1 = legs[0]; // WP1 -> WP2 (Push)
@@ -78,7 +80,7 @@ describe('calculateAllLegData with Push waypoints', () => {
       ],
     });
 
-    const legs = calculateAllLegData(plan, projection, navigationMode);
+    const legs = calculateAllLegData(plan, projection, navigationMode, defaultAircraft());
     const leg1 = legs[0]; // arrives at Push point
 
     // Wait time = exit time - arrival ETA
@@ -106,7 +108,7 @@ describe('calculateAllLegData with Push waypoints', () => {
       ],
     });
 
-    const legs = calculateAllLegData(plan, projection, navigationMode);
+    const legs = calculateAllLegData(plan, projection, navigationMode, defaultAircraft());
     const leg1 = legs[0];
 
     // legFuel should include both travel fuel and wait fuel
@@ -129,7 +131,7 @@ describe('calculateAllLegData with Push waypoints', () => {
       ],
     });
 
-    const legs = calculateAllLegData(plan, projection, navigationMode);
+    const legs = calculateAllLegData(plan, projection, navigationMode, defaultAircraft());
     const leg1 = legs[0]; // WP1 -> Push
     const leg2 = legs[1]; // Push -> WP3
 
@@ -150,7 +152,7 @@ describe('calculateAllLegData with Push waypoints', () => {
       ],
     });
 
-    const legs = calculateAllLegData(plan, projection, navigationMode);
+    const legs = calculateAllLegData(plan, projection, navigationMode, defaultAircraft());
     const leg1 = legs[0];
 
     // No wait fuel: legFuel should equal travel fuel only
@@ -172,7 +174,7 @@ describe('calculateAllLegData with Push waypoints', () => {
       ],
     });
 
-    const legs = calculateAllLegData(plan, projection, navigationMode);
+    const legs = calculateAllLegData(plan, projection, navigationMode, defaultAircraft());
     const leg1 = legs[0];
 
     // Exit time clamped to ETA → no wait fuel
@@ -191,7 +193,7 @@ describe('calculateAllLegData with Push waypoints', () => {
       ],
     });
 
-    const legs = calculateAllLegData(plan, projection, navigationMode);
+    const legs = calculateAllLegData(plan, projection, navigationMode, defaultAircraft());
     const leg1 = legs[0];
     const leg2 = legs[1];
 
@@ -519,42 +521,35 @@ describe('computeLegSegments', () => {
 describe('calculateAllLegData — taxi fuel', () => {
   it('taxiFuel = 0 reproduces pre-change EFR exactly', () => {
     const plan = makePlan({
-      aircraft: { ...defaultAircraft(), taxiFuel: 0 },
       points: [
         makePoint(0, 0),
         makePoint(0, 1, { fuelFlow: 3600 }),
       ],
     });
-    const legs = calculateAllLegData(plan, projection, navigationMode);
+    const legs = calculateAllLegData(plan, projection, navigationMode, makeAircraft({ taxiFuel: 0 }));
     const leg = legs[0];
     const expectedEfr = 10000 - leg.legFuel;
     expect(leg.efr).toBeCloseTo(expectedEfr, 2);
   });
 
   it('taxiFuel = 400 reduces waypoint-1 EFR by 400 lbs', () => {
-    const withoutTaxi = makePlan({
-      aircraft: { ...defaultAircraft(), taxiFuel: 0 },
+    const plan = makePlan({
       points: [makePoint(0, 0), makePoint(0, 1, { fuelFlow: 3600 })],
     });
-    const withTaxi = makePlan({
-      aircraft: { ...defaultAircraft(), taxiFuel: 400 },
-      points: [makePoint(0, 0), makePoint(0, 1, { fuelFlow: 3600 })],
-    });
-    const legsA = calculateAllLegData(withoutTaxi, projection, navigationMode);
-    const legsB = calculateAllLegData(withTaxi, projection, navigationMode);
+    const legsA = calculateAllLegData(plan, projection, navigationMode, makeAircraft({ taxiFuel: 0 }));
+    const legsB = calculateAllLegData(plan, projection, navigationMode, makeAircraft({ taxiFuel: 400 }));
     expect(legsB[0].efr).toBeCloseTo(legsA[0].efr - 400, 2);
   });
 
   it('taxiFuel does not appear as recurring deduction on legs 2..N', () => {
     const plan = makePlan({
-      aircraft: { ...defaultAircraft(), taxiFuel: 400 },
       points: [
         makePoint(0, 0),
         makePoint(0, 1, { fuelFlow: 3600 }),
         makePoint(0, 2, { fuelFlow: 3600 }),
       ],
     });
-    const legs = calculateAllLegData(plan, projection, navigationMode);
+    const legs = calculateAllLegData(plan, projection, navigationMode, makeAircraft({ taxiFuel: 400 }));
     // EFR at wp2 should be (EFR at wp1) - leg2Fuel, not (EFR at wp1) - 400 - leg2Fuel
     const expectedEfr2 = legs[0].efr - legs[1].legFuel;
     expect(legs[1].efr).toBeCloseTo(expectedEfr2, 2);

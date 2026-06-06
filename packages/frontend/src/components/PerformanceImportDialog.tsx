@@ -1,15 +1,17 @@
 import React, { useState, useRef } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
-import type { FlightPlan, Aircraft } from '../types/flightPlan';
+import type { Aircraft } from '../types/flightPlan';
+import { useFlightPlan } from '../contexts/FlightPlanContext';
+import { usePerformance } from '../contexts/PerformanceContext';
 import { validatePerformancePackage } from '../utils/performanceImport';
 
 interface Props {
-  flightPlan: FlightPlan;
-  onFlightPlanUpdate: (plan: FlightPlan) => void;
   onClose: () => void;
 }
 
-const PerformanceImportDialog: React.FC<Props> = ({ flightPlan, onFlightPlanUpdate, onClose }) => {
+const PerformanceImportDialog: React.FC<Props> = ({ onClose }) => {
+  const { flightPlan, onFlightPlanUpdate } = useFlightPlan();
+  const { setPerformance } = usePerformance();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [fileName, setFileName] = useState<string | null>(null);
   const [validatedAircraft, setValidatedAircraft] = useState<Aircraft | null>(null);
@@ -44,13 +46,18 @@ const PerformanceImportDialog: React.FC<Props> = ({ flightPlan, onFlightPlanUpda
     if (!validatedAircraft) return;
 
     const newAircraft: Aircraft = JSON.parse(JSON.stringify(validatedAircraft));
+    setPerformance(newAircraft);
+
     const importedRegimeIds = new Set(newAircraft.regimes.map(r => r.id));
-    const newPoints = flightPlan.points.map(p =>
-      p.regimeId && !importedRegimeIds.has(p.regimeId)
-        ? { ...p, regimeId: undefined }
-        : p
-    );
-    onFlightPlanUpdate({ ...flightPlan, aircraft: newAircraft, points: newPoints });
+    const hasOrphans = flightPlan.points.some(p => p.regimeId && !importedRegimeIds.has(p.regimeId));
+    if (hasOrphans) {
+      const newPoints = flightPlan.points.map(p =>
+        p.regimeId && !importedRegimeIds.has(p.regimeId)
+          ? { ...p, regimeId: undefined }
+          : p
+      );
+      onFlightPlanUpdate({ ...flightPlan, points: newPoints });
+    }
     onClose();
   };
 

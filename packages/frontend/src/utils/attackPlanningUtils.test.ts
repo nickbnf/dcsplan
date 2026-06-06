@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { calculateAttackProfile } from './attackPlanningUtils';
 import type { FlightPlan, AttackPlanningParams } from '../types/flightPlan';
-import { defaultAircraft } from '../types/flightPlan';
 
 const BASE_PLAN: FlightPlan = {
   theatre: 'syria',
@@ -11,7 +10,6 @@ const BASE_PLAN: FlightPlan = {
   initTimeSec: 43200,
   initFob: 12000,
   name: 'Test Plan',
-  aircraft: defaultAircraft(),
 };
 
 const BASE_PARAMS: AttackPlanningParams = {

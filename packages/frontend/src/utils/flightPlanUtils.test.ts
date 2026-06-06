@@ -1,17 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { slugifyPlanName, flightPlanUtils } from './flightPlanUtils';
-import type { FlightPlan } from '../types/flightPlan';
+import type { Aircraft } from '../types/flightPlan';
 import { defaultAircraft } from '../types/flightPlan';
 
-const makePlan = (overrides: Partial<FlightPlan> = {}): FlightPlan => ({
-  theatre: 'syria',
-  points: [],
-  aircraft: defaultAircraft(),
-  declination: 0,
-  bankAngle: 45,
-  initTimeSec: 43200,
-  initFob: 12000,
-  name: 'Test',
+const makeAircraft = (overrides: Partial<Aircraft> = {}): Aircraft => ({
+  ...defaultAircraft(),
   ...overrides,
 });
 
@@ -75,28 +68,21 @@ describe('flightPlanUtils.downloadAircraft', () => {
   });
 
   it('uses slugified model name as filename', () => {
-    const plan = makePlan({
-      aircraft: { ...defaultAircraft(), model: 'F-15E Strike Eagle' },
-    });
-    flightPlanUtils.downloadAircraft(plan);
+    flightPlanUtils.downloadAircraft(makeAircraft({ model: 'F-15E Strike Eagle' }));
     expect(capturedFilename).toBe('f-15e-strike-eagle.perf.json');
   });
 
   it('falls back to performance.json when model is empty', () => {
-    const plan = makePlan({ aircraft: { ...defaultAircraft(), model: '' } });
-    flightPlanUtils.downloadAircraft(plan);
+    flightPlanUtils.downloadAircraft(makeAircraft({ model: '' }));
     expect(capturedFilename).toBe('performance.json');
   });
 
   it('envelope has version "1.0" and aircraft field', () => {
-    const plan = makePlan({
-      aircraft: {
-        ...defaultAircraft(),
-        model: 'F-15E',
-        regimes: [{ id: 'r1', name: 'Alpha', cruise: { tas: 400, ff: 3600 } }],
-      },
+    const aircraft = makeAircraft({
+      model: 'F-15E',
+      regimes: [{ id: 'r1', name: 'Alpha', cruise: { tas: 400, ff: 3600 } }],
     });
-    flightPlanUtils.downloadAircraft(plan);
+    flightPlanUtils.downloadAircraft(aircraft);
 
     const parsed = JSON.parse(capturedContent);
     expect(parsed.version).toBe('1.0');
@@ -105,21 +91,18 @@ describe('flightPlanUtils.downloadAircraft', () => {
     expect(parsed.aircraft.regimes).toHaveLength(1);
   });
 
-  it('exported object is a deep copy — mutating it does not affect the plan', () => {
-    const plan = makePlan({
-      aircraft: {
-        ...defaultAircraft(),
-        model: 'F-15E',
-        regimes: [{ id: 'r1', name: 'Alpha', cruise: { tas: 400, ff: 3600 } }],
-      },
+  it('exported object is a deep copy — mutating it does not affect the aircraft', () => {
+    const aircraft = makeAircraft({
+      model: 'F-15E',
+      regimes: [{ id: 'r1', name: 'Alpha', cruise: { tas: 400, ff: 3600 } }],
     });
-    flightPlanUtils.downloadAircraft(plan);
+    flightPlanUtils.downloadAircraft(aircraft);
 
     const exported = JSON.parse(capturedContent);
     exported.aircraft.model = 'MUTATED';
     exported.aircraft.regimes[0].name = 'MUTATED';
 
-    expect(plan.aircraft.model).toBe('F-15E');
-    expect(plan.aircraft.regimes[0].name).toBe('Alpha');
+    expect(aircraft.model).toBe('F-15E');
+    expect(aircraft.regimes[0].name).toBe('Alpha');
   });
 });

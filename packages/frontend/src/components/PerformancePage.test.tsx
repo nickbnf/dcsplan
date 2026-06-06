@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import PerformancePage from './PerformancePage';
-import type { FlightPlan, Regime } from '../types/flightPlan';
+import type { FlightPlan, Aircraft, Regime } from '../types/flightPlan';
 import { defaultAircraft } from '../types/flightPlan';
 
 // Mock useFlightPlan so we control the plan state
@@ -13,6 +13,21 @@ vi.mock('../contexts/FlightPlanContext', () => ({
   useFlightPlan: () => ({
     flightPlan: mockFlightPlan,
     onFlightPlanUpdate: mockOnFlightPlanUpdate,
+  }),
+}));
+
+// Mock usePerformance so we control the performance state
+const mockSetPerformance = vi.fn();
+let mockPerformance: Aircraft;
+
+vi.mock('../contexts/PerformanceContext', () => ({
+  usePerformance: () => ({
+    performance: mockPerformance,
+    setPerformance: mockSetPerformance,
+    updateAircraft: (patch: Partial<Aircraft>) => mockSetPerformance({ ...mockPerformance, ...patch }),
+    addRegime: (r: Regime) => mockSetPerformance({ ...mockPerformance, regimes: [...mockPerformance.regimes, r] }),
+    deleteRegime: (id: string) => mockSetPerformance({ ...mockPerformance, regimes: mockPerformance.regimes.filter((r: Regime) => r.id !== id) }),
+    clearAll: vi.fn(),
   }),
 }));
 
@@ -33,27 +48,25 @@ const makeRegime = (overrides: Partial<Regime> = {}): Regime => ({
   ...overrides,
 });
 
-const makePlan = (overrides: Partial<FlightPlan> & { regimes?: Regime[] } = {}): FlightPlan => {
-  const { regimes, ...rest } = overrides;
-  return {
-    theatre: 'syria',
-    points: [],
-    aircraft: regimes !== undefined ? { ...defaultAircraft(), regimes } : defaultAircraft(),
-    declination: 0,
-    bankAngle: 45,
-    initTimeSec: 43200,
-    initFob: 12000,
-    name: 'Test',
-    ...rest,
-  };
-};
+const makePlan = (overrides: Partial<FlightPlan> = {}): FlightPlan => ({
+  theatre: 'syria',
+  points: [],
+  declination: 0,
+  bankAngle: 45,
+  initTimeSec: 43200,
+  initFob: 12000,
+  name: 'Test',
+  ...overrides,
+});
 
 const TO_TOOLTIP_TEXT = 'Time, fuel, and distance covered from brake release through acceleration to climb speed. Use values from your aircraft\'s performance charts for your T/O configuration. Or obtain by flight testing the difference between a cruise climb and the same climb from brake release.';
 
 describe('PerformancePage', () => {
   beforeEach(() => {
     mockOnFlightPlanUpdate.mockClear();
+    mockSetPerformance.mockClear();
     mockFlightPlan = makePlan();
+    mockPerformance = defaultAircraft();
   });
 
   describe('Aircraft header', () => {
@@ -64,34 +77,34 @@ describe('PerformancePage', () => {
     });
 
     it('header is always visible with regimes', () => {
-      mockFlightPlan = makePlan({ regimes: [makeRegime()] });
+      mockPerformance = { ...defaultAircraft(), regimes: [makeRegime()] };
       render(<PerformancePage />);
       expect(screen.getByPlaceholderText('e.g. F-15E')).toBeInTheDocument();
     });
 
-    it('editing aircraft model calls onFlightPlanUpdate with new model', () => {
+    it('editing aircraft model calls setPerformance with new model', () => {
       render(<PerformancePage />);
       fireEvent.change(screen.getByPlaceholderText('e.g. F-15E'), { target: { value: 'F-16C' } });
-      expect(mockOnFlightPlanUpdate).toHaveBeenCalled();
-      const updated: FlightPlan = mockOnFlightPlanUpdate.mock.calls[0][0];
-      expect(updated.aircraft.model).toBe('F-16C');
+      expect(mockSetPerformance).toHaveBeenCalled();
+      const updated: Aircraft = mockSetPerformance.mock.calls[0][0];
+      expect(updated.model).toBe('F-16C');
     });
 
-    it('editing T/O config calls onFlightPlanUpdate with new config', () => {
+    it('editing T/O config calls setPerformance with new config', () => {
       render(<PerformancePage />);
       fireEvent.change(screen.getByPlaceholderText('e.g. MIL @ 60klb'), { target: { value: 'AB' } });
-      expect(mockOnFlightPlanUpdate).toHaveBeenCalled();
-      const updated: FlightPlan = mockOnFlightPlanUpdate.mock.calls[0][0];
-      expect(updated.aircraft.takeoffConfiguration).toBe('AB');
+      expect(mockSetPerformance).toHaveBeenCalled();
+      const updated: Aircraft = mockSetPerformance.mock.calls[0][0];
+      expect(updated.takeoffConfiguration).toBe('AB');
     });
 
-    it('editing taxi fuel calls onFlightPlanUpdate with new taxiFuel', () => {
+    it('editing taxi fuel calls setPerformance with new taxiFuel', () => {
       render(<PerformancePage />);
       const taxiInput = screen.getAllByRole('spinbutton')[0];
       fireEvent.change(taxiInput, { target: { value: '500' } });
-      expect(mockOnFlightPlanUpdate).toHaveBeenCalled();
-      const updated: FlightPlan = mockOnFlightPlanUpdate.mock.calls[0][0];
-      expect(updated.aircraft.taxiFuel).toBe(500);
+      expect(mockSetPerformance).toHaveBeenCalled();
+      const updated: Aircraft = mockSetPerformance.mock.calls[0][0];
+      expect(updated.taxiFuel).toBe(500);
     });
 
     it('T/O info icon has correct tooltip text', () => {
@@ -101,7 +114,7 @@ describe('PerformancePage', () => {
     });
 
     it('T/O all-or-nothing: all-zero is accepted (no error)', () => {
-      mockFlightPlan = makePlan();
+      mockPerformance = defaultAircraft();
       render(<PerformancePage />);
       // All zero by default — no error shown
       expect(screen.queryByText(/All three take-off fields/)).toBeNull();
@@ -114,16 +127,14 @@ describe('PerformancePage', () => {
       fireEvent.blur(toFuelInput);
       // Partial state: only fuel > 0, timeSec and distance are 0 → validation rejects
       expect(screen.getByText(/All three take-off fields/)).toBeInTheDocument();
-      expect(mockOnFlightPlanUpdate).not.toHaveBeenCalled();
+      expect(mockSetPerformance).not.toHaveBeenCalled();
     });
 
     it('T/O all-or-nothing: all-positive is accepted', () => {
-      mockFlightPlan = makePlan({
-        aircraft: {
-          ...defaultAircraft(),
-          takeoff: { timeSec: 75, fuel: 250, distance: 1.8 },
-        },
-      });
+      mockPerformance = {
+        ...defaultAircraft(),
+        takeoff: { timeSec: 75, fuel: 250, distance: 1.8 },
+      };
       render(<PerformancePage />);
       // No error initially
       expect(screen.queryByText(/All three take-off fields/)).toBeNull();
@@ -139,38 +150,38 @@ describe('PerformancePage', () => {
     render(<PerformancePage />);
     await userEvent.click(screen.getByText('+ Add regime'));
 
-    expect(mockOnFlightPlanUpdate).toHaveBeenCalledOnce();
-    const updated: FlightPlan = mockOnFlightPlanUpdate.mock.calls[0][0];
-    expect(updated.aircraft.regimes).toHaveLength(1);
-    expect(updated.aircraft.regimes[0].name).toBe('Regime 1');
-    expect(updated.aircraft.regimes[0].cruise.tas).toBe(400);
+    expect(mockSetPerformance).toHaveBeenCalledOnce();
+    const updated: Aircraft = mockSetPerformance.mock.calls[0][0];
+    expect(updated.regimes).toHaveLength(1);
+    expect(updated.regimes[0].name).toBe('Regime 1');
+    expect(updated.regimes[0].cruise.tas).toBe(400);
 
-    // Simulate the context re-rendering with the new plan
-    mockFlightPlan = updated;
-    mockOnFlightPlanUpdate.mockClear();
+    // Simulate the context re-rendering with the new performance
+    mockPerformance = updated;
+    mockSetPerformance.mockClear();
 
     // After re-render, editor should be visible
     const { unmount } = render(<PerformancePage />);
-    // The selected id was set in local state so we just check onFlightPlanUpdate was called
     unmount();
   });
 
   it('auto-increments default name: Regime 1, Regime 2', async () => {
-    mockFlightPlan = makePlan({ regimes: [makeRegime({ id: 'r1', name: 'Regime 1' })] });
+    mockPerformance = { ...defaultAircraft(), regimes: [makeRegime({ id: 'r1', name: 'Regime 1' })] };
     render(<PerformancePage />);
     await userEvent.click(screen.getByText('+ Add regime'));
 
-    const updated: FlightPlan = mockOnFlightPlanUpdate.mock.calls[0][0];
-    expect(updated.aircraft.regimes[1].name).toBe('Regime 2');
+    const updated: Aircraft = mockSetPerformance.mock.calls[0][0];
+    expect(updated.regimes[1].name).toBe('Regime 2');
   });
 
   it('shows climb/descent badges in the list', () => {
-    mockFlightPlan = makePlan({
+    mockPerformance = {
+      ...defaultAircraft(),
       regimes: [
         makeRegime({ id: 'r1', name: 'Alpha', climb: { tas: 300, ff: 4000, roc: 2000 } }),
         makeRegime({ id: 'r2', name: 'Bravo' }),
       ],
-    });
+    };
     render(<PerformancePage />);
 
     const alphaRow = screen.getByText('Alpha').closest('button')!;
@@ -184,7 +195,7 @@ describe('PerformancePage', () => {
     const regime = makeRegime({ id: 'r1', name: 'Alpha' });
 
     beforeEach(() => {
-      mockFlightPlan = makePlan({ regimes: [regime] });
+      mockPerformance = { ...defaultAircraft(), regimes: [regime] };
     });
 
     const openEditor = async () => {
@@ -205,12 +216,13 @@ describe('PerformancePage', () => {
     });
 
     it('rejects duplicate name (case-sensitive)', async () => {
-      mockFlightPlan = makePlan({
+      mockPerformance = {
+        ...defaultAircraft(),
         regimes: [
           makeRegime({ id: 'r1', name: 'Alpha' }),
           makeRegime({ id: 'r2', name: 'Beta' }),
         ],
-      });
+      };
       render(<PerformancePage />);
       await userEvent.click(screen.getByText('Alpha'));
 
@@ -226,9 +238,9 @@ describe('PerformancePage', () => {
       await userEvent.clear(nameInput);
       await userEvent.type(nameInput, 'Zulu');
 
-      const calls = mockOnFlightPlanUpdate.mock.calls;
-      const lastCall: FlightPlan = calls[calls.length - 1][0];
-      const updated = lastCall.aircraft.regimes.find((r: Regime) => r.id === 'r1');
+      const calls = mockSetPerformance.mock.calls;
+      const lastCall: Aircraft = calls[calls.length - 1][0];
+      const updated = lastCall.regimes.find((r: Regime) => r.id === 'r1');
       expect(updated).toBeDefined();
       expect(updated!.name).toBe('Zulu');
     });
@@ -258,21 +270,21 @@ describe('PerformancePage', () => {
         name: '', waypointComment: '', waypoints: [], waypointType: 'normal' as const,
         windSpeed: 0, windDir: 0,
       };
-      mockFlightPlan = makePlan({ regimes: [regime2], points: [point] });
+      mockPerformance = { ...defaultAircraft(), regimes: [regime2] };
+      mockFlightPlan = makePlan({ points: [point] });
       render(<PerformancePage />);
       await userEvent.click(screen.getByText('Alpha'));
 
-      mockOnFlightPlanUpdate.mockClear();
+      mockSetPerformance.mockClear();
 
       // Header adds taxiFuel[0], T/O fuel[1], T/O distance[2]; cruise TAS is [3]
       const tasInput = screen.getAllByRole('spinbutton')[3];
       fireEvent.change(tasInput, { target: { value: '450' } });
 
-      const calls = mockOnFlightPlanUpdate.mock.calls;
+      const calls = mockSetPerformance.mock.calls;
       if (calls.length > 0) {
-        const updated: FlightPlan = calls[calls.length - 1][0];
-        const updatedPoint = updated.points[0];
-        expect(updatedPoint.tas).toBe(450);
+        const updated: Aircraft = calls[calls.length - 1][0];
+        expect(updated.regimes[0].cruise.tas).toBe(450);
       }
     });
   });
@@ -280,7 +292,8 @@ describe('PerformancePage', () => {
   describe('Delete regime', () => {
     it('shows unreferenced delete dialog text', async () => {
       const regime = makeRegime({ id: 'r1', name: 'Alpha' });
-      mockFlightPlan = makePlan({ regimes: [regime], points: [] });
+      mockPerformance = { ...defaultAircraft(), regimes: [regime] };
+      mockFlightPlan = makePlan({ points: [] });
       render(<PerformancePage />);
       await userEvent.click(screen.getByText('Alpha'));
       await userEvent.click(screen.getByText('Delete regime'));
@@ -296,7 +309,8 @@ describe('PerformancePage', () => {
         name: '', waypointComment: '', waypoints: [], waypointType: 'normal' as const,
         windSpeed: 0, windDir: 0,
       };
-      mockFlightPlan = makePlan({ regimes: [regime], points: [point] });
+      mockPerformance = { ...defaultAircraft(), regimes: [regime] };
+      mockFlightPlan = makePlan({ points: [point] });
       render(<PerformancePage />);
       await userEvent.click(screen.getByText('Alpha'));
       await userEvent.click(screen.getByText('Delete regime'));
@@ -307,13 +321,13 @@ describe('PerformancePage', () => {
 
     it('cancel delete dialog leaves regime intact', async () => {
       const regime = makeRegime({ id: 'r1', name: 'Alpha' });
-      mockFlightPlan = makePlan({ regimes: [regime] });
+      mockPerformance = { ...defaultAircraft(), regimes: [regime] };
       render(<PerformancePage />);
       await userEvent.click(screen.getByText('Alpha'));
       await userEvent.click(screen.getByText('Delete regime'));
       await userEvent.click(screen.getByText('Cancel'));
 
-      expect(mockOnFlightPlanUpdate).not.toHaveBeenCalled();
+      expect(mockSetPerformance).not.toHaveBeenCalled();
     });
 
     it('confirming delete removes regime and clears waypoint bindings', async () => {
@@ -324,7 +338,8 @@ describe('PerformancePage', () => {
         name: '', waypointComment: '', waypoints: [], waypointType: 'normal' as const,
         windSpeed: 0, windDir: 0,
       };
-      mockFlightPlan = makePlan({ regimes: [regime], points: [point] });
+      mockPerformance = { ...defaultAircraft(), regimes: [regime] };
+      mockFlightPlan = makePlan({ points: [point] });
       render(<PerformancePage />);
       await userEvent.click(screen.getByText('Alpha'));
       await userEvent.click(screen.getByText('Delete regime'));
@@ -332,10 +347,15 @@ describe('PerformancePage', () => {
       const deleteButtons = screen.getAllByText('Delete');
       await userEvent.click(deleteButtons[deleteButtons.length - 1]);
 
+      // Performance update: regime removed
+      expect(mockSetPerformance).toHaveBeenCalledOnce();
+      const updatedPerf: Aircraft = mockSetPerformance.mock.calls[0][0];
+      expect(updatedPerf.regimes).toHaveLength(0);
+
+      // Flight plan update: waypoint binding cleared
       expect(mockOnFlightPlanUpdate).toHaveBeenCalledOnce();
-      const updated: FlightPlan = mockOnFlightPlanUpdate.mock.calls[0][0];
-      expect(updated.aircraft.regimes).toHaveLength(0);
-      expect(updated.points[0].regimeId).toBeUndefined();
+      const updatedPlan: FlightPlan = mockOnFlightPlanUpdate.mock.calls[0][0];
+      expect(updatedPlan.points[0].regimeId).toBeUndefined();
     });
   });
 });

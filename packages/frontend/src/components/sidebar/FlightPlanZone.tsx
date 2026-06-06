@@ -10,6 +10,7 @@ import { GenerateDialog } from './GenerateDialog';
 import { DeleteWaypointDialog } from './DeleteWaypointDialog';
 import { useWaypointSelection } from '../../contexts/WaypointSelectionContext';
 import { useLibrary } from '../../contexts/LibraryContext';
+import { usePerformance } from '../../contexts/PerformanceContext';
 
 interface FlightPlanZoneProps {
   flightPlan: FlightPlan;
@@ -605,6 +606,7 @@ export const RouteCard: React.FC<{
   index: number,
   onFlightPlanUpdate: (flightPlan: FlightPlan) => void,
 }> = ({ flightPlan, legData, index, onFlightPlanUpdate }) => {
+  const { performance } = usePerformance();
   const [showRegimePicker, setShowRegimePicker] = useState(false);
   const regimePickerRef = useRef<HTMLDivElement>(null);
 
@@ -622,7 +624,7 @@ export const RouteCard: React.FC<{
   const destWpt = flightPlan.points[index + 1];
   const prevWpt = flightPlan.points[index];
   const altDelta = destWpt.alt - prevWpt.alt;
-  const boundRegime = destWpt.regimeId ? flightPlan.aircraft.regimes.find(r => r.id === destWpt.regimeId) : undefined;
+  const boundRegime = destWpt.regimeId ? performance.regimes.find(r => r.id === destWpt.regimeId) : undefined;
   const seg = legData.segmentsResult;
   const isWarning = seg?.kind === 'warning';
 
@@ -660,7 +662,7 @@ export const RouteCard: React.FC<{
             <span className="font-aero-label text-gray-600 text-xs">ETE</span>
             <span className="font-aero-mono text-gray-900 text-xs">{displaySecondsInMinutes(legData.ete)}</span>
           </div>
-          {flightPlan.aircraft.regimes.length > 0 && (
+          {performance.regimes.length > 0 && (
             <div className="relative max-w-[9rem]" ref={regimePickerRef}>
               <button
                 onClick={() => setShowRegimePicker(v => !v)}
@@ -671,7 +673,7 @@ export const RouteCard: React.FC<{
               </button>
               {showRegimePicker && (
                 <div className="absolute right-0 top-full mt-1 z-40 bg-white border border-gray-300 rounded shadow-lg min-w-max">
-                  {flightPlan.aircraft.regimes.map(r => (
+                  {performance.regimes.map(r => (
                     <button key={r.id} onClick={() => handleSelectRegime(r)}
                       className="block w-full text-left px-3 py-1.5 text-xs font-aero-label hover:bg-gray-100">
                       {r.name}
@@ -831,6 +833,7 @@ export const FlightPlanZone: React.FC<FlightPlanZoneProps> = ({
   onStopDrawing,
 }) => {
   const { library } = useLibrary();
+  const { performance } = usePerformance();
 
   const handleAddWPTsClick = () => {
     const mapInstance = (window as any).mapInstance;
@@ -844,7 +847,7 @@ export const FlightPlanZone: React.FC<FlightPlanZoneProps> = ({
 
   const scrollableContent = useMemo(() => {
     const legData = projection
-      ? flightPlanUtils.calculateAllLegData(flightPlan, projection, navigationMode)
+      ? flightPlanUtils.calculateAllLegData(flightPlan, projection, navigationMode, performance)
       : [];
     const planName = flightPlan.name
 

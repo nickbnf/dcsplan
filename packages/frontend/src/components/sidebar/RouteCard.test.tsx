@@ -2,8 +2,17 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { RouteCard } from './FlightPlanZone';
-import type { FlightPlan, LegData, FlightPlanTurnPoint, Regime } from '../../types/flightPlan';
+import type { FlightPlan, LegData, FlightPlanTurnPoint, Regime, Aircraft } from '../../types/flightPlan';
 import { defaultAircraft } from '../../types/flightPlan';
+
+// Provide a performance context with controllable regimes
+let mockPerformance: Aircraft;
+
+vi.mock('../../contexts/PerformanceContext', () => ({
+  usePerformance: () => ({
+    performance: mockPerformance,
+  }),
+}));
 
 vi.mock('../../utils/flightPlanUtils', async (importOriginal) => {
   const orig = await importOriginal<typeof import('../../utils/flightPlanUtils')>();
@@ -46,51 +55,51 @@ const makeLegData = (overrides: Partial<LegData> = {}): LegData => ({
   ...overrides,
 });
 
-const makePlan = (overrides: Partial<FlightPlan> & { regimes?: Regime[] } = {}): FlightPlan => {
-  const { regimes, ...rest } = overrides;
-  return {
-    theatre: 'syria',
-    points: [makeWpt({ alt: 0 }), makeWpt({ alt: 10000 })],
-    aircraft: regimes !== undefined ? { ...defaultAircraft(), regimes } : defaultAircraft(),
-    declination: 0,
-    bankAngle: 45,
-    initTimeSec: 43200,
-    initFob: 12000,
-    name: 'Test',
-    ...rest,
-  };
-};
+const makePlan = (overrides: Partial<FlightPlan> = {}): FlightPlan => ({
+  theatre: 'syria',
+  points: [makeWpt({ alt: 0 }), makeWpt({ alt: 10000 })],
+  declination: 0,
+  bankAngle: 45,
+  initTimeSec: 43200,
+  initFob: 12000,
+  name: 'Test',
+  ...overrides,
+});
 
 describe('RouteCard', () => {
   const onUpdate = vi.fn();
 
   beforeEach(() => {
     onUpdate.mockClear();
+    mockPerformance = defaultAircraft(); // no regimes by default
   });
 
   describe('Regime picker visibility', () => {
     it('hides regime picker when plan has no regimes', () => {
-      const plan = makePlan({ regimes: [] });
+      mockPerformance = { ...defaultAircraft(), regimes: [] };
+      const plan = makePlan();
       render(<RouteCard flightPlan={plan} legData={makeLegData()} index={0} onFlightPlanUpdate={onUpdate} />);
       expect(screen.queryByTitle('Select performance regime')).toBeNull();
     });
 
     it('shows regime picker button when plan has regimes', () => {
-      const plan = makePlan({ regimes: [makeRegime()] });
+      mockPerformance = { ...defaultAircraft(), regimes: [makeRegime()] };
+      const plan = makePlan();
       render(<RouteCard flightPlan={plan} legData={makeLegData()} index={0} onFlightPlanUpdate={onUpdate} />);
       expect(screen.getByTitle('Manual')).toBeInTheDocument();
     });
 
     it('shows "—" when no regime is bound', () => {
-      const plan = makePlan({ regimes: [makeRegime()] });
+      mockPerformance = { ...defaultAircraft(), regimes: [makeRegime()] };
+      const plan = makePlan();
       render(<RouteCard flightPlan={plan} legData={makeLegData()} index={0} onFlightPlanUpdate={onUpdate} />);
       const btn = screen.getByTitle('Manual');
       expect(btn).toHaveTextContent('—');
     });
 
     it('shows regime name when regime is bound', () => {
+      mockPerformance = { ...defaultAircraft(), regimes: [makeRegime()] };
       const plan = makePlan({
-        regimes: [makeRegime()],
         points: [makeWpt({ alt: 0 }), makeWpt({ alt: 10000, regimeId: 'r1' })],
       });
       render(<RouteCard flightPlan={plan} legData={makeLegData()} index={0} onFlightPlanUpdate={onUpdate} />);
@@ -99,7 +108,8 @@ describe('RouteCard', () => {
     });
 
     it('clicking picker button opens dropdown with regime names + Manual', async () => {
-      const plan = makePlan({ regimes: [makeRegime()] });
+      mockPerformance = { ...defaultAircraft(), regimes: [makeRegime()] };
+      const plan = makePlan();
       render(<RouteCard flightPlan={plan} legData={makeLegData()} index={0} onFlightPlanUpdate={onUpdate} />);
       await userEvent.click(screen.getByTitle('Manual'));
       expect(screen.getByText('Alpha')).toBeInTheDocument();
@@ -107,7 +117,8 @@ describe('RouteCard', () => {
     });
 
     it('selecting a regime calls applyRegimeToWaypoint and updates plan', async () => {
-      const plan = makePlan({ regimes: [makeRegime()] });
+      mockPerformance = { ...defaultAircraft(), regimes: [makeRegime()] };
+      const plan = makePlan();
       render(<RouteCard flightPlan={plan} legData={makeLegData()} index={0} onFlightPlanUpdate={onUpdate} />);
       await userEvent.click(screen.getByTitle('Manual'));
       await userEvent.click(screen.getByText('Alpha'));
@@ -118,8 +129,8 @@ describe('RouteCard', () => {
     });
 
     it('selecting Manual calls clearRegimeBinding', async () => {
+      mockPerformance = { ...defaultAircraft(), regimes: [makeRegime()] };
       const plan = makePlan({
-        regimes: [makeRegime()],
         points: [makeWpt({ alt: 0 }), makeWpt({ alt: 10000, regimeId: 'r1' })],
       });
       render(<RouteCard flightPlan={plan} legData={makeLegData()} index={0} onFlightPlanUpdate={onUpdate} />);
@@ -133,8 +144,8 @@ describe('RouteCard', () => {
 
   describe('Direct edit clears regime binding', () => {
     it('editing TAS with a changed value clears regimeId', async () => {
+      mockPerformance = { ...defaultAircraft(), regimes: [makeRegime()] };
       const plan = makePlan({
-        regimes: [makeRegime()],
         points: [makeWpt({ alt: 0 }), makeWpt({ alt: 10000, tas: 400, regimeId: 'r1' })],
       });
       render(<RouteCard flightPlan={plan} legData={makeLegData()} index={0} onFlightPlanUpdate={onUpdate} />);
@@ -151,8 +162,8 @@ describe('RouteCard', () => {
     });
 
     it('editing FF with a changed value clears regimeId', async () => {
+      mockPerformance = { ...defaultAircraft(), regimes: [makeRegime()] };
       const plan = makePlan({
-        regimes: [makeRegime()],
         points: [makeWpt({ alt: 0 }), makeWpt({ alt: 10000, fuelFlow: 3600, regimeId: 'r1' })],
       });
       render(<RouteCard flightPlan={plan} legData={makeLegData()} index={0} onFlightPlanUpdate={onUpdate} />);
@@ -171,26 +182,23 @@ describe('RouteCard', () => {
 
   describe('Alt and wind preserve regime binding', () => {
     it('editing alt does NOT clear regimeId', async () => {
+      mockPerformance = { ...defaultAircraft(), regimes: [makeRegime()] };
       const plan = makePlan({
-        regimes: [makeRegime()],
         points: [makeWpt({ alt: 0 }), makeWpt({ alt: 10000, regimeId: 'r1' })],
       });
       render(<RouteCard flightPlan={plan} legData={makeLegData()} index={0} onFlightPlanUpdate={onUpdate} />);
 
-      // Find the alt input — displayed as "10000'"
       const altInput = screen.getByDisplayValue("10000'");
       fireEvent.focus(altInput);
       fireEvent.change(altInput, { target: { value: '15000' } });
       fireEvent.blur(altInput);
 
-      // flightPlanUtils.updateTurnPoint is mocked to return the plan unchanged,
-      // so we just verify onUpdate was called (not that regimeId was preserved in mock output)
       expect(onUpdate).toHaveBeenCalled();
     });
 
     it('editing windDir does NOT clear regimeId', async () => {
+      mockPerformance = { ...defaultAircraft(), regimes: [makeRegime()] };
       const plan = makePlan({
-        regimes: [makeRegime()],
         points: [makeWpt({ alt: 0 }), makeWpt({ alt: 10000, windDir: 270, regimeId: 'r1' })],
       });
       render(<RouteCard flightPlan={plan} legData={makeLegData()} index={0} onFlightPlanUpdate={onUpdate} />);
@@ -248,7 +256,6 @@ describe('RouteCard', () => {
       const plan = makePlan({ points: [makeWpt({ alt: 0 }), makeWpt({ alt: 10000 })] });
       const legData = makeLegData({ segmentsResult: toSeg });
       render(<RouteCard flightPlan={plan} legData={legData} index={0} onFlightPlanUpdate={onUpdate} />);
-      // Tooltip content is rendered as a hidden CSS span, not a title attribute
       expect(screen.getByText('Take-off:')).toBeInTheDocument();
     });
 

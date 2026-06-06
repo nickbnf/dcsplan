@@ -9,6 +9,7 @@ import type { FlightPlan, PictogramType } from '../types/flightPlan';
 import type { DrawingState } from '../hooks/useDrawing';
 import { useTheatres } from '../hooks/useTheatres';
 import { useFlightPlan } from '../contexts/FlightPlanContext';
+import { usePerformance } from '../contexts/PerformanceContext';
 import { flightPlanUtils } from '../utils/flightPlanUtils';
 import { useLibrary } from '../contexts/LibraryContext';
 import { mergeLibraryEntries } from '../utils/libraryStorage';
@@ -51,6 +52,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const { theatres, isLoading: isLoadingTheatres } = useTheatres();
   const { library, clearAll: clearLibrary, setLibrary } = useLibrary();
   const { requestFitToFlightPlan } = useFlightPlan();
+  const { performance, setPerformance } = usePerformance();
   const [pendingTheatreId, setPendingTheatreId] = useState<string | null>(null);
   const [isConfirmDialogOpen, setIsConfirmDialogOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -104,10 +106,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
               const result = mergeLibraryEntries(library, snapshot);
               setLibrary(result.merged);
             }}
+            onPerformanceSnapshot={(snapshot) => setPerformance(snapshot)}
             currentLibrary={library}
           />
         }
-        onExport={() => flightPlanUtils.downloadFlightPlan(flightPlan, library)}
+        onExport={() => flightPlanUtils.downloadFlightPlan(flightPlan, library, performance)}
       />
 
       {/* Tab switcher */}

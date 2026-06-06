@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import type { FlightPlan, LibraryObject } from '../types/flightPlan';
 import { FLIGHT_PLAN_VERSION } from '../types/flightPlan';
 import { mergeLibraryEntries } from './libraryStorage';
-import { defaultAircraft } from '../types/flightPlan';
 
 const makeEntry = (id: string, overrides: Partial<LibraryObject> = {}): LibraryObject => ({
   id,
@@ -17,7 +16,6 @@ const makeEntry = (id: string, overrides: Partial<LibraryObject> = {}): LibraryO
 const makePlan = (overrides: Partial<FlightPlan> = {}): FlightPlan => ({
   theatre: 'caucasus',
   points: [],
-  aircraft: defaultAircraft(),
   declination: 0,
   bankAngle: 45,
   initTimeSec: 43200,
@@ -27,8 +25,8 @@ const makePlan = (overrides: Partial<FlightPlan> = {}): FlightPlan => ({
 });
 
 describe('snapshot embedding on export', () => {
-  it('exports version 1.4', () => {
-    expect(FLIGHT_PLAN_VERSION).toBe('1.4');
+  it('exports version 1.5', () => {
+    expect(FLIGHT_PLAN_VERSION).toBe('1.5');
   });
 
   it('embeds only referenced library entries', () => {

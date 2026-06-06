@@ -1,5 +1,7 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { NavLink, Outlet, Link } from 'react-router-dom';
+import { useFlightPlan } from '../contexts/FlightPlanContext';
+import { usePerformance } from '../contexts/PerformanceContext';
 
 const tabs = [
   { label: 'NAV', to: '/' },
@@ -8,9 +10,28 @@ const tabs = [
   { label: 'LIBRARY', to: '/library' },
 ];
 
+const RegimeConsistencyGuard: React.FC = () => {
+  const { flightPlan, onFlightPlanUpdate } = useFlightPlan();
+  const { performance } = usePerformance();
+
+  useEffect(() => {
+    const regimeIds = new Set(performance.regimes.map(r => r.id));
+    const hasOrphans = flightPlan.points.some(p => p.regimeId && !regimeIds.has(p.regimeId));
+    if (!hasOrphans) return;
+    const newPoints = flightPlan.points.map(p =>
+      p.regimeId && !regimeIds.has(p.regimeId) ? { ...p, regimeId: undefined } : p
+    );
+    onFlightPlanUpdate({ ...flightPlan, points: newPoints });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [performance.regimes]);
+
+  return null;
+};
+
 const Layout: React.FC = () => {
   return (
     <div className="h-screen w-screen flex flex-col overflow-hidden">
+      <RegimeConsistencyGuard />
       {/* Top tab bar */}
       <div className="flex items-center justify-between h-11 bg-gray-50 border-b border-gray-300 shrink-0 px-2">
         {/* Tab buttons */}

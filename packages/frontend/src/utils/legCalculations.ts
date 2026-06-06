@@ -1,4 +1,4 @@
-import type { FlightPlan, LegData, Regime, Wind, LegSegmentsResult, TakeoffPerformance } from "../types/flightPlan";
+import type { FlightPlan, Aircraft, LegData, Regime, Wind, LegSegmentsResult, TakeoffPerformance } from "../types/flightPlan";
 import { getEffectiveExitTime } from "./flightPlanUtils";
 import { transform } from "ol/proj";
 
@@ -632,7 +632,8 @@ export function calculateAllLegDrawData(
 export function calculateAllLegData(
   flightPlan: FlightPlan,
   projection: any,
-  navigationMode: string
+  navigationMode: string,
+  aircraft: Aircraft
 ): LegData[] {
   const results: LegData[] = [];
 
@@ -642,7 +643,7 @@ export function calculateAllLegData(
 
   let inboundBearing = 0; // First leg has no inbound bearing
   let previousEta = flightPlan.initTimeSec;
-  let previousEfr = flightPlan.initFob - (flightPlan.aircraft?.taxiFuel ?? 0);
+  let previousEfr = flightPlan.initFob - (aircraft.taxiFuel ?? 0);
   let hackOffsetSec: number | undefined = undefined;
 
   for (let i = 0; i < flightPlan.points.length - 1; i++) {
@@ -724,7 +725,7 @@ export function calculateAllLegData(
 
     // Regime-aware ETE and fuel computation
     const regime = destination.regimeId
-      ? flightPlan.aircraft?.regimes?.find(r => r.id === destination.regimeId)
+      ? aircraft.regimes.find(r => r.id === destination.regimeId)
       : undefined;
     const segResult = computeLegSegments(
       {
@@ -737,7 +738,7 @@ export function calculateAllLegData(
         tas: destination.tas,
         ff: destination.fuelFlow,
         legIndex: i,
-        takeoff: flightPlan.aircraft?.takeoff,
+        takeoff: aircraft.takeoff,
       },
       regime
     );

@@ -152,20 +152,19 @@ describe('replaceLibraryEntries', () => {
 });
 
 describe('FlightPlan legacy compatibility', () => {
-  it('v1.3 plan JSON loads with empty libraryRefs and markers', () => {
-    const legacyPlan = {
+  it('plan JSON loads with empty libraryRefs and markers when absent', () => {
+    const plan = {
       theatre: 'syria',
       points: [],
       declination: 0,
       bankAngle: 45,
       initTimeSec: 43200,
       initFob: 12000,
-      name: 'Legacy Plan',
-      aircraft: { model: '', takeoffConfiguration: '', taxiFuel: 0, takeoff: { timeSec: 0, fuel: 0, distance: 0 }, regimes: [] },
+      name: 'Plan',
     };
     // Simulate import: absent fields should default to empty arrays
-    const libraryRefs: PlanLibraryRef[] = (legacyPlan as any).libraryRefs ?? [];
-    const markers: PlanMarker[] = (legacyPlan as any).markers ?? [];
+    const libraryRefs: PlanLibraryRef[] = (plan as any).libraryRefs ?? [];
+    const markers: PlanMarker[] = (plan as any).markers ?? [];
     expect(libraryRefs).toEqual([]);
     expect(markers).toEqual([]);
   });
@@ -181,7 +180,6 @@ describe('FlightPlan legacy compatibility', () => {
       initTimeSec: 43200,
       initFob: 12000,
       name: 'Test Plan',
-      aircraft: { model: '', takeoffConfiguration: '', taxiFuel: 0, takeoff: { timeSec: 0, fuel: 0, distance: 0 }, regimes: [] },
       libraryRefs: [ref],
       markers: [marker],
     };

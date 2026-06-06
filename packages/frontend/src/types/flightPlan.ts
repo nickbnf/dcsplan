@@ -201,7 +201,6 @@ export type FlightPlan = {
   initTimeSec: number; // Initial time in seconds since midnight
   initFob: number;
   name: string; // Name of the flight plan
-  aircraft: Aircraft;
   libraryRefs?: PlanLibraryRef[];
   markers?: PlanMarker[];
   attackPlanning?: {        // optional; params are user-supplied, results are computed on Calculate
@@ -210,14 +209,15 @@ export type FlightPlan = {
   };
 }
 
-export const FLIGHT_PLAN_VERSION = "1.4";
+export const FLIGHT_PLAN_VERSION = "1.5";
 export const PERFORMANCE_FILE_VERSION = "1.0";
 export const LIBRARY_FILE_VERSION = "1.0";
 
 export interface VersionedFlightPlan {
   version: string;
   flightPlan: FlightPlan;
-  librarySnapshot?: LibraryObject[]; // embedded on export for standalone files
+  librarySnapshot?: LibraryObject[];    // embedded on export for standalone files
+  performanceSnapshot?: Aircraft;       // embedded on export for standalone files
 }
 
 export interface PerformanceFileV1 {

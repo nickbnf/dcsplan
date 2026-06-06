@@ -9,6 +9,7 @@ import { TheatreLibraryPage } from './TheatreLibraryPage';
 import { About } from './About';
 import { FlightPlanProvider } from '../contexts/FlightPlanContext';
 import { LibraryProvider } from '../contexts/LibraryContext';
+import { PerformanceProvider } from '../contexts/PerformanceContext';
 
 const App: React.FC = () => {
   return (
@@ -21,7 +22,7 @@ const App: React.FC = () => {
         />
       </Helmet>
       <Routes>
-        <Route element={<FlightPlanProvider><LibraryProvider><Layout /></LibraryProvider></FlightPlanProvider>}>
+        <Route element={<PerformanceProvider><FlightPlanProvider><LibraryProvider><Layout /></LibraryProvider></FlightPlanProvider></PerformanceProvider>}>
           <Route path="/" element={<PlannerApp />} />
           <Route path="/performance" element={<PerformancePage />} />
           <Route path="/attack" element={<AttackPlanningPage />} />

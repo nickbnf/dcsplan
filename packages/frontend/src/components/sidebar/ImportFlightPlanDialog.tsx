@@ -1,11 +1,15 @@
 import React, { useState, useRef } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
-import type { FlightPlan, LibraryObject } from '../../types/flightPlan';
+import type { FlightPlan, Aircraft, LibraryObject } from '../../types/flightPlan';
+import { defaultAircraft } from '../../types/flightPlan';
 import { getApiUrl } from '../../config/api';
+import { parseAircraftBlock } from '../../utils/performanceStorage';
+import { usePerformance } from '../../contexts/PerformanceContext';
 
 interface ImportFlightPlanDialogProps {
   onImport: (flightPlan: FlightPlan) => void;
   onLibrarySnapshot?: (snapshot: LibraryObject[]) => void;
+  onPerformanceSnapshot?: (snapshot: Aircraft) => void;
   currentLibrary?: LibraryObject[];
 }
 
@@ -25,13 +29,18 @@ function parseValidationError(error: any): string {
 export const ImportFlightPlanDialog: React.FC<ImportFlightPlanDialogProps> = ({
   onImport,
   onLibrarySnapshot,
+  onPerformanceSnapshot,
   currentLibrary = [],
 }) => {
+  const { performance: currentPerformance } = usePerformance();
+  const hasExistingProfile = currentPerformance.model !== '' || currentPerformance.regimes.length > 0;
+
   const [isOpen, setIsOpen] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
   const [fileName, setFileName] = useState<string | null>(null);
   const [validatedPlan, setValidatedPlan] = useState<FlightPlan | null>(null);
   const [snapshotEntries, setSnapshotEntries] = useState<LibraryObject[]>([]);
+  const [validatedPerformance, setValidatedPerformance] = useState<Aircraft | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -42,6 +51,7 @@ export const ImportFlightPlanDialog: React.FC<ImportFlightPlanDialogProps> = ({
     setFileName(file.name);
     setValidatedPlan(null);
     setSnapshotEntries([]);
+    setValidatedPerformance(null);
     setErrors([]);
     setIsValidating(true);
 
@@ -59,16 +69,35 @@ export const ImportFlightPlanDialog: React.FC<ImportFlightPlanDialogProps> = ({
         return;
       }
 
+      // Extract performance snapshot (v1.5: top-level; v1.4: inside flightPlan.aircraft)
+      const rawPerformance = jsonData.performanceSnapshot ?? jsonData.flightPlan?.aircraft;
+      let extractedPerformance: Aircraft | null = null;
+      if (rawPerformance) {
+        const perfResult = parseAircraftBlock(rawPerformance);
+        if (perfResult.ok) extractedPerformance = perfResult.aircraft;
+      }
+      setValidatedPerformance(extractedPerformance);
+
       // Extract library snapshot before sending to backend (backend doesn't know about it)
       const snapshot: LibraryObject[] = Array.isArray(jsonData.librarySnapshot)
         ? jsonData.librarySnapshot
         : [];
       setSnapshotEntries(snapshot);
 
+      // Wire-format marshaling: backend expects aircraft inside flightPlan
+      const wireBody = {
+        ...jsonData,
+        flightPlan: {
+          ...jsonData.flightPlan,
+          aircraft: extractedPerformance ?? defaultAircraft(),
+        },
+      };
+      delete wireBody.performanceSnapshot;
+
       const response = await fetch(getApiUrl('flightplan/import'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(jsonData),
+        body: JSON.stringify(wireBody),
       });
 
       if (!response.ok) {
@@ -78,7 +107,9 @@ export const ImportFlightPlanDialog: React.FC<ImportFlightPlanDialogProps> = ({
       }
 
       const data = await response.json();
-      setValidatedPlan(data.flightPlan);
+      // Strip aircraft back off: FlightPlan type no longer carries it
+      const { aircraft: _aircraft, ...planWithoutAircraft } = data.flightPlan;
+      setValidatedPlan(planWithoutAircraft as FlightPlan);
     } catch (err) {
       setErrors([err instanceof Error ? err.message : 'Failed to validate flight plan.']);
     } finally {
@@ -92,6 +123,9 @@ export const ImportFlightPlanDialog: React.FC<ImportFlightPlanDialogProps> = ({
     if (onLibrarySnapshot && snapshotEntries.length > 0) {
       onLibrarySnapshot(snapshotEntries);
     }
+    if (onPerformanceSnapshot && validatedPerformance) {
+      onPerformanceSnapshot(validatedPerformance);
+    }
     handleClose();
   };
 
@@ -100,6 +134,7 @@ export const ImportFlightPlanDialog: React.FC<ImportFlightPlanDialogProps> = ({
     setFileName(null);
     setValidatedPlan(null);
     setSnapshotEntries([]);
+    setValidatedPerformance(null);
     setErrors([]);
     setIsValidating(false);
     if (fileInputRef.current) fileInputRef.current.value = '';
@@ -151,6 +186,15 @@ export const ImportFlightPlanDialog: React.FC<ImportFlightPlanDialogProps> = ({
                     <div><span className="text-gray-500">File:</span> {fileName}</div>
                     <div><span className="text-gray-500">Plan:</span> {validatedPlan.name || '—'}</div>
                     <div><span className="text-gray-500">Waypoints:</span> {validatedPlan.points.length}</div>
+                    {validatedPerformance && (
+                      <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded text-xs">
+                        <div className="font-medium text-amber-800 mb-1">Performance profile in file:</div>
+                        <div className="text-amber-700">
+                          {validatedPerformance.model || '—'} · {validatedPerformance.regimes.length} regime{validatedPerformance.regimes.length !== 1 ? 's' : ''}
+                          {hasExistingProfile && ' — your current profile will be replaced'}
+                        </div>
+                      </div>
+                    )}
                     {snapshotEntries.length > 0 && (
                       <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-xs">
                         <div className="font-medium text-blue-800 mb-1">Library objects in file:</div>

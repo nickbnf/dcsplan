@@ -1,13 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import type { FlightPlan, VersionedFlightPlan } from '../types/flightPlan';
-import { FLIGHT_PLAN_VERSION, defaultAircraft } from '../types/flightPlan';
+import { FLIGHT_PLAN_VERSION } from '../types/flightPlan';
 
 const STORAGE_KEY = 'dcsplan-flightplan';
 const DEBOUNCE_MS = 300;
 
-/**
- * Validates that the parsed data matches the FlightPlan structure
- */
 function isValidFlightPlan(data: any): data is FlightPlan {
   return (
     data &&
@@ -19,9 +16,6 @@ function isValidFlightPlan(data: any): data is FlightPlan {
     typeof data.initTimeSec === 'number' &&
     typeof data.initFob === 'number' &&
     typeof data.name === 'string' &&
-    data.aircraft &&
-    typeof data.aircraft === 'object' &&
-    Array.isArray(data.aircraft.regimes) &&
     data.points.every((point: any) =>
       point &&
       typeof point.lat === 'number' &&
@@ -49,55 +43,17 @@ function loadFlightPlan(): FlightPlan | null {
     
     // Check if we have a versioned wrapper
     let flightPlanData: any;
-    let version: string | undefined;
 
     if (parsed && typeof parsed === 'object' && parsed.version && parsed.flightPlan) {
       flightPlanData = parsed.flightPlan;
-      version = parsed.version;
     } else {
       // Legacy unversioned data
       flightPlanData = parsed;
-      version = undefined;
     }
 
-    // Migration logic
-    if (version !== FLIGHT_PLAN_VERSION) {
-      console.info(`Migrating flight plan from version ${version || 'legacy'} to ${FLIGHT_PLAN_VERSION}`);
-
-      // Ensure theatre exists (required in 1.1)
-      if (flightPlanData && typeof flightPlanData === 'object' && !flightPlanData.theatre) {
-        flightPlanData.theatre = "syria";
-      }
-
-      // v1.2 → v1.3: synthesise aircraft block and relocate top-level regimes
-      if (version === '1.2' || (version !== '1.3' && flightPlanData.regimes !== undefined)) {
-        const aircraft = defaultAircraft();
-        if (Array.isArray(flightPlanData.regimes)) {
-          aircraft.regimes = flightPlanData.regimes;
-          delete flightPlanData.regimes;
-        }
-        flightPlanData.aircraft = aircraft;
-      }
-    }
-
-    // Always ensure aircraft exists (guard for any intermediate state)
-    if (!flightPlanData.aircraft) {
-      const aircraft = defaultAircraft();
-      if (Array.isArray(flightPlanData.regimes)) {
-        aircraft.regimes = flightPlanData.regimes;
-        delete flightPlanData.regimes;
-      }
-      flightPlanData.aircraft = aircraft;
-    }
-
-    // Clear any regimeId on waypoints that don't match a known regime
-    const regimeIds = new Set((flightPlanData.aircraft.regimes as any[]).map((r: any) => r.id));
-    if (Array.isArray(flightPlanData.points)) {
-      for (const point of flightPlanData.points) {
-        if (point.regimeId !== undefined && !regimeIds.has(point.regimeId)) {
-          delete point.regimeId;
-        }
-      }
+    // Ensure theatre exists (required in 1.1)
+    if (flightPlanData && typeof flightPlanData === 'object' && !flightPlanData.theatre) {
+      flightPlanData.theatre = "syria";
     }
 
     if (isValidFlightPlan(flightPlanData)) {
