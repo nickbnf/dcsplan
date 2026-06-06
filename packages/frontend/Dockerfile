@@ -16,6 +16,7 @@ COPY packages/frontend/package.json ./packages/frontend/
 RUN pnpm install --frozen-lockfile
 
 # Copy source files
+COPY packages/shared ./packages/shared
 COPY packages/frontend ./packages/frontend
 
 # Build arguments for configuration
