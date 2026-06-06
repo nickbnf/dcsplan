@@ -9,7 +9,7 @@ import type { PlanLibraryRef, PlanMarker, LibraryObject } from '../types/flightP
 import { getPictogramDataUrl, isRangedType } from './pictogramCatalog';
 
 const SELECTED_COLOR = '#FFB300';
-const OBJECTS_COLOR = '#D946EF';
+const OBJECTS_COLOR = '#A21CAF';
 const GHOST_COLOR = '#9CA3AF';
 const ICON_SIZE = 36;
 const NM_TO_METERS = 1852;

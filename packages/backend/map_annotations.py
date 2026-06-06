@@ -7,6 +7,7 @@ waypoints, and other visual markers.
 
 import os
 from typing import Callable, Tuple, Optional, List
+import numpy as _np
 from PIL import Image, ImageDraw, ImageFont
 import logging
 import math
@@ -1698,6 +1699,27 @@ def _rasterize_pictogram(ptype: str, color_hex: str, size: int) -> Image.Image:
     return Image.open(_io.BytesIO(png_bytes)).convert("RGBA")
 
 
+@_lru_cache(maxsize=64)
+def _pictogram_visual_bbox(ptype: str, size: int) -> tuple:
+    """Return (cx, cy, r) of the tight visual bounding circle at `size` pixels.
+
+    Rasterises with a neutral colour, finds all non-transparent pixels, and
+    returns the centre and half-max-dimension of their bounding box.
+    """
+    icon = _rasterize_pictogram(ptype, "#000000", size)
+    alpha = _np.array(icon)[:, :, 3]
+    rows = _np.any(alpha > 10, axis=1)
+    cols = _np.any(alpha > 10, axis=0)
+    if not rows.any():
+        return size / 2.0, size / 2.0, size / 2.0
+    r_min, r_max = int(_np.where(rows)[0][0]),  int(_np.where(rows)[0][-1])
+    c_min, c_max = int(_np.where(cols)[0][0]),  int(_np.where(cols)[0][-1])
+    cx = (c_min + c_max) / 2.0
+    cy = (r_min + r_max) / 2.0
+    r  = max(c_max - c_min, r_max - r_min) / 2.0
+    return cx, cy, r
+
+
 def _pt_to_seg_dist2(
     px: float, py: float, ax: float, ay: float, bx: float, by: float
 ) -> float:
@@ -1723,13 +1745,17 @@ def draw_pictogram(
         r, g, b = color[0], color[1], color[2]
         color_hex = f"#{r:02x}{g:02x}{b:02x}"
         icon = _rasterize_pictogram(ptype, color_hex, size)
-        # Halo disc drawn directly on the overlay
-        hr = size // 2 + 3
-        hd = ImageDraw.Draw(overlay)
-        hd.ellipse((x - hr, y - hr, x + hr, y + hr), fill=PICTO_HALO_COLOR)
-        # Icon composited on top of the halo
+        # Icon top-left in overlay coordinates
         ox = int(x - size / 2)
         oy = int(y - size / 2)
+        # Measure tight visual bounds and derive halo center + radius
+        vcx, vcy, vr = _pictogram_visual_bbox(ptype, size)
+        halo_cx = ox + vcx
+        halo_cy = oy + vcy
+        hr = vr + 2
+        hd = ImageDraw.Draw(overlay)
+        hd.ellipse((halo_cx - hr, halo_cy - hr, halo_cx + hr, halo_cy + hr), fill=PICTO_HALO_COLOR)
+        # Icon composited on top of the halo
         overlay.alpha_composite(icon, dest=(ox, oy))
     except Exception as e:
         logger.debug(f"draw_pictogram({ptype}): {e}")
