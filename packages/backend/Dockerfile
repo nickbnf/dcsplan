@@ -15,7 +15,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # Copy requirements and install Python dependencies
-COPY requirements-lock.txt .
+COPY backend/requirements-lock.txt .
 RUN pip install --no-cache-dir --user -r requirements-lock.txt
 
 # Production stage
@@ -39,20 +39,24 @@ ENV PYTHONPATH=/root/.local/lib/python3.12/site-packages:$PYTHONPATH
 WORKDIR /app
 
 # Copy application code (excluding static/tiles directory - will be mounted as volume)
-COPY flight_plan.py .
-COPY kneeboard.py .
-COPY map_annotations.py .
-COPY task_queue.py .
-COPY main.py .
-COPY logging_config.py .
-COPY waypoint_list_page.py .
-COPY overview_map_page.py .
-COPY theatres ./theatres
+COPY backend/flight_plan.py .
+COPY backend/kneeboard.py .
+COPY backend/map_annotations.py .
+COPY backend/task_queue.py .
+COPY backend/main.py .
+COPY backend/logging_config.py .
+COPY backend/waypoint_list_page.py .
+COPY backend/overview_map_page.py .
+COPY backend/theatres ./theatres
+
+# Copy shared data files referenced via ../shared/ relative path
+COPY shared/pictogramCatalog.json /shared/pictogramCatalog.json
 
 # Create non-root user for security
 RUN useradd -m -u 1000 appuser && \
   chown -R appuser:appuser /app && \
-  chown -R appuser:appuser /root
+  chown -R appuser:appuser /root && \
+  chown -R appuser:appuser /shared
 
 # Switch to non-root user
 USER appuser

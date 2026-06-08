@@ -9,7 +9,7 @@ CONFIG_DIR="${CONFIG_DIR:-/var/lib/dcsplan/config}"
 PORT="${PORT:-8000}"
 
 echo "Building container image..."
-podman build -t ${IMAGE_NAME}:latest -f packages/backend/Dockerfile packages/backend
+podman build -t ${IMAGE_NAME}:latest -f packages/backend/Dockerfile packages
 
 echo "Stopping and removing existing container (if any)..."
 podman stop ${CONTAINER_NAME} 2>/dev/null || true
