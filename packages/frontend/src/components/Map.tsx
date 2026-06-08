@@ -53,6 +53,7 @@ interface MapComponentProps {
   onAddLibraryRef?: (uuid: string) => void;
   onAddMarker?: (lat: number, lon: number) => void;
   onObjectTabActivate?: () => void;
+  onFlightPlanTabActivate?: () => void;
 }
 
 const MapComponent: React.FC<MapComponentProps> = ({
@@ -74,6 +75,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
   onAddLibraryRef,
   onAddMarker,
   onObjectTabActivate,
+  onFlightPlanTabActivate,
 }) => {
   const { selectedIndex, setSelectedIndex, coordEntry, setCoordEntry } = useWaypointSelection();
   const { selectedId: selectedObjectId, setSelectedId: setSelectedObjectId, coordEntry: objectCoordEntry, setCoordEntry: setObjectCoordEntry } = useObjectSelection();
@@ -303,7 +305,14 @@ const MapComponent: React.FC<MapComponentProps> = ({
       const coordinate = event.coordinate;
       if (!coordinate) return;
 
-      // 1. Check coloured plan object features
+      // 1. Add Marker placement mode — takes priority over all other click interactions
+      if (isAddMarkerModeRef.current) {
+        const [lon, lat] = transform(coordinate, mapInstanceRef.current!.getView().getProjection().getCode(), 'EPSG:4326');
+        onAddMarker?.(lat, lon);
+        return;
+      }
+
+      // 2. Check coloured plan object features
       let hitObjectId: string | null = null;
       mapInstanceRef.current?.forEachFeatureAtPixel(event.pixel, (feature: any) => {
         hitObjectId = feature.get('objectId') ?? null;
@@ -312,12 +321,11 @@ const MapComponent: React.FC<MapComponentProps> = ({
 
       if (hitObjectId !== null) {
         setSelectedObjectId(selectedObjectIdRef.current === hitObjectId ? null : hitObjectId);
-        setSelectedIndex(null);
         onObjectTabActivate?.();
         return;
       }
 
-      // 2. Check library ghost features (only when Objects tab is active)
+      // 3. Check library ghost features (only when Objects tab is active)
       if (activeTabRef.current === 'objects') {
         let hitGhostId: string | null = null;
         mapInstanceRef.current?.forEachFeatureAtPixel(event.pixel, (feature: any) => {
@@ -327,13 +335,6 @@ const MapComponent: React.FC<MapComponentProps> = ({
 
         if (hitGhostId !== null) {
           onAddLibraryRef?.(hitGhostId);
-          return;
-        }
-
-        // 3. Add Marker placement mode
-        if (isAddMarkerModeRef.current) {
-          const [lon, lat] = transform(coordinate, mapInstanceRef.current!.getView().getProjection().getCode(), 'EPSG:4326');
-          onAddMarker?.(lat, lon);
           return;
         }
       }
@@ -349,7 +350,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
 
       if (hitWaypointIndex !== null) {
         setSelectedIndex(hitWaypointIndex);
-        setSelectedObjectId(null);
+        onFlightPlanTabActivate?.();
         return;
       }
 
@@ -359,13 +360,12 @@ const MapComponent: React.FC<MapComponentProps> = ({
       } else {
         // Empty map click → deselect
         setSelectedIndex(null);
-        setSelectedObjectId(null);
       }
     };
 
     mapInstanceRef.current.on('click', clickHandler);
     (mapInstanceRef.current as any).__clickHandler = clickHandler;
-  }, [drawingState.isDrawing === 'NEW_POINT', addPoint, flightPlan, onFlightPlanUpdate, setSelectedIndex, setSelectedObjectId, onAddLibraryRef, onAddMarker, onObjectTabActivate]);
+  }, [drawingState.isDrawing === 'NEW_POINT', addPoint, flightPlan, onFlightPlanUpdate, setSelectedIndex, setSelectedObjectId, onAddLibraryRef, onAddMarker, onObjectTabActivate, onFlightPlanTabActivate]);
 
   // Set up mouse move handler for coordinate display and hover tooltip
   useEffect(() => {
@@ -615,7 +615,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
 
     const handleKeyDown = (e: KeyboardEvent) => {
       // --- Object coord entry active (for selected marker) ---
-      if (objectCoordEntry !== null) {
+      if (objectCoordEntry !== null && selectedObjectId !== null) {
         e.preventDefault();
         if (e.key === 'Escape') { setObjectCoordEntry(null); return; }
         if (e.key === 'Enter') {
@@ -677,6 +677,9 @@ const MapComponent: React.FC<MapComponentProps> = ({
                 updatePreviewLine([hoverCoordRef.current.raw_x, hoverCoordRef.current.raw_y]);
               }
               setCoordEntry(null);
+            } else if (isAddMarkerModeRef.current) {
+              onAddMarker?.(coords.lat, coords.lon);
+              setCoordEntry(null);
             }
           }
           return;
@@ -703,9 +706,10 @@ const MapComponent: React.FC<MapComponentProps> = ({
         }
       }
 
-      // Coord entry for waypoint (N/S/digit when waypoint selected or drawing)
+      // Coord entry for waypoint (N/S/digit when waypoint selected or drawing) or Add Marker mode
       if ((key === 'N' || key === 'S' || /^\d$/.test(key)) &&
-          (selectedIndex !== null || drawingState.isDrawing === 'NEW_POINT')) {
+          (selectedIndex !== null || drawingState.isDrawing === 'NEW_POINT' ||
+           (isAddMarkerModeRef.current && activeTabRef.current === 'objects'))) {
         e.preventDefault();
         setCoordEntry(initCoordEntry(key));
         return;

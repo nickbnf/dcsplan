@@ -6,17 +6,25 @@ import type { FlightPlan, PlanMarker, PictogramType } from '../types/flightPlan'
 import { useDrawing } from '../hooks/useDrawing';
 import { useFlightPlan } from '../contexts/FlightPlanContext';
 import { useLibrary } from '../contexts/LibraryContext';
-import { WaypointSelectionProvider } from '../contexts/WaypointSelectionContext';
-import { ObjectSelectionProvider } from '../contexts/ObjectSelectionContext';
+import { SelectionProvider, useSelection } from '../contexts/SelectionContext';
 
-const PlannerApp: React.FC = () => {
+const PlannerAppInner: React.FC = () => {
   const { flightPlan, onFlightPlanUpdate: setFlightPlan, fitToFlightPlanTrigger } = useFlightPlan();
   const { library } = useLibrary();
+  const { setSelection, setCoordEntry } = useSelection();
   const [mapNavInfo, setMapNavInfo] = useState<{ projection: any; navigationMode: string } | null>(null);
   const { drawingState, startDrawing, stopDrawing, startDragging, stopDragging, addPoint, confirmKeyboardWaypoint, updatePreviewLine } = useDrawing();
   const [activeTab, setActiveTab] = useState<'flightplan' | 'objects'>('flightplan');
   const [isAddMarkerMode, setIsAddMarkerMode] = useState(false);
   const [addMarkerType, setAddMarkerType] = useState<PictogramType>('sam_site');
+
+  const handleTabChange = (next: 'flightplan' | 'objects') => {
+    setSelection(null);
+    setCoordEntry(null);
+    stopDrawing(null);
+    setIsAddMarkerMode(false);
+    setActiveTab(next);
+  };
 
   const handleFlightPlanUpdate = (updatedPlan: FlightPlan) => {
     setFlightPlan(updatedPlan);
@@ -29,7 +37,7 @@ const PlannerApp: React.FC = () => {
       ...flightPlan,
       libraryRefs: [...(flightPlan.libraryRefs ?? []), { uuid }],
     });
-    setActiveTab('objects');
+    handleTabChange('objects');
   };
 
   const handleAddMarker = (lat: number, lon: number) => {
@@ -46,8 +54,7 @@ const PlannerApp: React.FC = () => {
   };
 
   return (
-    <WaypointSelectionProvider>
-    <ObjectSelectionProvider>
+    <>
       <AboutModal />
       <div className="flex flex-1 w-full overflow-hidden">
         <Sidebar
@@ -61,7 +68,7 @@ const PlannerApp: React.FC = () => {
           onStartDrawing={startDrawing}
           onStopDrawing={stopDrawing}
           activeTab={activeTab}
-          onTabChange={setActiveTab}
+          onTabChange={handleTabChange}
           isAddMarkerMode={isAddMarkerMode}
           addMarkerType={addMarkerType}
           onAddModeToggle={() => setIsAddMarkerMode(prev => !prev)}
@@ -86,12 +93,18 @@ const PlannerApp: React.FC = () => {
             onAddLibraryRef={handleAddLibraryRef}
             onAddMarker={handleAddMarker}
             onObjectTabActivate={() => setActiveTab('objects')}
+            onFlightPlanTabActivate={() => setActiveTab('flightplan')}
           />
         </div>
       </div>
-    </ObjectSelectionProvider>
-    </WaypointSelectionProvider>
+    </>
   );
 };
+
+const PlannerApp: React.FC = () => (
+  <SelectionProvider>
+    <PlannerAppInner />
+  </SelectionProvider>
+);
 
 export default PlannerApp;
