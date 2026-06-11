@@ -21,10 +21,13 @@ RUN pip install --no-cache-dir --user -r requirements-lock.txt
 # Production stage
 FROM python:3.12-slim
 
-# Install runtime dependencies for PIL and pyproj
+# Install runtime dependencies for PIL, pyproj, and cairosvg (SVG pictogram rendering)
 RUN apt-get update && apt-get install -y --no-install-recommends \
   libproj25 \
   libgeos-c1v5 \
+  libcairo2 \
+  libpango-1.0-0 \
+  libpangocairo-1.0-0 \
   && rm -rf /var/lib/apt/lists/*
 
 # Copy Python dependencies from builder

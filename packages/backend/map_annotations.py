@@ -1799,15 +1799,23 @@ def draw_plan_objects(
             return candidates[0]  # default: right
 
         def _min_dist2(tx: float, ty: float) -> float:
-            # Score = min squared distance from any corner of the label box to any route segment
-            corners = [
+            # Score = min squared distance from label box boundary to any route segment.
+            # Check corners AND edge midpoints so a segment passing through the box
+            # (not near a corner) is correctly penalised.
+            mx = tx + tw / 2
+            my = ty + th / 2
+            probes = [
                 (tx - pad, ty - pad),
                 (tx + tw + pad, ty - pad),
                 (tx + tw + pad, ty + th + pad),
                 (tx - pad, ty + th + pad),
+                (mx, ty - pad),          # top midpoint
+                (mx, ty + th + pad),     # bottom midpoint
+                (tx - pad, my),          # left midpoint
+                (tx + tw + pad, my),     # right midpoint
             ]
             best = float("inf")
-            for cx2, cy2 in corners:
+            for cx2, cy2 in probes:
                 for x0, y0, x1, y1 in route_segments:
                     d2 = _pt_to_seg_dist2(cx2, cy2, x0, y0, x1, y1)
                     if d2 < best:

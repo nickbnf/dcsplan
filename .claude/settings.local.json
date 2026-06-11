@@ -65,7 +65,10 @@
       "Bash(curl -s http://localhost:8000/theatres/syria.json)",
       "Bash(curl -s http://localhost:8001/api/theatres/syria.json)",
       "Bash(echo \"EXIT=$?\")",
-      "Bash(xargs cat)"
+      "Bash(xargs cat)",
+      "Bash(git log *)",
+      "Bash(venv/bin/python3 -m pytest test_map_annotations.py -v)",
+      "Bash(venv/bin/python3 *)"
     ]
   }
 }
