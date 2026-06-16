@@ -360,9 +360,8 @@ const TheatreLibraryPageInner: React.FC = () => {
   const handleEntryCreate = useCallback((lat: number, lon: number) => {
     const entry = createLibraryEntry(addType, lat, lon);
     addEntry(entry);
-    setSelectedId(entry.id);
-    // Don't exit placement mode — batch placement
-  }, [addType, addEntry, setSelectedId]);
+    // Don't exit placement mode and don't select — batch placement
+  }, [addType, addEntry]);
 
   const handleEntryMove = useCallback((id: string, lat: number, lon: number) => {
     updateEntry(id, { lat, lon });
