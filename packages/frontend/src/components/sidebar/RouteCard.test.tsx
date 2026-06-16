@@ -221,11 +221,19 @@ describe('RouteCard', () => {
       expect(screen.getByText('↗')).toBeInTheDocument();
     });
 
-    it('shows ↘ glyph when dest alt < prev alt', () => {
+    it('shows ↘ glyph when dest alt < prev groundAlt (leg 0 uses groundAlt)', () => {
       const plan = makePlan({
-        points: [makeWpt({ alt: 10000 }), makeWpt({ alt: 0 })],
+        points: [makeWpt({ alt: 10000, groundAlt: 10000 }), makeWpt({ alt: 0 })],
       });
       render(<RouteCard flightPlan={plan} legData={makeLegData({ segmentsResult: { kind: 'level', tas: 400, ff: 3600 } })} index={0} onFlightPlanUpdate={onUpdate} />);
+      expect(screen.getByText('↘')).toBeInTheDocument();
+    });
+
+    it('shows ↘ glyph when dest alt < prev alt on leg > 0 (uses alt, not groundAlt)', () => {
+      const plan = makePlan({
+        points: [makeWpt({ alt: 5000 }), makeWpt({ alt: 10000 }), makeWpt({ alt: 0 })],
+      });
+      render(<RouteCard flightPlan={plan} legData={makeLegData({ segmentsResult: { kind: 'level', tas: 400, ff: 3600 } })} index={1} onFlightPlanUpdate={onUpdate} />);
       expect(screen.getByText('↘')).toBeInTheDocument();
     });
 

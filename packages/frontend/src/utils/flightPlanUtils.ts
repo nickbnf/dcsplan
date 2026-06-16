@@ -23,17 +23,23 @@ export const flightPlanUtils = {
         return { theatre, points: [], declination: 0, bankAngle: 45, initTimeSec: 12 * 3600, initFob: 12000, name: "Flight Plan One" };
     },
     addTurnPoint: (flightPlan: FlightPlan, lat: number, lon: number): FlightPlan => {
-        const tas = flightPlan.points.length > 1 ? flightPlan.points[flightPlan.points.length - 2].tas : defaultTas;
-        const alt = flightPlan.points.length > 1 ? flightPlan.points[flightPlan.points.length - 2].alt : defaultAlt;
-        const fuelFlow = flightPlan.points.length > 1 ? flightPlan.points[flightPlan.points.length - 2].fuelFlow : defaultFuelFlow;
-        const windSpeed = flightPlan.points.length > 1 ? flightPlan.points[flightPlan.points.length - 2].windSpeed : defaultWindSpeed;
-        const windDir = flightPlan.points.length > 1 ? flightPlan.points[flightPlan.points.length - 2].windDir : defaultWindDir;
+        const lastPt = flightPlan.points.length > 0 ? flightPlan.points[flightPlan.points.length - 1] : undefined;
+        const tas = lastPt?.tas ?? defaultTas;
+        const alt = lastPt?.alt ?? defaultAlt;
+        const fuelFlow = lastPt?.fuelFlow ?? defaultFuelFlow;
+        const windSpeed = lastPt?.windSpeed ?? defaultWindSpeed;
+        const windDir = lastPt?.windDir ?? defaultWindDir;
         const newIndex = flightPlan.points.length;
         const name = `WP${newIndex + 1}`;
 
-        const newPoints = [...flightPlan.points, { lat, lon, tas, alt, fuelFlow, windSpeed, windDir, name }];
+        const newPoints = [...flightPlan.points, { lat, lon, tas, alt, fuelFlow, windSpeed, windDir, name, groundAlt: 0 }];
+        // Demote the previously-last waypoint to interior: remove its groundAlt
         if (newPoints.length > 1) {
-            newPoints[newPoints.length - 2] = { ...newPoints[newPoints.length - 2], tas, alt, fuelFlow, windSpeed, windDir };
+            const prevLast = newPoints[newPoints.length - 2];
+            if (prevLast.groundAlt !== undefined) {
+                const { groundAlt: _removed, ...rest } = prevLast;
+                newPoints[newPoints.length - 2] = rest;
+            }
         }
 
         return { ...flightPlan, points: newPoints };
@@ -93,17 +99,19 @@ export const flightPlanUtils = {
         const lat = (originWpt.lat + destinationWpt.lat) / 2;
         const lon = (originWpt.lon + destinationWpt.lon) / 2;
 
-        // Inherit all properties from the origin waypoint
+        // Inherit planning fields from destination (the leg is flown at destination altitude)
         const newIndex = index + 1;
         const newPoint = {
             lat,
             lon,
-            tas: originWpt.tas,
-            alt: originWpt.alt,
-            fuelFlow: originWpt.fuelFlow,
-            windSpeed: originWpt.windSpeed,
-            windDir: originWpt.windDir,
+            tas: destinationWpt.tas,
+            alt: destinationWpt.alt,
+            fuelFlow: destinationWpt.fuelFlow,
+            windSpeed: destinationWpt.windSpeed,
+            windDir: destinationWpt.windDir,
+            ...(destinationWpt.regimeId !== undefined && { regimeId: destinationWpt.regimeId }),
             name: `WP${newIndex + 1}`
+            // groundAlt intentionally omitted — interior waypoint
         };
 
         const newPoints = [...flightPlan.points];

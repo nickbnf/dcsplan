@@ -729,7 +729,7 @@ export function calculateAllLegData(
       : undefined;
     const segResult = computeLegSegments(
       {
-        prevAlt: origin.alt,
+        prevAlt: i === 0 ? (origin.groundAlt ?? 0) : origin.alt,
         legAlt: destination.alt,
         distance: distanceNm,
         course,

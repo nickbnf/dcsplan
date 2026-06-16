@@ -532,8 +532,116 @@ class TestFlightPlanDataCombinedScenarios:
         for leg in fp_data.legData:
             groundSpeed = leg.distanceNm * 3600 / leg.eteSec if leg.eteSec > 0 else 0
             assert groundSpeed < 400
-        
+
         # Course should be adjusted by declination
         for leg in fp_data.legData:
             assert leg.course >= 0
+
+
+# --- Leg-0 groundAlt tests (mirrors frontend legCalculations tests) ---
+# Strategy: binary level vs. non-level outcomes to verify prevAlt selection.
+
+class TestLeg0GroundAlt:
+    """Verify that leg-0 uses groundAlt (not alt) as the starting altitude."""
+
+    REGIME = {
+        "id": "r1",
+        "name": "Test",
+        "cruise": {"tas": 400, "ff": 3600},
+        "climb": {"tas": 300, "ff": 4000, "roc": 2000},
+        "descent": {"tas": 300, "ff": 2000, "rod": 2000},
+    }
+
+    def _make_plan(self, points):
+        from flight_plan import Aircraft, Regime, RegimeCruise, RegimeClimb, RegimeDescent, TakeoffPerformance
+        regime = Regime(
+            id="r1", name="Test",
+            cruise=RegimeCruise(tas=400, ff=3600),
+            climb=RegimeClimb(tas=300, ff=4000, roc=2000),
+            descent=RegimeDescent(tas=300, ff=2000, rod=2000),
+        )
+        aircraft = Aircraft(regimes=[regime])
+        return FlightPlan(
+            theatre="syria",
+            points=points,
+            declination=0,
+            bankAngle=30,
+            initTimeSec=43200,
+            initFob=12000,
+            aircraft=aircraft,
+        )
+
+    def _ete_level(self, distanceNm, tas=400):
+        """Expected ETE for a level leg (round-trip distance / TAS, no wind)."""
+        return round(distanceNm / tas * 3600)
+
+    def test_a_leg0_uses_groundAlt_not_alt(self):
+        """WP0: alt=3000, groundAlt=5000. WP1: alt=5000 with regime.
+        groundAlt=WP1.alt → altDelta=0 → level ETE.
+        If alt were used: altDelta=2000 → segmented (different ETE)."""
+        points = [
+            FlightPlanTurnPoint(lat=34.0, lon=36.0, tas=400, alt=3000, fuelFlow=6000, windSpeed=0, windDir=0, groundAlt=5000),
+            FlightPlanTurnPoint(lat=34.0, lon=37.0, tas=400, alt=5000, fuelFlow=6000, windSpeed=0, windDir=0, regimeId="r1"),
+        ]
+        plan = self._make_plan(points)
+        fp = FlightPlanData(plan)
+        leg = fp.legData[0]
+        # Level leg: ETE = distance / TAS * 3600
+        level_ete = round(leg.distanceNm / 400 * 3600)
+        assert leg.eteSec == level_ete
+
+    def test_b_undefined_groundAlt_treated_as_zero(self):
+        """WP0: alt=5000, no groundAlt → treated as 0. WP1: alt=0.
+        altDelta = 0 - 0 = 0 → level.
+        If alt were used: altDelta = 0 - 5000 = -5000 → segmented descent."""
+        points = [
+            FlightPlanTurnPoint(lat=34.0, lon=36.0, tas=400, alt=5000, fuelFlow=6000, windSpeed=0, windDir=0),
+            FlightPlanTurnPoint(lat=34.0, lon=37.0, tas=400, alt=0, fuelFlow=6000, windSpeed=0, windDir=0, regimeId="r1"),
+        ]
+        plan = self._make_plan(points)
+        fp = FlightPlanData(plan)
+        leg = fp.legData[0]
+        level_ete = round(leg.distanceNm / 400 * 3600)
+        assert leg.eteSec == level_ete
+
+    def test_c_groundAlt_equals_dest_alt_is_level(self):
+        """WP0: groundAlt=5000. WP1: alt=5000. altDelta=0 → level."""
+        points = [
+            FlightPlanTurnPoint(lat=34.0, lon=36.0, tas=400, alt=3000, fuelFlow=6000, windSpeed=0, windDir=0, groundAlt=5000),
+            FlightPlanTurnPoint(lat=34.0, lon=37.0, tas=400, alt=5000, fuelFlow=6000, windSpeed=0, windDir=0, regimeId="r1"),
+        ]
+        plan = self._make_plan(points)
+        fp = FlightPlanData(plan)
+        leg = fp.legData[0]
+        level_ete = round(leg.distanceNm / 400 * 3600)
+        assert leg.eteSec == level_ete
+
+    def test_d_different_alt_groundAlt_groundAlt_wins(self):
+        """WP0: alt=8000 (phantom), groundAlt=5000. WP1: alt=5000 with regime.
+        groundAlt=WP1.alt → altDelta=0 → level.
+        If alt were used: altDelta=-3000 → segmented descent."""
+        points = [
+            FlightPlanTurnPoint(lat=34.0, lon=36.0, tas=400, alt=8000, fuelFlow=6000, windSpeed=0, windDir=0, groundAlt=5000),
+            FlightPlanTurnPoint(lat=34.0, lon=37.0, tas=400, alt=5000, fuelFlow=6000, windSpeed=0, windDir=0, regimeId="r1"),
+        ]
+        plan = self._make_plan(points)
+        fp = FlightPlanData(plan)
+        leg = fp.legData[0]
+        level_ete = round(leg.distanceNm / 400 * 3600)
+        assert leg.eteSec == level_ete
+
+    def test_e_legs2_plus_use_origin_alt_not_groundAlt(self):
+        """WP1 (interior): alt=5000, groundAlt=9000. WP2: alt=5000.
+        For leg 1→2, origin.alt=5000 → altDelta=0 → level.
+        If groundAlt were used: altDelta=-4000 → segmented descent."""
+        points = [
+            FlightPlanTurnPoint(lat=34.0, lon=36.0, tas=400, alt=5000, fuelFlow=6000, windSpeed=0, windDir=0, groundAlt=0),
+            FlightPlanTurnPoint(lat=34.0, lon=37.0, tas=400, alt=5000, fuelFlow=6000, windSpeed=0, windDir=0, groundAlt=9000),
+            FlightPlanTurnPoint(lat=34.0, lon=38.0, tas=400, alt=5000, fuelFlow=6000, windSpeed=0, windDir=0, regimeId="r1"),
+        ]
+        plan = self._make_plan(points)
+        fp = FlightPlanData(plan)
+        leg1 = fp.legData[1]  # leg from WP1 to WP2
+        level_ete = round(leg1.distanceNm / 400 * 3600)
+        assert leg1.eteSec == level_ete
 

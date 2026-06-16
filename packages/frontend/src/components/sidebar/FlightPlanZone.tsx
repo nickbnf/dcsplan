@@ -514,17 +514,36 @@ const WaypointCard: React.FC<{ flightPlan: FlightPlan, legData: LegData | null, 
           </div>
         </div>
       ) : (
-        <div className="flex items-center space-x-3 mt-1 justify-end">
-          <div className="flex items-center space-x-1">
-            <span className="font-aero-label text-gray-600 text-xs">ETA</span>
-            <span className="font-aero-mono text-gray-900 text-xs">
-              {secondsToTimeString(eta)}
-              {hackEta !== undefined && <span className="text-avio-accent ml-1">{formatHackEta(hackEta)}</span>}
-            </span>
-          </div>
-          <div className="flex items-center space-x-1">
-            <span className="font-aero-label text-gray-600 text-xs">EFR</span>
-            <span className="font-aero-mono text-gray-900 text-xs">{efr.toFixed(0)}lbs</span>
+        <div className="flex items-center justify-between mt-1">
+          {(index === 0 || index === flightPlan.points.length - 1) ? (
+            <div className="flex items-center space-x-1">
+              <span className="font-aero-label text-gray-600 text-xs">Field alt</span>
+              <EditableField
+                value={`${waypoint.groundAlt ?? 0}'`}
+                onChange={(value: string) => {
+                  const m = value.match(/-?\d+/);
+                  if (m && m[0]) {
+                    onFlightPlanUpdate(flightPlanUtils.updateTurnPoint(flightPlan, index, { groundAlt: parseInt(m[0]) }));
+                  }
+                }}
+                className="font-aero-mono text-gray-900 text-xs"
+                maxLength={6}
+                unit="'"
+              />
+            </div>
+          ) : <div />}
+          <div className="flex items-center space-x-3">
+            <div className="flex items-center space-x-1">
+              <span className="font-aero-label text-gray-600 text-xs">ETA</span>
+              <span className="font-aero-mono text-gray-900 text-xs">
+                {secondsToTimeString(eta)}
+                {hackEta !== undefined && <span className="text-avio-accent ml-1">{formatHackEta(hackEta)}</span>}
+              </span>
+            </div>
+            <div className="flex items-center space-x-1">
+              <span className="font-aero-label text-gray-600 text-xs">EFR</span>
+              <span className="font-aero-mono text-gray-900 text-xs">{efr.toFixed(0)}lbs</span>
+            </div>
           </div>
         </div>
       )}
@@ -623,7 +642,8 @@ export const RouteCard: React.FC<{
 
   const destWpt = flightPlan.points[index + 1];
   const prevWpt = flightPlan.points[index];
-  const altDelta = destWpt.alt - prevWpt.alt;
+  const prevAltForGlyph = index === 0 ? (prevWpt.groundAlt ?? 0) : prevWpt.alt;
+  const altDelta = destWpt.alt - prevAltForGlyph;
   const boundRegime = destWpt.regimeId ? performance.regimes.find(r => r.id === destWpt.regimeId) : undefined;
   const seg = legData.segmentsResult;
   const isWarning = seg?.kind === 'warning';
@@ -694,7 +714,7 @@ export const RouteCard: React.FC<{
           <div className="flex items-center space-x-1">
             <span className="font-aero-label text-gray-600 text-xs">Alt</span>
             {altGlyph && seg && (
-              <Tooltip tip={segmentTooltipContent(seg, prevWpt.alt, destWpt.alt, legData.distance)}>
+              <Tooltip tip={segmentTooltipContent(seg, prevAltForGlyph, destWpt.alt, legData.distance)}>
                 <span className={`text-xs cursor-default ${isWarning ? 'text-amber-600' : 'text-gray-500'}`}>{altGlyph}</span>
               </Tooltip>
             )}
@@ -802,7 +822,7 @@ export const RouteCard: React.FC<{
           </div>
           <div className="flex items-center gap-1">
             {isWarning && seg && (
-              <Tooltip tip={segmentTooltipContent(seg, prevWpt.alt, destWpt.alt, legData.distance)}>
+              <Tooltip tip={segmentTooltipContent(seg, prevAltForGlyph, destWpt.alt, legData.distance)}>
                 <span className="text-amber-600 border border-amber-300 bg-amber-50 px-2 py-1 text-xs font-aero-label rounded cursor-default select-none">
                   ⚠ Fix
                 </span>

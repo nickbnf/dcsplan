@@ -71,6 +71,7 @@ class FlightPlanTurnPoint(BaseModel):
     fuelFlow: float = Field(..., ge=0, description="Fuel flow rate into this TP")
     windSpeed: float = Field(..., ge=0, description="Wind speed")
     windDir: float = Field(..., ge=0, le=360, description="Wind direction (0-360)")
+    groundAlt: Optional[float] = Field(default=None, description="Field elevation ft MSL; meaningful only on first/last waypoints")
     name: str | None = Field(default=None, description="Name of the turnpoint")
     waypointType: str | None = Field(default=None, description="Waypoint type: normal, push, ip, tgt")
     exitTimeSec: int | None = Field(default=None, ge=0, le=86399, description="Push only: exit time")
@@ -630,7 +631,7 @@ class LegData:
         dest_pt = flightPlan.points[indexWptTo]
         leg_index = indexWptFrom  # leg 0 = first leg (from point 0 to point 1)
         seg = compute_leg_segments(
-            prev_alt=origin_pt.alt,
+            prev_alt=(origin_pt.groundAlt or 0) if leg_index == 0 else origin_pt.alt,
             leg_alt=dest_pt.alt,
             distance_nm=self.distanceNm,
             course=self.course,

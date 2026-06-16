@@ -555,3 +555,85 @@ describe('calculateAllLegData — taxi fuel', () => {
     expect(legs[1].efr).toBeCloseTo(expectedEfr2, 2);
   });
 });
+
+// --- leg-0 groundAlt tests ---
+// Strategy: use level/non-level outcomes to verify prevAlt selection
+// without depending on leg distance (which is tiny in EPSG:4326 projected mode).
+// If groundAlt == WP1.alt → altDelta=0 → 'level'.  If alt were used instead → altDelta≠0 → not 'level'.
+
+describe('calculateAllLegData leg-0 groundAlt', () => {
+  const fullRegime: Regime = {
+    id: 'r1',
+    name: 'Test',
+    cruise: { tas: 400, ff: 3600 },
+    climb: { tas: 300, ff: 4000, roc: 2000 },
+    descent: { tas: 300, ff: 2000, rod: 2000 },
+  };
+
+  it('(a) leg 0 uses groundAlt as start altitude, not alt', () => {
+    // WP0: alt=3000 (phantom), groundAlt=5000. WP1: alt=5000.
+    // Using groundAlt: altDelta = 5000 - 5000 = 0 → level.
+    // Using alt: altDelta = 5000 - 3000 = 2000 → segmented climb.
+    const plan = makePlan({
+      points: [
+        makePoint(0, 0, { alt: 3000, groundAlt: 5000 }),
+        makePoint(0, 1, { alt: 5000, regimeId: 'r1' }),
+      ],
+    });
+    const legs = calculateAllLegData(plan, projection, navigationMode, makeAircraft({ regimes: [fullRegime] }));
+    expect(legs[0].segmentsResult?.kind).toBe('level');
+  });
+
+  it('(b) undefined groundAlt on leg 0 treats start altitude as 0', () => {
+    // WP0: alt=5000, no groundAlt → treated as 0. WP1: alt=0.
+    // Using groundAlt=0: altDelta = 0 - 0 = 0 → level.
+    // Using alt=5000: altDelta = 0 - 5000 = -5000 → segmented descent.
+    const plan = makePlan({
+      points: [
+        makePoint(0, 0, { alt: 5000 }), // no groundAlt
+        makePoint(0, 1, { alt: 0, regimeId: 'r1' }),
+      ],
+    });
+    const legs = calculateAllLegData(plan, projection, navigationMode, makeAircraft({ regimes: [fullRegime] }));
+    expect(legs[0].segmentsResult?.kind).toBe('level');
+  });
+
+  it('(c) leg 0 with groundAlt = WP1.alt is level', () => {
+    const plan = makePlan({
+      points: [
+        makePoint(0, 0, { groundAlt: 5000, alt: 3000 }),
+        makePoint(0, 1, { alt: 5000, regimeId: 'r1' }),
+      ],
+    });
+    const legs = calculateAllLegData(plan, projection, navigationMode, makeAircraft({ regimes: [fullRegime] }));
+    expect(legs[0].segmentsResult?.kind).toBe('level');
+  });
+
+  it('(d) WP0.alt ≠ WP0.groundAlt: groundAlt wins for leg 0', () => {
+    // WP0: alt=8000 (phantom), groundAlt=5000. WP1: alt=5000.
+    // Using groundAlt=5000: altDelta = 0 → level.
+    // Using alt=8000: altDelta = -3000 → segmented descent.
+    const plan = makePlan({
+      points: [
+        makePoint(0, 0, { alt: 8000, groundAlt: 5000 }),
+        makePoint(0, 1, { alt: 5000, regimeId: 'r1' }),
+      ],
+    });
+    const legs = calculateAllLegData(plan, projection, navigationMode, makeAircraft({ regimes: [fullRegime] }));
+    expect(legs[0].segmentsResult?.kind).toBe('level');
+  });
+
+  it('(e) legs 2..N use origin.alt as prevAlt, not groundAlt', () => {
+    // WP1 is interior: alt=5000, groundAlt=9000 (should be ignored for leg 1→2).
+    // WP2: alt=5000. Using alt=5000: altDelta=0 → level. Using groundAlt=9000: altDelta=-4000 → descent.
+    const plan = makePlan({
+      points: [
+        makePoint(0, 0, { groundAlt: 0 }),
+        makePoint(0, 1, { alt: 5000, groundAlt: 9000 }),
+        makePoint(0, 2, { alt: 5000, regimeId: 'r1' }),
+      ],
+    });
+    const legs = calculateAllLegData(plan, projection, navigationMode, makeAircraft({ regimes: [fullRegime] }));
+    expect(legs[1].segmentsResult?.kind).toBe('level');
+  });
+});

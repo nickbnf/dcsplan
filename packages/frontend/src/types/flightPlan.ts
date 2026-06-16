@@ -77,6 +77,7 @@ export type FlightPlanTurnPoint = {
   fuelFlow: number; // Fuel flow going into this WP
   windSpeed: number; // Wind speed at this WP
   windDir: number; // Wind direction (dir the wind is coming from)at this WP
+  groundAlt?: number; // Field elevation (ft MSL); meaningful only on first and last waypoints
   name?: string; // Name of the turnpoint
   waypointType?: WaypointType; // defaults to 'normal'
   exitTimeSec?: number; // Push only: exit time in seconds since midnight
@@ -91,6 +92,7 @@ export type FlightPlanPointChange = {
   fuelFlow?: number;
   windSpeed?: number;
   windDir?: number;
+  groundAlt?: number;
   name?: string;
   waypointType?: WaypointType;
   exitTimeSec?: number;
