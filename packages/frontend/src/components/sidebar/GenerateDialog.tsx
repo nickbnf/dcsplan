@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
-import type { FlightPlan, LibraryObject } from '../../types/flightPlan';
+import type { FlightPlan, LibraryObject, Aircraft } from '../../types/flightPlan';
 import { slugifyPlanName } from '../../utils/flightPlanUtils';
 import { getApiUrl } from '../../config/api';
 import { trackEvent } from '../../utils/plausible';
+import { usePerformance } from '../../contexts/PerformanceContext';
 
 interface GenerateDialogProps {
   flightPlan?: FlightPlan;
@@ -19,6 +20,7 @@ interface TaskStatus {
 }
 
 export const GenerateDialog: React.FC<GenerateDialogProps> = ({ flightPlan, library }) => {
+  const { performance } = usePerformance();
   const [output, setOutput] = useState<'zip' | number>('zip');
   const [includeFuelCalculations, setIncludeFuelCalculations] = useState(true);
   const [includeCoordinates, setIncludeCoordinates] = useState(true);
@@ -198,8 +200,10 @@ export const GenerateDialog: React.FC<GenerateDialogProps> = ({ flightPlan, libr
       const referencedIds = new Set((flightPlan?.libraryRefs ?? []).map(r => r.uuid));
       const snapshotFromLibrary = (library ?? []).filter((e: LibraryObject) => referencedIds.has(e.id));
       const snapshot = snapshotFromLibrary;
-      const planToSend: FlightPlan & { librarySnapshot?: LibraryObject[] } = {
+      // Embed aircraft so the backend honours regimes and takeoff in its calculations
+      const planToSend: FlightPlan & { librarySnapshot?: LibraryObject[]; aircraft: Aircraft } = {
         ...flightPlan,
+        aircraft: performance,
         ...(snapshot.length > 0 && { librarySnapshot: snapshot }),
       };
 

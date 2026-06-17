@@ -645,6 +645,9 @@ export function calculateAllLegData(
   let previousEta = flightPlan.initTimeSec;
   let previousEfr = flightPlan.initFob - (aircraft.taxiFuel ?? 0);
   let hackOffsetSec: number | undefined = undefined;
+  if (flightPlan.points[0].hack) {
+    hackOffsetSec = flightPlan.initTimeSec;
+  }
 
   for (let i = 0; i < flightPlan.points.length - 1; i++) {
     const origin = flightPlan.points[i];

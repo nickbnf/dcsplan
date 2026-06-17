@@ -676,7 +676,10 @@ def annotate_turnpoint(
             hours = eta_sec // 3600
             minutes = (eta_sec % 3600) // 60
             seconds = eta_sec % 60
-            if elapsed_from_sec is not None:
+            if index == 0:
+                # First waypoint is takeoff
+                eta_str = f"T/O {hours:02d}:{minutes:02d}:{seconds:02d}"
+            elif elapsed_from_sec is not None:
                 # Overview mode: show elapsed time from departure
                 elapsed = max(0, eta_sec - elapsed_from_sec)
                 e_h = elapsed // 3600

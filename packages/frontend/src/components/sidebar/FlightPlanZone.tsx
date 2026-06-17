@@ -369,9 +369,11 @@ const WaypointCard: React.FC<{ flightPlan: FlightPlan, legData: LegData | null, 
     }
   }, [isSelected]);
 
+  const { performance } = usePerformance();
+
   // Calculate ETA and EFR for this waypoint
   let eta = flightPlan.initTimeSec;
-  let efr = flightPlan.initFob;
+  let efr = flightPlan.initFob - (performance.taxiFuel ?? 0);
   let hackEta: number | undefined = undefined;
   if (legData) {
     eta = legData.eta;
@@ -515,26 +517,43 @@ const WaypointCard: React.FC<{ flightPlan: FlightPlan, legData: LegData | null, 
         </div>
       ) : (
         <div className="flex items-center justify-between mt-1">
-          {(index === 0 || index === flightPlan.points.length - 1) ? (
-            <div className="flex items-center space-x-1">
-              <span className="font-aero-label text-gray-600 text-xs">Field alt</span>
-              <EditableField
-                value={`${waypoint.groundAlt ?? 0}'`}
-                onChange={(value: string) => {
-                  const m = value.match(/-?\d+/);
-                  if (m && m[0]) {
-                    onFlightPlanUpdate(flightPlanUtils.updateTurnPoint(flightPlan, index, { groundAlt: parseInt(m[0]) }));
-                  }
-                }}
-                className="font-aero-mono text-gray-900 text-xs"
-                maxLength={6}
-                unit="'"
-              />
-            </div>
-          ) : <div />}
+          <div className="flex items-center space-x-3">
+            {(index === 0 || index === flightPlan.points.length - 1) && (
+              <div className="flex items-center space-x-1">
+                <span className="font-aero-label text-gray-600 text-xs">Field alt</span>
+                <EditableField
+                  value={`${waypoint.groundAlt ?? 0}'`}
+                  onChange={(value: string) => {
+                    const m = value.match(/-?\d+/);
+                    if (m && m[0]) {
+                      onFlightPlanUpdate(flightPlanUtils.updateTurnPoint(flightPlan, index, { groundAlt: parseInt(m[0]) }));
+                    }
+                  }}
+                  className="font-aero-mono text-gray-900 text-xs"
+                  maxLength={6}
+                  unit="'"
+                />
+              </div>
+            )}
+            {index === 0 && (
+              <label className="flex items-center space-x-1 cursor-pointer">
+                <span className="font-aero-label text-gray-600 text-xs">HACK</span>
+                <input
+                  type="checkbox"
+                  checked={waypoint.hack ?? false}
+                  onChange={(e) => {
+                    const updatedFlightPlan = flightPlanUtils.updateTurnPoint(flightPlan, index, { hack: e.target.checked });
+                    onFlightPlanUpdate(updatedFlightPlan);
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                  className="h-3.5 w-3.5 rounded border-gray-300 text-avio-primary focus:ring-avio-accent cursor-pointer"
+                />
+              </label>
+            )}
+          </div>
           <div className="flex items-center space-x-3">
             <div className="flex items-center space-x-1">
-              <span className="font-aero-label text-gray-600 text-xs">ETA</span>
+              <span className="font-aero-label text-gray-600 text-xs">{index === 0 ? 'T/O' : 'ETA'}</span>
               <span className="font-aero-mono text-gray-900 text-xs">
                 {secondsToTimeString(eta)}
                 {hackEta !== undefined && <span className="text-avio-accent ml-1">{formatHackEta(hackEta)}</span>}

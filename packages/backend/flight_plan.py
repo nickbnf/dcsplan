@@ -657,7 +657,7 @@ class LegData:
             self.legFuel = seg['fallback_fuel']
 
         self.tas = flightPlan.points[indexWptTo].tas
-        self.prev_alt = flightPlan.points[indexWptFrom].alt
+        self.prev_alt = (origin_pt.groundAlt or 0) if leg_index == 0 else origin_pt.alt
         self.alt = flightPlan.points[indexWptTo].alt
 
         logger.info(f"ETE: {self.eteSec}")
@@ -697,7 +697,9 @@ class FlightPlanData:
             if i == 0:
                 tp = TurnpointData()
                 tp.etaSec = flightPlan.initTimeSec
-                tp.efr = flightPlan.initFob
+                tp.efr = flightPlan.initFob - flightPlan.aircraft.taxiFuel
+                if flightPlan.points[0].hack:
+                    hackOffsetSec = flightPlan.initTimeSec
                 self.turnpointData.append(tp)
             else:
                 if i < len(flightPlan.points):

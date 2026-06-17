@@ -69,7 +69,8 @@
       "Bash(git log *)",
       "Bash(venv/bin/python3 -m pytest test_map_annotations.py -v)",
       "Bash(venv/bin/python3 *)",
-      "mcp__plugin_playwright_playwright__browser_type"
+      "mcp__plugin_playwright_playwright__browser_type",
+      "Bash(grep -v \"type\\\\|Aircraft$\\\\|Aircraft;\\\\|defaultAircraft\")"
     ]
   }
 }

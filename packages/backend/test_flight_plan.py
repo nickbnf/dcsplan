@@ -324,7 +324,7 @@ class TestTaxiFuel:
         assert abs((efr_no_taxi - efr_taxi) - 400) < 0.01
 
     def test_taxifuel_does_not_recur_on_subsequent_legs(self):
-        """taxiFuel deduction only happens once (at WP0 → WP1 transition)."""
+        """taxiFuel is deducted at WP0 (takeoff); subsequent legs only deduct leg fuel."""
         pts = [
             make_point(lat=34.0, lon=36.0),
             make_point(lat=34.0, lon=37.0),
@@ -337,14 +337,14 @@ class TestTaxiFuel:
             aircraft=Aircraft(taxiFuel=400),
         )
         data = FlightPlanData(plan)
-        # EFR difference between WP1 and WP2 should be only leg fuel (no extra deduction)
+        # WP0 EFR should already have taxi fuel deducted
+        assert abs(data.turnpointData[0].efr - (12000 - 400)) < 0.01
+        # EFR differences: WP0→WP1 is only leg fuel (taxi already subtracted at WP0)
         efr_diff_leg1 = data.turnpointData[0].efr - data.turnpointData[1].efr
         efr_diff_leg2 = data.turnpointData[1].efr - data.turnpointData[2].efr
-        # leg2 EFR diff should NOT include 400 extra (only leg fuel)
-        # leg1 diff includes 400 taxi + leg fuel, leg2 diff is just leg fuel
         leg1_fuel = data.legData[0].legFuel
         leg2_fuel = data.legData[1].legFuel
-        assert abs(efr_diff_leg1 - (400 + leg1_fuel)) < 0.01
+        assert abs(efr_diff_leg1 - leg1_fuel) < 0.01
         assert abs(efr_diff_leg2 - leg2_fuel) < 0.01
 
 
