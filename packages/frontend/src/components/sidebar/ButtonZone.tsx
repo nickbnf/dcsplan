@@ -1,5 +1,6 @@
 import React from 'react';
 import type { FlightPlan } from '../../types/flightPlan';
+import type { FlightPlanUpdateOptions } from '../../contexts/FlightPlanContext';
 import { flightPlanUtils } from '../../utils/flightPlanUtils';
 import { ClearFlightPlanDialog } from './ClearFlightPlanDialog';
 
@@ -7,7 +8,11 @@ interface ButtonZoneProps {
   flightPlan: FlightPlan;
   onUndo?: () => void;
   onRedo?: () => void;
-  onFlightPlanUpdate: (flightPlan: FlightPlan) => void;
+  canUndo?: boolean;
+  canRedo?: boolean;
+  onFlightPlanUpdate: (flightPlan: FlightPlan, options?: FlightPlanUpdateOptions) => void;
+  /** Wholesale replacement — not undoable, clears history (AD-12). */
+  onFlightPlanReplace: (flightPlan: FlightPlan) => void;
   isSettingsOpen: boolean;
   onSettingsToggle: () => void;
   importTrigger: React.ReactNode;
@@ -17,11 +22,17 @@ interface ButtonZoneProps {
 const actionButtonClass =
   'px-2.5 py-1.5 text-xs font-aero-label rounded border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 transition-colors';
 
+const disabledButtonClass =
+  'disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white';
+
 export const ButtonZone: React.FC<ButtonZoneProps> = ({
   flightPlan,
   onUndo,
   onRedo,
+  canUndo = false,
+  canRedo = false,
   onFlightPlanUpdate,
+  onFlightPlanReplace,
   isSettingsOpen,
   onSettingsToggle,
   importTrigger,
@@ -59,7 +70,7 @@ export const ButtonZone: React.FC<ButtonZoneProps> = ({
               value={declination}
               onChange={(e) => {
                 const updatedFlightPlan = flightPlanUtils.updateDeclination(flightPlan, parseFloat(e.target.value));
-                onFlightPlanUpdate(updatedFlightPlan);
+                onFlightPlanUpdate(updatedFlightPlan, { coalesceKey: 'plan:declination' });
               }}
               className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
               style={{
@@ -80,7 +91,7 @@ export const ButtonZone: React.FC<ButtonZoneProps> = ({
               value={bankAngle}
               onChange={(e) => {
                 const updatedFlightPlan = flightPlanUtils.updateBankAngle(flightPlan, parseFloat(e.target.value));
-                onFlightPlanUpdate(updatedFlightPlan);
+                onFlightPlanUpdate(updatedFlightPlan, { coalesceKey: 'plan:bankAngle' });
               }}
               className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
               style={{
@@ -94,8 +105,22 @@ export const ButtonZone: React.FC<ButtonZoneProps> = ({
       {/* Unified action row: history | file | destructive */}
       <div className="flex items-center justify-between px-4 py-2 border-t border-gray-100">
         <div className="flex items-center gap-1.5">
-          <button onClick={onUndo} className={actionButtonClass}>Undo</button>
-          <button onClick={onRedo} className={actionButtonClass}>Redo</button>
+          <button
+            onClick={onUndo}
+            disabled={!canUndo}
+            title="Undo (Ctrl+Z)"
+            className={`${actionButtonClass} ${disabledButtonClass}`}
+          >
+            Undo
+          </button>
+          <button
+            onClick={onRedo}
+            disabled={!canRedo}
+            title="Redo (Ctrl+Shift+Z)"
+            className={`${actionButtonClass} ${disabledButtonClass}`}
+          >
+            Redo
+          </button>
           <div className="w-px h-5 bg-gray-200 mx-1" aria-hidden />
           {importTrigger}
           <button onClick={onExport} className={actionButtonClass}>
@@ -105,7 +130,7 @@ export const ButtonZone: React.FC<ButtonZoneProps> = ({
         <ClearFlightPlanDialog
           onConfirm={() => {
             const newFlightPlan = flightPlanUtils.newFlightPlan(flightPlan.theatre);
-            onFlightPlanUpdate(newFlightPlan);
+            onFlightPlanReplace(newFlightPlan);
           }}
         />
       </div>

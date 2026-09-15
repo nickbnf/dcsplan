@@ -1,4 +1,12 @@
-## ADDED Requirements
+# Spec: Waypoint Coordinate Edit
+
+## Purpose
+
+Coord entry mode is a keyboard-driven way to place a waypoint at exact coordinates, as an alternative to clicking or dragging on the map. Typing a digit or a cardinal key replaces the map's hover-coordinate readout with a fixed-width DMM template (`N--°--.--' E---°--.--'`) that fills slot-by-slot as the user types, then commits with Return or cancels with Escape. It serves both editing — moving the selected waypoint — and creation, when triggered from Add Wpts drawing mode. Mouse interaction always wins: dragging the waypoint cancels an in-progress entry and uses the dragged position.
+
+This capability is tier-independent: it is a map input mode and behaves identically with or without an account.
+
+## Requirements
 
 ### Requirement: Coord entry mode triggered from selected waypoint
 When a waypoint is selected, the user SHALL be able to enter coord entry mode by pressing `N`, `S`, or any digit key, without requiring a mouse click.

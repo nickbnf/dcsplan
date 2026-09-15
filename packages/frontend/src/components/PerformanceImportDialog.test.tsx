@@ -7,6 +7,7 @@ import { defaultAircraft } from '../types/flightPlan';
 
 // Mock context hooks used by the dialog
 const mockOnFlightPlanUpdate = vi.fn();
+const mockReplaceFlightPlan = vi.fn();
 const mockSetPerformance = vi.fn();
 let mockFlightPlan: FlightPlan;
 let mockPerformance: Aircraft;
@@ -15,6 +16,7 @@ vi.mock('../contexts/FlightPlanContext', () => ({
   useFlightPlan: () => ({
     flightPlan: mockFlightPlan,
     onFlightPlanUpdate: mockOnFlightPlanUpdate,
+    replaceFlightPlan: mockReplaceFlightPlan,
   }),
 }));
 
@@ -73,6 +75,7 @@ describe('PerformanceImportDialog', () => {
 
   beforeEach(() => {
     mockOnFlightPlanUpdate.mockClear();
+    mockReplaceFlightPlan.mockClear();
     mockSetPerformance.mockClear();
     onClose.mockClear();
     mockFlightPlan = makePlan();
@@ -141,15 +144,17 @@ describe('PerformanceImportDialog', () => {
     await waitFor(() => expect(screen.getByText('Replace')).not.toBeDisabled());
     await userEvent.click(screen.getByText('Replace'));
 
-    // old-regime not in imported set → flight plan update to clear it
-    expect(mockOnFlightPlanUpdate).toHaveBeenCalledOnce();
-    const updated: FlightPlan = mockOnFlightPlanUpdate.mock.calls[0][0];
+    // old-regime not in imported set → plan rewritten to clear it, via the
+    // non-undoable replace path (importing a profile discards undo history).
+    expect(mockReplaceFlightPlan).toHaveBeenCalledOnce();
+    expect(mockOnFlightPlanUpdate).not.toHaveBeenCalled();
+    const updated: FlightPlan = mockReplaceFlightPlan.mock.calls[0][0];
     expect(updated.points[0].regimeId).toBeUndefined();
     // r1 IS in imported set → preserved
     expect(updated.points[1].regimeId).toBe('r1');
   });
 
-  it('does not call onFlightPlanUpdate when no orphan regimeIds', async () => {
+  it('replaces via the non-undoable path even when no regimeId is orphaned', async () => {
     mockFlightPlan = makePlan({ points: [] });
     render(<PerformanceImportDialog onClose={onClose} />);
     await uploadFile(makeJsonFile(validPackage));
@@ -157,6 +162,9 @@ describe('PerformanceImportDialog', () => {
     await waitFor(() => expect(screen.getByText('Replace')).not.toBeDisabled());
     await userEvent.click(screen.getByText('Replace'));
 
+    // History must be discarded regardless: an older undo entry could still
+    // reference a regime that existed only in the replaced profile.
+    expect(mockReplaceFlightPlan).toHaveBeenCalledOnce();
     expect(mockOnFlightPlanUpdate).not.toHaveBeenCalled();
   });
 

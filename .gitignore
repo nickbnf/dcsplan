@@ -19,6 +19,9 @@ pnpm-debug.log*
 
 # Static assets (generated tiles, etc.)
 packages/backend/config/
+packages/tools/scripts/*.png
 
 # We use pnpm, not npm
 package-lock.json
+
+.playwright-mcp/

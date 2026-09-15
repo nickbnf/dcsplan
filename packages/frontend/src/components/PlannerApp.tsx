@@ -4,19 +4,23 @@ import { Sidebar } from './Sidebar';
 import { AboutModal } from './AboutModal';
 import type { FlightPlan, PlanMarker, PictogramType } from '../types/flightPlan';
 import { useDrawing } from '../hooks/useDrawing';
-import { useFlightPlan } from '../contexts/FlightPlanContext';
+import { useFlightPlan, type FlightPlanUpdateOptions } from '../contexts/FlightPlanContext';
 import { useLibrary } from '../contexts/LibraryContext';
 import { SelectionProvider, useSelection } from '../contexts/SelectionContext';
+import { useUndoShortcuts } from '../hooks/useUndoShortcuts';
 
 const PlannerAppInner: React.FC = () => {
-  const { flightPlan, onFlightPlanUpdate: setFlightPlan, fitToFlightPlanTrigger } = useFlightPlan();
+  const { flightPlan, onFlightPlanUpdate: setFlightPlan, replaceFlightPlan, fitToFlightPlanTrigger, undo, redo, canUndo, canRedo } = useFlightPlan();
   const { library } = useLibrary();
-  const { setSelection, setCoordEntry } = useSelection();
+  const { setSelection, setCoordEntry, coordEntry } = useSelection();
   const [mapNavInfo, setMapNavInfo] = useState<{ projection: any; navigationMode: string } | null>(null);
   const { drawingState, startDrawing, stopDrawing, startDragging, stopDragging, addPoint, confirmKeyboardWaypoint, updatePreviewLine } = useDrawing();
   const [activeTab, setActiveTab] = useState<'flightplan' | 'objects'>('flightplan');
   const [isAddMarkerMode, setIsAddMarkerMode] = useState(false);
   const [addMarkerType, setAddMarkerType] = useState<PictogramType>('sam_site');
+
+  // Coord entry owns the keyboard while it is open.
+  useUndoShortcuts({ undo, redo, enabled: coordEntry === null });
 
   const handleTabChange = (next: 'flightplan' | 'objects') => {
     setSelection(null);
@@ -26,8 +30,8 @@ const PlannerAppInner: React.FC = () => {
     setActiveTab(next);
   };
 
-  const handleFlightPlanUpdate = (updatedPlan: FlightPlan) => {
-    setFlightPlan(updatedPlan);
+  const handleFlightPlanUpdate = (updatedPlan: FlightPlan, options?: FlightPlanUpdateOptions) => {
+    setFlightPlan(updatedPlan, options);
   };
 
   const handleAddLibraryRef = (uuid: string) => {
@@ -62,9 +66,12 @@ const PlannerAppInner: React.FC = () => {
           drawingState={drawingState}
           projection={mapNavInfo?.projection}
           navigationMode={mapNavInfo?.navigationMode || "geographic"}
-          onUndo={() => {}}
-          onRedo={() => {}}
+          onUndo={undo}
+          onRedo={redo}
+          canUndo={canUndo}
+          canRedo={canRedo}
           onFlightPlanUpdate={handleFlightPlanUpdate}
+          onFlightPlanReplace={replaceFlightPlan}
           onStartDrawing={startDrawing}
           onStopDrawing={stopDrawing}
           activeTab={activeTab}

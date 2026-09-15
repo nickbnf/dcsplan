@@ -19,7 +19,7 @@ const defaultWindDir = 0;
 
 // A bunch of functions to manipulate the flight plan
 export const flightPlanUtils = {
-    newFlightPlan: (theatre: string = "syria_old"): FlightPlan => {
+    newFlightPlan: (theatre: string = "syria"): FlightPlan => {
         return { theatre, points: [], declination: 0, bankAngle: 45, initTimeSec: 12 * 3600, initFob: 12000, name: "Flight Plan One" };
     },
     addTurnPoint: (flightPlan: FlightPlan, lat: number, lon: number): FlightPlan => {

@@ -4,6 +4,8 @@
 
 The Theatre Library is a per-theatre persistent store of named map objects (library entries). Each entry has a stable UUID, a pictogram type, a position, and optional metadata (name, default comment, range). The library is separate from the flight plan and is managed on a dedicated Library page. Entries can be referenced by flight plans (library refs) and can be imported/exported as standalone JSON files.
 
+**Tier position — currently tier-independent, deliberately changing.** The library is available today with or without an account, persisted per theatre in local storage. This is *not* the settled model: AD-9 gates the reusable library behind an account, because its value is reuse across plans and the anonymous tier holds a single plan. Anonymous users keep plan-local markers instead, which belong to `map-objects` rather than here. That gating is a behaviour change owned by `add-user-accounts`; until it lands, the requirements below apply in both tiers, and this note exists so the two are not confused for one another.
+
 ## Requirements
 
 ### Requirement: Library entry data model

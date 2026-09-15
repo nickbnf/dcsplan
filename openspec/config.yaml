@@ -1,20 +1,60 @@
 schema: spec-driven
 
-# Project context (optional)
-# This is shown to AI when creating artifacts.
-# Add your tech stack, conventions, style guides, domain knowledge, etc.
-# Example:
-#   context: |
-#     Tech stack: TypeScript, React, Node.js
-#     We use conventional commits
-#     Domain: e-commerce platform
+context: |
+  Domain: dcsplan — a flight-planning tool for DCS World. Users build routes
+  (waypoints, legs, timing, fuel), overlay threat/landmark objects on a map, and
+  generate printable kneeboards.
 
-# Per-artifact rules (optional)
-# Add custom rules for specific artifacts.
-# Example:
-#   rules:
-#     proposal:
-#       - Keep proposals under 500 words
-#       - Always include a "Non-goals" section
-#     tasks:
-#       - Break tasks into chunks of max 2 hours
+  Tech stack: pnpm monorepo (pnpm only, never npm) with packages/{frontend,
+  backend,shared,tools}. Frontend: React + TypeScript + Vite, tested with Vitest.
+  Backend: Python + FastAPI (currently stateless — kneeboard generation, map
+  tiles, import validation), run from the project-local venv.
+
+  Conventions: plans live in docs/plans/, durable documentation in docs/.
+  Never run git commit — the maintainer commits by hand.
+
+  In-flight programme — "centralized flight plans": moving from a front-end-only,
+  single-plan, localStorage app to a centralized, account-backed service.
+  Cross-capability decisions are recorded as AD-1…AD-11 in
+  docs/architecture/centralized-flightplans.md. Cite them; do not restate them.
+
+  Vocabulary for that programme:
+  - Space — the unit of ownership: a user's Personal space or a squadron space.
+    Every plan, theatre library, and performance profile belongs to exactly one
+    (AD-1). The active space scopes all three entity types at once.
+  - The three entities — flight plans, per-theatre object/threat libraries,
+    performance profiles. All space-owned, collaboratively editable, versioned.
+  - Live reference vs pinned snapshot — a working copy references its space's
+    shared library and profile live; anything frozen (a finalized version) or
+    copied out (share link, copy to another space) embeds an immutable snapshot
+    (AD-3).
+  - Finalized version — a session-coalesced, restorable snapshot identified as
+    `Rev N · date · editor` (e.g. `Rev 14 · 2026-07-23 14:32 · Falcon`).
+    Autosave persists the working copy but creates no version (AD-5).
+  - Anonymous tier — a permanent, supported tier: one plan with plan-local
+    markers plus one performance profile, on-device. The reusable object
+    library, multiple plans, sync, versioning and sharing require an account
+    (AD-9).
+
+rules:
+  proposal:
+    - Cite the relevant AD-n from docs/architecture/centralized-flightplans.md
+      instead of re-explaining the ownership, snapshot, or versioning model.
+    - Always include a "Non-goals" section.
+  specs:
+    - Every product decision that can be phrased as SHALL + a scenario belongs in
+      a capability spec, not in prose in design.md.
+    - Name capabilities after behaviour (plan-sync, version-history), never after
+      layers (backend, api, database).
+    - State behaviour for BOTH tiers - anonymous (local-only) and signed-in - or
+      say explicitly that the capability is tier-independent. Never leave the
+      anonymous path to be inferred; it is a permanent supported tier (AD-9),
+      not a degraded mode. Prefer a scenario per tier over prose.
+    - Keep the tier axis (anonymous vs signed-in) separate from the connectivity
+      axis (connected vs disconnected). "Signed in but disconnected" is a third
+      state, not the same as anonymous - the user still has a space, plans, and
+      history. Only specs that actually touch sync need the second axis.
+  design:
+    - Document only decisions local to this change — wire format, schema, token
+      storage. Cross-capability decisions go in
+      docs/architecture/centralized-flightplans.md as a new AD-n.

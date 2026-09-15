@@ -4,6 +4,7 @@ import { ButtonZone } from './sidebar/ButtonZone';
 import { FlightPlanZone } from './sidebar/FlightPlanZone';
 import { ObjectsZone } from './sidebar/ObjectsZone';
 import { ChangeTheatreDialog } from './sidebar/ChangeTheatreDialog';
+import type { FlightPlanUpdateOptions } from '../contexts/FlightPlanContext';
 import { ImportFlightPlanDialog } from './sidebar/ImportFlightPlanDialog';
 import type { FlightPlan, PictogramType } from '../types/flightPlan';
 import type { DrawingState } from '../hooks/useDrawing';
@@ -21,7 +22,10 @@ interface SidebarProps {
   navigationMode: string;
   onUndo?: () => void;
   onRedo?: () => void;
-  onFlightPlanUpdate: (flightPlan: FlightPlan) => void;
+  canUndo?: boolean;
+  canRedo?: boolean;
+  onFlightPlanUpdate: (flightPlan: FlightPlan, options?: FlightPlanUpdateOptions) => void;
+  onFlightPlanReplace: (flightPlan: FlightPlan) => void;
   onStartDrawing: (map: any, existingFlightPlan?: any) => void;
   onStopDrawing: (map: any) => void;
   activeTab: 'flightplan' | 'objects';
@@ -39,7 +43,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
   navigationMode,
   onUndo,
   onRedo,
+  canUndo,
+  canRedo,
   onFlightPlanUpdate,
+  onFlightPlanReplace,
   onStartDrawing,
   onStopDrawing,
   activeTab,
@@ -65,7 +72,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       setIsConfirmDialogOpen(true);
     } else {
       const updatedPlan = flightPlanUtils.newFlightPlan(theatreId);
-      onFlightPlanUpdate(updatedPlan);
+      onFlightPlanReplace(updatedPlan);
     }
   };
 
@@ -73,7 +80,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     if (pendingTheatreId) {
       clearLibrary();
       const updatedPlan = flightPlanUtils.newFlightPlan(pendingTheatreId);
-      onFlightPlanUpdate(updatedPlan);
+      onFlightPlanReplace(updatedPlan);
       setPendingTheatreId(null);
     }
   };
@@ -93,13 +100,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
         flightPlan={flightPlan}
         onUndo={onUndo}
         onRedo={onRedo}
+        canUndo={canUndo}
+        canRedo={canRedo}
         onFlightPlanUpdate={onFlightPlanUpdate}
+        onFlightPlanReplace={onFlightPlanReplace}
         isSettingsOpen={isSettingsOpen}
         onSettingsToggle={() => setIsSettingsOpen(o => !o)}
         importTrigger={
           <ImportFlightPlanDialog
             onImport={(importedFlightPlan) => {
-              onFlightPlanUpdate(importedFlightPlan);
+              onFlightPlanReplace(importedFlightPlan);
               requestFitToFlightPlan();
             }}
             onLibrarySnapshot={(snapshot) => {

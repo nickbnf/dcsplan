@@ -91,7 +91,13 @@ def generate_tiles(
     # Open the image
     try:
         image = Image.open(image_path)
-        print(f"Loaded image: {image.size[0]}x{image.size[1]} pixels", file=sys.stderr)
+        print(f"Loaded image: {image.size[0]}x{image.size[1]} pixels, mode={image.mode}", file=sys.stderr)
+        # Indexed/palette images must be converted before any pixel manipulation —
+        # numpy/OpenCV would otherwise see raw palette indices (0-255) as grayscale.
+        if image.mode == "P":
+            target_mode = "RGBA" if image.info.get("transparency") is not None else "RGB"
+            image = image.convert(target_mode)
+            print(f"  Converted indexed image to {target_mode}", file=sys.stderr)
     except Exception as e:
         print(f"Error opening image: {e}", file=sys.stderr)
         return False

@@ -10,7 +10,7 @@ interface Props {
 }
 
 const PerformanceImportDialog: React.FC<Props> = ({ onClose }) => {
-  const { flightPlan, onFlightPlanUpdate } = useFlightPlan();
+  const { flightPlan, replaceFlightPlan } = useFlightPlan();
   const { setPerformance } = usePerformance();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [fileName, setFileName] = useState<string | null>(null);
@@ -49,15 +49,17 @@ const PerformanceImportDialog: React.FC<Props> = ({ onClose }) => {
     setPerformance(newAircraft);
 
     const importedRegimeIds = new Set(newAircraft.regimes.map(r => r.id));
-    const hasOrphans = flightPlan.points.some(p => p.regimeId && !importedRegimeIds.has(p.regimeId));
-    if (hasOrphans) {
-      const newPoints = flightPlan.points.map(p =>
-        p.regimeId && !importedRegimeIds.has(p.regimeId)
-          ? { ...p, regimeId: undefined }
-          : p
-      );
-      onFlightPlanUpdate({ ...flightPlan, points: newPoints });
-    }
+    const newPoints = flightPlan.points.map(p =>
+      p.regimeId && !importedRegimeIds.has(p.regimeId)
+        ? { ...p, regimeId: undefined }
+        : p
+    );
+
+    // Replacing the profile wholesale invalidates the plan's undo history, even
+    // when no waypoint is orphaned right now: an older entry can still hold a
+    // regimeId that existed only in the replaced profile, and restoring it would
+    // leave a leg bound to a regime that no longer resolves.
+    replaceFlightPlan({ ...flightPlan, points: newPoints });
     onClose();
   };
 

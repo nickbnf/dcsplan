@@ -1,4 +1,12 @@
-## ADDED Requirements
+# Spec: Waypoint Comment
+
+## Purpose
+
+A waypoint comment is an optional free-text note attached to a single flight plan turn point. It is authored inline on the waypoint's sidebar card, shown there as a truncated one-line preview, and rendered on the kneeboard page of the leg that terminates at that waypoint — so a note written while planning reaches the pilot in the cockpit. The comment is part of the flight plan data model and travels with it through export and import.
+
+This capability is tier-independent: comments are plain plan content and behave identically with or without an account.
+
+## Requirements
 
 ### Requirement: Comment field on waypoint data model
 The system SHALL support an optional `comment` string field on each flight plan turn point. Absence of the field and an empty string SHALL both be treated as no comment. The field SHALL be preserved through JSON serialisation and deserialisation without modification.

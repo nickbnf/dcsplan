@@ -1,4 +1,12 @@
-## ADDED Requirements
+# Spec: Waypoint Selection
+
+## Purpose
+
+At most one waypoint is "selected" at a time, held in `WaypointSelectionContext`. The selection is purely presentational — it never enters the `FlightPlan` data model and is never persisted. It can be set from the sidebar, from the map, or by cycling with `+`/`-`, and is rendered consistently in both places so the active waypoint is always identifiable. Selection is also the anchor for coordinate entry, which is why this capability owns how selection interacts with the Flight Plan / Objects tab split: selection is scoped to the tab that owns the selected item, and switching tabs clears it.
+
+This capability is tier-independent: selection is ephemeral UI state and behaves identically with or without an account.
+
+## Requirements
 
 ### Requirement: Single selected waypoint state
 The application SHALL maintain a single selected waypoint index (or none) in `WaypointSelectionContext`. This state is purely UI-level and SHALL NOT affect the `FlightPlan` data model.
