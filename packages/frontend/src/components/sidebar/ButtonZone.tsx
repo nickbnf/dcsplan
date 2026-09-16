@@ -2,10 +2,12 @@ import React from 'react';
 import type { FlightPlan } from '../../types/flightPlan';
 import type { FlightPlanUpdateOptions } from '../../contexts/FlightPlanContext';
 import { flightPlanUtils } from '../../utils/flightPlanUtils';
-import { ClearFlightPlanDialog } from './ClearFlightPlanDialog';
+import type { TheatreMetadata } from '../../hooks/useTheatres';
+import { NewFlightPlanDialog } from './NewFlightPlanDialog';
 
 interface ButtonZoneProps {
   flightPlan: FlightPlan;
+  theatres: TheatreMetadata[];
   onUndo?: () => void;
   onRedo?: () => void;
   canUndo?: boolean;
@@ -27,6 +29,7 @@ const disabledButtonClass =
 
 export const ButtonZone: React.FC<ButtonZoneProps> = ({
   flightPlan,
+  theatres,
   onUndo,
   onRedo,
   canUndo = false,
@@ -127,11 +130,10 @@ export const ButtonZone: React.FC<ButtonZoneProps> = ({
             <span aria-hidden>⬇</span> Export
           </button>
         </div>
-        <ClearFlightPlanDialog
-          onConfirm={() => {
-            const newFlightPlan = flightPlanUtils.newFlightPlan(flightPlan.theatre);
-            onFlightPlanReplace(newFlightPlan);
-          }}
+        <NewFlightPlanDialog
+          currentPlan={flightPlan}
+          theatres={theatres}
+          onCreatePlan={onFlightPlanReplace}
         />
       </div>
     </div>

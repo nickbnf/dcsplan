@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import type { LibraryObject, PictogramType } from '../types/flightPlan';
-import { loadLibrary, saveLibrary, clearLibrary } from '../utils/libraryStorage';
+import { loadLibrary, saveLibrary } from '../utils/libraryStorage';
 import { useFlightPlan } from './FlightPlanContext';
 
 interface LibraryContextValue {
@@ -9,52 +9,58 @@ interface LibraryContextValue {
   updateEntry: (id: string, updates: Partial<LibraryObject>) => void;
   deleteEntry: (id: string) => void;
   setLibrary: (entries: LibraryObject[]) => void;
-  clearAll: () => void;
 }
 
 const LibraryContext = createContext<LibraryContextValue | null>(null);
+
+interface LibraryState {
+  theatre: string;
+  entries: LibraryObject[];
+}
 
 export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { flightPlan } = useFlightPlan();
   const theatre = flightPlan.theatre;
 
-  const [library, setLibraryState] = useState<LibraryObject[]>(() => loadLibrary(theatre));
+  const [state, setState] = useState<LibraryState>(() => ({
+    theatre,
+    entries: loadLibrary(theatre),
+  }));
 
-  // Reload when theatre changes
   useEffect(() => {
-    setLibraryState(loadLibrary(theatre));
+    setState({ theatre, entries: loadLibrary(theatre) });
   }, [theatre]);
 
-  // Persist whenever library changes
   useEffect(() => {
-    saveLibrary(theatre, library);
-  }, [theatre, library]);
+    if (state.theatre === theatre) {
+      saveLibrary(state.theatre, state.entries);
+    }
+  }, [state.theatre, state.entries, theatre]);
 
   const addEntry = useCallback((entry: LibraryObject) => {
-    setLibraryState(prev => [...prev, entry]);
+    setState(prev => ({ ...prev, entries: [...prev.entries, entry] }));
   }, []);
 
   const updateEntry = useCallback((id: string, updates: Partial<LibraryObject>) => {
-    setLibraryState(prev =>
-      prev.map(e => e.id === id ? { ...e, ...updates } : e)
-    );
+    setState(prev => ({
+      ...prev,
+      entries: prev.entries.map(e => e.id === id ? { ...e, ...updates } : e),
+    }));
   }, []);
 
   const deleteEntry = useCallback((id: string) => {
-    setLibraryState(prev => prev.filter(e => e.id !== id));
+    setState(prev => ({
+      ...prev,
+      entries: prev.entries.filter(e => e.id !== id),
+    }));
   }, []);
 
   const setLibrary = useCallback((entries: LibraryObject[]) => {
-    setLibraryState(entries);
+    setState(prev => ({ ...prev, entries }));
   }, []);
 
-  const clearAll = useCallback(() => {
-    clearLibrary(theatre);
-    setLibraryState([]);
-  }, [theatre]);
-
   return (
-    <LibraryContext.Provider value={{ library, addEntry, updateEntry, deleteEntry, setLibrary, clearAll }}>
+    <LibraryContext.Provider value={{ library: state.entries, addEntry, updateEntry, deleteEntry, setLibrary }}>
       {children}
     </LibraryContext.Provider>
   );

@@ -3,7 +3,6 @@ import { TitleZone } from './sidebar/TitleZone';
 import { ButtonZone } from './sidebar/ButtonZone';
 import { FlightPlanZone } from './sidebar/FlightPlanZone';
 import { ObjectsZone } from './sidebar/ObjectsZone';
-import { ChangeTheatreDialog } from './sidebar/ChangeTheatreDialog';
 import type { FlightPlanUpdateOptions } from '../contexts/FlightPlanContext';
 import { ImportFlightPlanDialog } from './sidebar/ImportFlightPlanDialog';
 import type { FlightPlan, PictogramType } from '../types/flightPlan';
@@ -57,35 +56,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onAddTypeChange,
 }) => {
   const { theatres, isLoading: isLoadingTheatres } = useTheatres();
-  const { library, clearAll: clearLibrary, setLibrary } = useLibrary();
+  const { library, setLibrary } = useLibrary();
   const { requestFitToFlightPlan } = useFlightPlan();
   const { performance, setPerformance } = usePerformance();
-  const [pendingTheatreId, setPendingTheatreId] = useState<string | null>(null);
-  const [isConfirmDialogOpen, setIsConfirmDialogOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-
-  const handleTheatreSelect = (theatreId: string) => {
-    if (theatreId === flightPlan.theatre) return;
-
-    if (flightPlan.points.length > 0 || library.length > 0) {
-      setPendingTheatreId(theatreId);
-      setIsConfirmDialogOpen(true);
-    } else {
-      const updatedPlan = flightPlanUtils.newFlightPlan(theatreId);
-      onFlightPlanReplace(updatedPlan);
-    }
-  };
-
-  const handleConfirmTheatreChange = () => {
-    if (pendingTheatreId) {
-      clearLibrary();
-      const updatedPlan = flightPlanUtils.newFlightPlan(pendingTheatreId);
-      onFlightPlanReplace(updatedPlan);
-      setPendingTheatreId(null);
-    }
-  };
-
-  const pendingTheatreName = theatres.find(t => t.id === pendingTheatreId)?.name || "";
 
   return (
     <div className="w-[450px] bg-white border-r border-gray-300 flex flex-col h-full">
@@ -93,11 +67,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
         currentTheatreId={flightPlan.theatre}
         availableTheatres={theatres}
         isLoadingTheatres={isLoadingTheatres}
-        onTheatreChange={handleTheatreSelect}
       />
 
       <ButtonZone
         flightPlan={flightPlan}
+        theatres={theatres}
         onUndo={onUndo}
         onRedo={onRedo}
         canUndo={canUndo}
@@ -174,14 +148,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
           onAddTypeChange={onAddTypeChange}
         />
       </div>
-
-      <ChangeTheatreDialog
-        isOpen={isConfirmDialogOpen}
-        onOpenChange={setIsConfirmDialogOpen}
-        onConfirm={handleConfirmTheatreChange}
-        theatreName={pendingTheatreName}
-        hasLibraryEntries={library.length > 0}
-      />
     </div>
   );
 };

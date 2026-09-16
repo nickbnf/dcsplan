@@ -14,9 +14,15 @@ const plan: FlightPlan = {
   name: 'Test Plan',
 };
 
+const theatres = [
+  { id: 'caucasus', name: 'Caucasus' },
+  { id: 'syria', name: 'Syria' },
+];
+
 function renderZone(overrides: Partial<React.ComponentProps<typeof ButtonZone>> = {}) {
   const props: React.ComponentProps<typeof ButtonZone> = {
     flightPlan: plan,
+    theatres,
     onFlightPlanUpdate: vi.fn(),
     onFlightPlanReplace: vi.fn(),
     isSettingsOpen: false,
@@ -31,6 +37,14 @@ function renderZone(overrides: Partial<React.ComponentProps<typeof ButtonZone>> 
     redo: screen.getByRole('button', { name: /redo/i }),
   };
 }
+
+describe('ButtonZone action row', () => {
+  it('shows New flight plan button instead of Clear', () => {
+    renderZone();
+    expect(screen.getByRole('button', { name: /new/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /clear/i })).not.toBeInTheDocument();
+  });
+});
 
 describe('ButtonZone undo/redo controls', () => {
   it('shows both controls as unavailable when nothing is recorded', () => {

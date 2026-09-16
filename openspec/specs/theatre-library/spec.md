@@ -28,6 +28,10 @@ The system SHALL maintain a library of map objects per theatre. Each library ent
 ### Requirement: Theatre-scoped library persistence
 The library SHALL be partitioned per theatre and persisted to localStorage using a per-theatre key namespace. Loading a different theatre SHALL load that theatre's library; an absent key SHALL be treated as an empty library.
 
+A theatre's library SHALL persist until the user deletes its entries deliberately. No other operation SHALL clear it — in particular, creating a flight plan on a different theatre SHALL leave the previous theatre's library untouched.
+
+Entries SHALL never be persisted under a theatre they were not loaded for. While the active theatre is changing, the system SHALL NOT write the outgoing theatre's entries into the incoming theatre's key, even transiently.
+
 #### Scenario: Switching theatres loads the new library
 - **WHEN** the user selects a different theatre with an existing library
 - **THEN** the previously loaded library is replaced with the new theatre's library
@@ -40,18 +44,17 @@ The library SHALL be partitioned per theatre and persisted to localStorage using
 - **WHEN** the user reloads the app while on a theatre with library entries
 - **THEN** all entries reappear unchanged
 
----
+#### Scenario: A theatre's library survives moving to another theatre and back
+- **WHEN** the user builds a library on one theatre, creates a plan on a second theatre, and later returns to the first
+- **THEN** the first theatre's entries are all present and unchanged
 
-### Requirement: Theatre change confirmation mentions the library
-The existing theatre-switch confirmation dialog SHALL state that the library will be blanked when the theatre changes, in addition to the flight plan.
+#### Scenario: Entries are not written under the wrong theatre
+- **WHEN** the active theatre changes from one theatre to another
+- **THEN** the incoming theatre's stored library is never overwritten with the outgoing theatre's entries, including at any intermediate point during the change
 
-#### Scenario: Theatre switch with non-empty library
-- **WHEN** the user attempts to switch theatres and the current theatre's library is non-empty
-- **THEN** the confirmation dialog mentions both the flight plan and the library being blanked
-
-#### Scenario: Theatre switch with empty library
-- **WHEN** the user attempts to switch theatres and the current theatre's library is empty
-- **THEN** the confirmation dialog need not mention the library
+#### Scenario: A reload during a theatre change preserves both libraries
+- **WHEN** the active theatre changes and the application is reloaded immediately afterwards
+- **THEN** both theatres' stored libraries hold their own entries
 
 ---
 
