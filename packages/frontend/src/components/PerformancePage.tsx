@@ -3,7 +3,7 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { useFlightPlan } from '../contexts/FlightPlanContext';
 import { usePerformance } from '../contexts/PerformanceContext';
 import { generateRegimeId, flightPlanUtils } from '../utils/flightPlanUtils';
-import { propagateRegimeCruiseChange, clearRegimeFromAllWaypoints } from '../utils/regimeUtils';
+import { clearRegimeFromAllWaypoints } from '../utils/regimeUtils';
 import type { Regime, Aircraft } from '../types/flightPlan';
 import PerformanceImportDialog from './PerformanceImportDialog';
 
@@ -272,7 +272,7 @@ function formatMinSec(totalSec: number): string {
 
 const PerformancePage: React.FC = () => {
   const { flightPlan, onFlightPlanUpdate } = useFlightPlan();
-  const { performance, setPerformance } = usePerformance();
+  const { performance, profileName, setPerformance, setProfileName } = usePerformance();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [newlyAddedId, setNewlyAddedId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Regime | null>(null);
@@ -297,11 +297,7 @@ const PerformancePage: React.FC = () => {
   };
 
   const handleRegimeChange = (updated: Regime) => {
-    const current = regimes.find(r => r.id === updated.id);
     setPerformance({ ...performance, regimes: regimes.map(r => r.id === updated.id ? updated : r) });
-    if (current && (current.cruise.tas !== updated.cruise.tas || current.cruise.ff !== updated.cruise.ff)) {
-      onFlightPlanUpdate(propagateRegimeCruiseChange(flightPlan, updated));
-    }
   };
 
   const handleDeleteConfirm = () => {
@@ -334,6 +330,21 @@ const PerformancePage: React.FC = () => {
     <div className="flex flex-col flex-1 w-full overflow-hidden">
       {/* Aircraft header */}
       <div className="bg-white border-b border-gray-300 px-6 py-3 space-y-2 shrink-0">
+        {/* Profile name */}
+        <div className="flex items-center gap-2">
+          <label className="text-xs font-aero-label text-gray-500 whitespace-nowrap">Profile</label>
+          <input
+            type="text"
+            value={profileName}
+            onChange={e => setProfileName(e.target.value)}
+            onBlur={e => {
+              const trimmed = e.target.value.trim();
+              if (!trimmed) setProfileName('Default profile');
+            }}
+            placeholder="Profile name"
+            className="text-sm font-aero-mono font-semibold border border-gray-300 rounded px-2 py-0.5 focus:outline-none focus:border-gray-500 w-56"
+          />
+        </div>
         {/* Row 1: Aircraft name · T/O Config · export/import links */}
         <div className="flex items-center gap-4 flex-wrap">
           <div className="flex items-center gap-2">
@@ -358,7 +369,7 @@ const PerformancePage: React.FC = () => {
           </div>
           <div className="flex items-center gap-3 ml-auto">
             <button
-              onClick={() => flightPlanUtils.downloadAircraft(performance)}
+              onClick={() => flightPlanUtils.downloadAircraft(performance, profileName)}
               className="text-xs font-aero-label text-gray-400 hover:text-gray-600 transition-colors"
             >
               ⬇ Export

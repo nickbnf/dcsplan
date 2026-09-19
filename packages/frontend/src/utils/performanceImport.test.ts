@@ -103,6 +103,33 @@ describe('validatePerformancePackage', () => {
       const result = validatePerformancePackage(pkg);
       expect(result.ok).toBe(true);
     });
+
+    it('accepts package with name and returns it', () => {
+      const pkg = { version: '1.0', name: 'My F-15E', aircraft: validAircraft };
+      const result = validatePerformancePackage(pkg);
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.name).toBe('My F-15E');
+    });
+
+    it('accepts package without name (legacy)', () => {
+      const result = validatePerformancePackage(validPackage);
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.name).toBeUndefined();
+    });
+
+    it('ignores empty-string name', () => {
+      const pkg = { version: '1.0', name: '', aircraft: validAircraft };
+      const result = validatePerformancePackage(pkg);
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.name).toBeUndefined();
+    });
+
+    it('ignores non-string name', () => {
+      const pkg = { version: '1.0', name: 123, aircraft: validAircraft };
+      const result = validatePerformancePackage(pkg);
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.name).toBeUndefined();
+    });
   });
 
   describe('rejection: version', () => {

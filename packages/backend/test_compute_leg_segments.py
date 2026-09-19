@@ -25,8 +25,11 @@ class TestComputeLegSegments:
         assert result['ff'] == 3600
 
     def test_level_leg_with_regime_altdelta_zero(self):
-        result = compute_leg_segments(prev_alt=10000, leg_alt=10000, **BASE, regime=make_regime())
+        regime = Regime(id='r1', name='Test', cruise=RegimeCruise(tas=350, ff=4000))
+        result = compute_leg_segments(prev_alt=10000, leg_alt=10000, **BASE, regime=regime)
         assert result['kind'] == 'level'
+        assert result['tas'] == 350
+        assert result['ff'] == 4000
 
     def test_climbing_leg_with_full_climb_data(self):
         regime = make_regime(climb=RegimeClimb(tas=300, ff=4000, roc=2000))
@@ -40,10 +43,12 @@ class TestComputeLegSegments:
         assert abs(result['transition']['fuel'] - 4000 * (5 / 60)) < 1e-3
         assert abs(result['cruise']['distance'] - 25.0) < 1e-5
 
-    def test_climbing_leg_without_climb_data_falls_back_to_cruise(self):
-        regime = make_regime()  # no climb
+    def test_climbing_leg_without_climb_data_falls_back_to_regime_cruise(self):
+        regime = Regime(id='r1', name='Test', cruise=RegimeCruise(tas=350, ff=4000))
         result = compute_leg_segments(prev_alt=0, leg_alt=10000, **BASE, regime=regime)
         assert result['kind'] == 'level'
+        assert result['tas'] == 350
+        assert result['ff'] == 4000
 
     def test_descending_leg_with_full_descent_data(self):
         regime = make_regime(descent=RegimeDescent(tas=300, ff=2000, rod=2000))
@@ -52,10 +57,12 @@ class TestComputeLegSegments:
         assert result['transition']['phase'] == 'descent'
         assert abs(result['transition']['time'] - 5.0) < 1e-5
 
-    def test_descending_leg_without_descent_data_falls_back_to_cruise(self):
-        regime = make_regime()
+    def test_descending_leg_without_descent_data_falls_back_to_regime_cruise(self):
+        regime = Regime(id='r1', name='Test', cruise=RegimeCruise(tas=350, ff=4000))
         result = compute_leg_segments(prev_alt=10000, leg_alt=0, **BASE, regime=regime)
         assert result['kind'] == 'level'
+        assert result['tas'] == 350
+        assert result['ff'] == 4000
 
     def test_manual_leg_with_alt_delta_returns_level(self):
         result = compute_leg_segments(prev_alt=0, leg_alt=10000, **BASE)

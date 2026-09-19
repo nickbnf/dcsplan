@@ -20,10 +20,15 @@ vi.mock('../contexts/FlightPlanContext', () => ({
 const mockSetPerformance = vi.fn();
 let mockPerformance: Aircraft;
 
+const mockSetProfileName = vi.fn();
+let mockProfileName = 'Test Profile';
+
 vi.mock('../contexts/PerformanceContext', () => ({
   usePerformance: () => ({
     performance: mockPerformance,
+    profileName: mockProfileName,
     setPerformance: mockSetPerformance,
+    setProfileName: mockSetProfileName,
     updateAircraft: (patch: Partial<Aircraft>) => mockSetPerformance({ ...mockPerformance, ...patch }),
     addRegime: (r: Regime) => mockSetPerformance({ ...mockPerformance, regimes: [...mockPerformance.regimes, r] }),
     deleteRegime: (id: string) => mockSetPerformance({ ...mockPerformance, regimes: mockPerformance.regimes.filter((r: Regime) => r.id !== id) }),

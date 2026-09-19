@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import {
   applyRegimeToWaypoint,
   clearRegimeBinding,
-  propagateRegimeCruiseChange,
   clearRegimeFromAllWaypoints,
 } from './regimeUtils';
 import type { FlightPlan, FlightPlanTurnPoint, Regime } from '../types/flightPlan';
@@ -23,13 +22,13 @@ function makeRegime(overrides: Partial<Regime> = {}): Regime {
 }
 
 describe('applyRegimeToWaypoint', () => {
-  it('sets regimeId and mirrors cruise tas/ff onto the waypoint', () => {
-    const wpt = makeWaypoint();
-    const regime = makeRegime();
+  it('sets regimeId without changing tas or fuelFlow', () => {
+    const wpt = makeWaypoint({ tas: 400, fuelFlow: 3600 });
+    const regime = makeRegime({ cruise: { tas: 350, ff: 4000 } });
     const result = applyRegimeToWaypoint(wpt, regime);
     expect(result.regimeId).toBe('r1');
-    expect(result.tas).toBe(350);
-    expect(result.fuelFlow).toBe(4000);
+    expect(result.tas).toBe(400);
+    expect(result.fuelFlow).toBe(3600);
   });
 
   it('does not mutate the original waypoint', () => {
@@ -52,28 +51,6 @@ describe('clearRegimeBinding', () => {
     const wpt = makeWaypoint({ regimeId: 'r1' });
     clearRegimeBinding(wpt);
     expect(wpt.regimeId).toBe('r1');
-  });
-});
-
-describe('propagateRegimeCruiseChange', () => {
-  it('updates tas/ff on all waypoints bound to the regime', () => {
-    const plan = makePlan([
-      makeWaypoint({ regimeId: 'r1', tas: 350, fuelFlow: 4000 }),
-      makeWaypoint({ regimeId: 'r2', tas: 300, fuelFlow: 3000 }),
-      makeWaypoint({ regimeId: 'r1', tas: 350, fuelFlow: 4000 }),
-    ]);
-    const updatedRegime = makeRegime({ cruise: { tas: 380, ff: 4200 } });
-    const result = propagateRegimeCruiseChange(plan, updatedRegime);
-    expect(result.points[0].tas).toBe(380);
-    expect(result.points[0].fuelFlow).toBe(4200);
-    expect(result.points[1].tas).toBe(300); // unaffected
-    expect(result.points[2].tas).toBe(380);
-  });
-
-  it('does not mutate the original plan', () => {
-    const plan = makePlan([makeWaypoint({ regimeId: 'r1', tas: 350, fuelFlow: 4000 })]);
-    propagateRegimeCruiseChange(plan, makeRegime({ cruise: { tas: 380, ff: 4200 } }));
-    expect(plan.points[0].tas).toBe(350);
   });
 });
 

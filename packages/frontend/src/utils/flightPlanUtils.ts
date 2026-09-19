@@ -173,10 +173,11 @@ export const flightPlanUtils = {
         URL.revokeObjectURL(url);
     },
 
-    downloadAircraft: (aircraft: Aircraft): void => {
+    downloadAircraft: (aircraft: Aircraft, profileName?: string): void => {
         const aircraftCopy = JSON.parse(JSON.stringify(aircraft));
         const envelope: PerformanceFileV1 = {
             version: PERFORMANCE_FILE_VERSION,
+            name: profileName,
             aircraft: aircraftCopy,
         };
         const jsonString = JSON.stringify(envelope, null, 2);

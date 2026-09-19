@@ -3,27 +3,19 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { FlightPlanProvider, useFlightPlan } from './FlightPlanContext';
 import { PerformanceProvider, usePerformance } from './PerformanceContext';
-import { propagateRegimeCruiseChange, clearRegimeFromAllWaypoints } from '../utils/regimeUtils';
+import { clearRegimeFromAllWaypoints } from '../utils/regimeUtils';
 import type { Aircraft, FlightPlan, FlightPlanTurnPoint, Regime } from '../types/flightPlan';
 
 /**
- * KNOWN DEFECT — cross-entity undo (AD-12, "Open — cross-entity actions").
+ * Cross-entity undo (AD-12, "Open — cross-entity actions").
  *
- * Editing a regime on the Performance page writes to two entities at once: the
- * profile (setPerformance) and the flight plan (propagateRegimeCruiseChange
- * mirrors the regime's cruise TAS/FF onto every bound waypoint). Only the plan
- * half is captured by the undo stack, because the profile stack is deferred.
+ * After de-mirroring (D11), editing a regime no longer writes to the flight
+ * plan, so the regime-editing undo defect is dissolved — there is nothing on the
+ * plan's undo stack for regime value changes.
  *
- * Undo therefore rewinds the mirrored values while the regime keeps its new
- * ones, leaving a leg that is still bound to a regime whose numbers it no longer
- * matches — the exact state the "direct edits revert the leg to Manual" rule
- * exists to prevent. It is not cosmetic: computeLegSegments uses the waypoint's
- * mirrored tas/ff for a level leg, so a stale value reaches leg fuel and the
- * kneeboard.
- *
- * These tests use `it.fails`, so they document the broken behaviour without
- * turning the suite red. When the defect is fixed they will start failing —
- * that is the signal to drop `.fails` and keep them as regression tests.
+ * The deletion case remains: deleting a regime clears regimeId from waypoints
+ * (plan-side) and removes the regime from the profile (perf-side). Undo restores
+ * regimeId but not the regime, leaving a dangling reference.
  */
 
 const REGIME_ID = 'regime-cruise';
@@ -65,17 +57,11 @@ function makePlan(): FlightPlan {
   };
 }
 
-/**
- * The invariant: a leg bound to a regime must carry that regime's cruise
- * numbers. A leg whose values have diverged should have been dropped to Manual.
- */
-function expectBoundLegsToMatchTheirRegime(plan: FlightPlan, aircraft: Aircraft) {
+function expectBoundRegimesExist(plan: FlightPlan, aircraft: Aircraft) {
   for (const point of plan.points) {
     if (!point.regimeId) continue;
     const regime = aircraft.regimes.find(r => r.id === point.regimeId);
     expect(regime, `waypoint bound to missing regime "${point.regimeId}"`).toBeDefined();
-    expect(point.fuelFlow).toBe(regime!.cruise.ff);
-    expect(point.tas).toBe(regime!.cruise.tas);
   }
 }
 
@@ -91,7 +77,6 @@ function setup() {
     { wrapper }
   );
 
-  // Arrange through the replace path so the setup itself leaves no undo entries.
   act(() => {
     view.result.current.perf.setPerformance(makeAircraft(3600));
     view.result.current.plan.replaceFlightPlan(makePlan());
@@ -107,51 +92,27 @@ describe('undo across the plan/profile boundary', () => {
 
   it('arranges a consistent bound leg', () => {
     const { result } = setup();
-    expectBoundLegsToMatchTheirRegime(result.current.plan.flightPlan, result.current.perf.performance);
+    expectBoundRegimesExist(result.current.plan.flightPlan, result.current.perf.performance);
     expect(result.current.plan.canUndo).toBe(false);
   });
 
-  it('propagating a regime cruise change keeps the leg consistent', () => {
+  it('editing regime cruise values does not modify the flight plan', () => {
     const { result } = setup();
 
-    // What PerformancePage.handleRegimeChange does, in order.
     act(() => {
       const updated = makeRegime(4000);
       result.current.perf.setPerformance({ ...result.current.perf.performance, regimes: [updated] });
-      result.current.plan.onFlightPlanUpdate(
-        propagateRegimeCruiseChange(result.current.plan.flightPlan, updated)
-      );
     });
 
-    expect(result.current.plan.flightPlan.points[1]!.fuelFlow).toBe(4000);
+    expect(result.current.plan.canUndo).toBe(false);
     expect(result.current.plan.flightPlan.points[1]!.regimeId).toBe(REGIME_ID);
-    expectBoundLegsToMatchTheirRegime(result.current.plan.flightPlan, result.current.perf.performance);
-  });
-
-  it.fails('undoing a regime cruise change leaves the leg bound to a regime it no longer matches', () => {
-    const { result } = setup();
-
-    act(() => {
-      const updated = makeRegime(4000);
-      result.current.perf.setPerformance({ ...result.current.perf.performance, regimes: [updated] });
-      result.current.plan.onFlightPlanUpdate(
-        propagateRegimeCruiseChange(result.current.plan.flightPlan, updated)
-      );
-    });
-
-    act(() => { result.current.plan.undo(); });
-
-    // The plan half rewinds to 3600; the profile still says 4000. The leg is
-    // still bound, so this violates the invariant.
     expect(result.current.plan.flightPlan.points[1]!.fuelFlow).toBe(3600);
     expect(result.current.perf.performance.regimes[0]!.cruise.ff).toBe(4000);
-    expectBoundLegsToMatchTheirRegime(result.current.plan.flightPlan, result.current.perf.performance);
   });
 
   it.fails('undoing a regime deletion rebinds legs to a regime that no longer exists', () => {
     const { result } = setup();
 
-    // What PerformancePage.handleDeleteConfirm does, in order.
     act(() => {
       result.current.plan.onFlightPlanUpdate(
         clearRegimeFromAllWaypoints(result.current.plan.flightPlan, REGIME_ID)
@@ -163,9 +124,7 @@ describe('undo across the plan/profile boundary', () => {
 
     act(() => { result.current.plan.undo(); });
 
-    // regimeId comes back, but the regime is gone: regimes.find() yields
-    // undefined and the leg silently computes from its stale mirrored values.
     expect(result.current.plan.flightPlan.points[1]!.regimeId).toBe(REGIME_ID);
-    expectBoundLegsToMatchTheirRegime(result.current.plan.flightPlan, result.current.perf.performance);
+    expectBoundRegimesExist(result.current.plan.flightPlan, result.current.perf.performance);
   });
 });

@@ -6,10 +6,10 @@ This is the largest data-model change in the centralized-flight-plans programme 
 
 ## What Changes
 
-- **Profiles become a keyed collection.** `dcsplan.performance` (one blob) becomes a store of profiles, each with a stable id and a user-editable name.
-- **Plans reference a profile.** `FlightPlan` gains `profileId`. A plan references **exactly one** profile; the profile continues to own its multiple regimes (unchanged).
-- **Per-plan profile chooser** — net-new UI. Today the single profile is implicit; a plan must now say which one it uses.
-- **Profile CRUD** on the Performance page: create, rename, duplicate, delete, plus switching which profile is being edited.
+- **Profiles become named entities.** In the anonymous tier, the single profile gains a user-editable name but no id (id is server-assigned on sign-in adoption). In the signed-in tier, profiles become a server-backed keyed collection with stable ids.
+- **Plans reference a profile (signed-in only).** `FlightPlan` gains `profileId` in the signed-in tier. Anonymous users have one implicit profile — no reference needed.
+- **Per-plan profile chooser (signed-in only)** — net-new UI. Anonymous users have one profile; signed-in users choose which profile a plan flies.
+- **Profile CRUD on the Performance page (signed-in only)**: create, rename, duplicate, delete, plus switching which profile is being edited. Anonymous users see the existing single-profile editing interface, with a name field added.
 - **One-time localStorage migration** — the existing single blob gains an id and a default name, moves into the collection, and the stored plan's `profileId` is pointed at it. Synchronous, pre-mount, same pattern as the existing `bootstrapPerformanceFromLegacyPlan()`.
 - **Spec drift corrected.** `aircraft-performance` and `performance-regime` still assert that the aircraft block and regime collection live *on the flight plan*. That stopped being true at the 1.5 migration, which moved them to `dcsplan.performance` without updating the specs. Both are restated against reality as part of this change.
 - **BREAKING (storage):** the `dcsplan.performance` key's shape changes. Covered by the migration; no user action required.
@@ -18,11 +18,11 @@ This is the largest data-model change in the centralized-flight-plans programme 
 ## Capabilities
 
 ### New Capabilities
-- `performance-profile`: profiles as first-class named entities — the profile collection, stable identity and naming, profile CRUD, the per-plan `profileId` reference and chooser, migration from the single-blob store, and the behaviour when a plan's regime references don't exist in the profile it points at.
+- `performance-profile`: profiles as first-class named entities. Anonymous tier: one named profile with no id (id assigned server-side on sign-in adoption), implicit reference, import replaces. Signed-in tier: server-backed collection with stable ids, profile CRUD, per-plan `profileId` reference and chooser, additive import, and the behaviour when a plan's regime references don't exist in the profile it points at. Migration from the single-blob store (both tiers).
 
 ### Modified Capabilities
-- `aircraft-performance`: the "Aircraft block on the flight plan" requirement is wrong as written (the block has lived in a separate store since 1.5) and is restated as a standalone entity reached through the plan's `profileId`. Performance-package export/import requirements gain profile identity and naming.
-- `performance-regime`: "Performance regime collection on flight plan" is likewise restated — regimes are owned by a profile and resolved through the plan's selected profile. Waypoint `regimeId` resolution is scoped to that profile rather than to a single global regime list.
+- `aircraft-performance`: the "Aircraft block on the flight plan" requirement is wrong as written (the block has lived in a separate store since 1.5) and is restated as a standalone entity owned by the profile. Performance-package export/import requirements gain profile naming; anonymous import remains replace, signed-in import becomes additive.
+- `performance-regime`: "Performance regime collection on flight plan" is likewise restated — regimes are owned by a profile and resolved through it. Waypoint `regimeId` resolution is scoped to the profile. D11 de-mirroring: bound-leg TAS/FF resolved from regime at read time, no mirrored copy.
 
 ## Non-goals
 
@@ -48,4 +48,4 @@ This is the largest data-model change in the centralized-flight-plans programme 
 
 **Backend** — unchanged in this change. `GenerateDialog.tsx` continues to marshal `aircraft` into the plan body for the kneeboard endpoint (see Non-goals).
 
-**Open question for design:** switching a plan to a different profile can leave legs referencing `regimeId`s that don't exist there. Options — block the switch, remap by regime name, or drop affected legs to Manual. Needs a decision in `design.md`.
+**Decided in design:** switching a plan to a different profile (signed-in only) resets all bound legs to Manual after confirmation (D5). Anonymous users have one profile, so the question doesn't arise.

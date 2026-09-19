@@ -439,8 +439,10 @@ def compute_leg_segments(
     )
 
     if no_transition:
-        if not takeoff_seg or regime is None:
+        if regime is None:
             return {'kind': 'level', 'tas': tas, 'ff': ff}
+        if not takeoff_seg:
+            return {'kind': 'level', 'tas': regime.cruise.tas, 'ff': regime.cruise.ff}
 
         # T/O + cruise (no transition)
         if takeoff_seg['distance'] > distance_nm:
@@ -656,7 +658,7 @@ class LegData:
             self.eteSec = seg['fallback_time_sec']
             self.legFuel = seg['fallback_fuel']
 
-        self.tas = flightPlan.points[indexWptTo].tas
+        self.tas = seg['tas'] if seg['kind'] == 'level' else flightPlan.points[indexWptTo].tas
         self.prev_alt = (origin_pt.groundAlt or 0) if leg_index == 0 else origin_pt.alt
         self.alt = flightPlan.points[indexWptTo].alt
 

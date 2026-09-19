@@ -11,10 +11,11 @@ interface Props {
 
 const PerformanceImportDialog: React.FC<Props> = ({ onClose }) => {
   const { flightPlan, replaceFlightPlan } = useFlightPlan();
-  const { setPerformance } = usePerformance();
+  const { setPerformance, setProfileName } = usePerformance();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [fileName, setFileName] = useState<string | null>(null);
   const [validatedAircraft, setValidatedAircraft] = useState<Aircraft | null>(null);
+  const [validatedName, setValidatedName] = useState<string | undefined>(undefined);
   const [errors, setErrors] = useState<string[]>([]);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -24,6 +25,7 @@ const PerformanceImportDialog: React.FC<Props> = ({ onClose }) => {
     setFileName(file.name);
     setErrors([]);
     setValidatedAircraft(null);
+    setValidatedName(undefined);
 
     let parsed: unknown;
     try {
@@ -39,6 +41,7 @@ const PerformanceImportDialog: React.FC<Props> = ({ onClose }) => {
       setErrors(result.errors);
     } else {
       setValidatedAircraft(result.aircraft);
+      setValidatedName(result.name);
     }
   };
 
@@ -47,6 +50,8 @@ const PerformanceImportDialog: React.FC<Props> = ({ onClose }) => {
 
     const newAircraft: Aircraft = JSON.parse(JSON.stringify(validatedAircraft));
     setPerformance(newAircraft);
+    const importedName = validatedName || newAircraft.model?.trim() || 'Imported profile';
+    setProfileName(importedName);
 
     const importedRegimeIds = new Set(newAircraft.regimes.map(r => r.id));
     const newPoints = flightPlan.points.map(p =>

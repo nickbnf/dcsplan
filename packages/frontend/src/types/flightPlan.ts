@@ -224,6 +224,7 @@ export interface VersionedFlightPlan {
 
 export interface PerformanceFileV1 {
   version: string;
+  name?: string;
   aircraft: Aircraft;
 }
 

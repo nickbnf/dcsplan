@@ -1,7 +1,9 @@
 import type { Aircraft } from '../types/flightPlan';
 import { parseAircraftBlock } from './performanceStorage';
 
-type ValidationResult = { ok: true; aircraft: Aircraft } | { ok: false; errors: string[] };
+type ValidationResult =
+  | { ok: true; aircraft: Aircraft; name?: string }
+  | { ok: false; errors: string[] };
 
 export function validatePerformancePackage(parsed: unknown): ValidationResult {
   if (typeof parsed !== 'object' || parsed === null) {
@@ -14,5 +16,12 @@ export function validatePerformancePackage(parsed: unknown): ValidationResult {
     return { ok: false, errors: [`Unsupported file version: "${obj['version']}". Expected "1.0".`] };
   }
 
-  return parseAircraftBlock(obj['aircraft']);
+  const result = parseAircraftBlock(obj['aircraft']);
+  if (!result.ok) return result;
+
+  const name = typeof obj['name'] === 'string' && obj['name'].trim()
+    ? obj['name'].trim()
+    : undefined;
+
+  return { ok: true, aircraft: result.aircraft, name };
 }

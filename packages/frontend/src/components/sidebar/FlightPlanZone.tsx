@@ -664,6 +664,8 @@ export const RouteCard: React.FC<{
   const prevAltForGlyph = index === 0 ? (prevWpt.groundAlt ?? 0) : prevWpt.alt;
   const altDelta = destWpt.alt - prevAltForGlyph;
   const boundRegime = destWpt.regimeId ? performance.regimes.find(r => r.id === destWpt.regimeId) : undefined;
+  const displayTas = boundRegime?.cruise.tas ?? destWpt.tas;
+  const displayFf = boundRegime?.cruise.ff ?? destWpt.fuelFlow;
   const seg = legData.segmentsResult;
   const isWarning = seg?.kind === 'warning';
 
@@ -754,7 +756,7 @@ export const RouteCard: React.FC<{
           <div className="flex items-center space-x-1">
             <span className="font-aero-label text-gray-600 text-xs">TAS</span>
             <EditableField
-              value={`${destWpt.tas}K`}
+              value={`${displayTas}K`}
               onChange={(value: string) => {
                 const m = value.match(/\d+/);
                 if (m && m[0]) {
@@ -776,7 +778,7 @@ export const RouteCard: React.FC<{
           <div className="flex items-center space-x-1">
             <span className="font-aero-label text-gray-600 text-xs">FF</span>
             <EditableField
-              value={`${destWpt.fuelFlow}pph`}
+              value={`${displayFf}pph`}
               onChange={(value: string) => {
                 const m = value.match(/\d+/);
                 if (m && m[0]) {

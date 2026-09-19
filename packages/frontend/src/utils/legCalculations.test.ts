@@ -232,12 +232,17 @@ describe('computeLegSegments', () => {
     }
   });
 
-  it('level leg with regime (altDelta=0): returns level using stored tas/ff', () => {
+  it('level leg with regime (altDelta=0): returns level using regime cruise values', () => {
+    const regime = makeRegime({ cruise: { tas: 350, ff: 4000 } });
     const result = computeLegSegments({
       prevAlt: 10000, legAlt: 10000, distance: 50, course: 0,
       windA: noWind, windB: noWind, tas: 400, ff: 3600,
-    }, makeRegime());
+    }, regime);
     expect(result.kind).toBe('level');
+    if (result.kind === 'level') {
+      expect(result.tas).toBe(350);
+      expect(result.ff).toBe(4000);
+    }
   });
 
   it('climbing leg with full climb data: returns segmented result', () => {
@@ -259,13 +264,17 @@ describe('computeLegSegments', () => {
     }
   });
 
-  it('climbing leg without climb data: falls back to cruise (level)', () => {
-    const regime = makeRegime(); // no climb data
+  it('climbing leg without climb data: falls back to level using regime cruise', () => {
+    const regime = makeRegime({ cruise: { tas: 350, ff: 4000 } }); // no climb data
     const result = computeLegSegments({
       prevAlt: 0, legAlt: 10000, distance: 50, course: 0,
       windA: noWind, windB: noWind, tas: 400, ff: 3600,
     }, regime);
     expect(result.kind).toBe('level');
+    if (result.kind === 'level') {
+      expect(result.tas).toBe(350);
+      expect(result.ff).toBe(4000);
+    }
   });
 
   it('descending leg with full descent data: returns segmented result', () => {
@@ -282,13 +291,17 @@ describe('computeLegSegments', () => {
     }
   });
 
-  it('descending leg without descent data: falls back to cruise (level)', () => {
-    const regime = makeRegime(); // no descent data
+  it('descending leg without descent data: falls back to level using regime cruise', () => {
+    const regime = makeRegime({ cruise: { tas: 350, ff: 4000 } }); // no descent data
     const result = computeLegSegments({
       prevAlt: 10000, legAlt: 0, distance: 50, course: 0,
       windA: noWind, windB: noWind, tas: 400, ff: 3600,
     }, regime);
     expect(result.kind).toBe('level');
+    if (result.kind === 'level') {
+      expect(result.tas).toBe(350);
+      expect(result.ff).toBe(4000);
+    }
   });
 
   it('manual leg with alt delta: returns level (no regime)', () => {

@@ -379,7 +379,6 @@ export function computeLegSegments(
 
   const remainingDistance = takeoffSeg ? distance - takeoffSeg.distance : distance;
 
-  // Level-leg path: fall back to stored tas/ff (today's behaviour)
   const noTransition =
     altDelta === 0 ||
     !regime ||
@@ -387,7 +386,8 @@ export function computeLegSegments(
     (altDelta < 0 && !regime.descent);
 
   if (noTransition) {
-    if (!takeoffSeg || !regime) return { kind: 'level', tas, ff };
+    if (!regime) return { kind: 'level', tas, ff };
+    if (!takeoffSeg) return { kind: 'level', tas: regime.cruise.tas, ff: regime.cruise.ff };
 
     // T/O + cruise (no transition) — regime is defined here because takeoffActive requires it
     // Warning: T/O alone exceeds leg distance
