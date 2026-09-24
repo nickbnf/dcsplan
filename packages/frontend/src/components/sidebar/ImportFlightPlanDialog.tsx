@@ -109,7 +109,9 @@ export const ImportFlightPlanDialog: React.FC<ImportFlightPlanDialogProps> = ({
       const data = await response.json();
       // Strip aircraft back off: FlightPlan type no longer carries it
       const { aircraft: _aircraft, ...planWithoutAircraft } = data.flightPlan;
-      setValidatedPlan(planWithoutAircraft as FlightPlan);
+      const importedPlan = planWithoutAircraft as FlightPlan;
+      importedPlan.points = importedPlan.points.map(p => p.id ? p : { ...p, id: crypto.randomUUID() });
+      setValidatedPlan(importedPlan);
     } catch (err) {
       setErrors([err instanceof Error ? err.message : 'Failed to validate flight plan.']);
     } finally {

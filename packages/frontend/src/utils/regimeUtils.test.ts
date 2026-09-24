@@ -7,7 +7,7 @@ import {
 import type { FlightPlan, FlightPlanTurnPoint, Regime } from '../types/flightPlan';
 
 function makeWaypoint(overrides: Partial<FlightPlanTurnPoint> = {}): FlightPlanTurnPoint {
-  return { lat: 0, lon: 0, tas: 400, alt: 10000, fuelFlow: 3600, windSpeed: 0, windDir: 0, ...overrides };
+  return { id: 'wp1', lat: 0, lon: 0, tas: 400, alt: 10000, fuelFlow: 3600, windSpeed: 0, windDir: 0, ...overrides };
 }
 
 function makePlan(points: FlightPlanTurnPoint[]): FlightPlan {

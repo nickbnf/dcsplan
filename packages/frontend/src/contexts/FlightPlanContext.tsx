@@ -1,38 +1,12 @@
-import React, { createContext, useContext, useState, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
+import * as Y from 'yjs';
 import type { FlightPlan } from '../types/flightPlan';
-import { usePersistedFlightPlan } from '../hooks/usePersistedFlightPlan';
-import { flightPlanUtils } from '../utils/flightPlanUtils';
-import {
-  createHistory,
-  push as pushHistory,
-  undo as undoHistory,
-  redo as redoHistory,
-  clearHistory,
-  canUndo as historyCanUndo,
-  canRedo as historyCanRedo,
-  type UndoHistory,
-  type UndoResult,
-} from '../hooks/undoHistory';
-
-type HistoryStep = (
-  history: UndoHistory<FlightPlan>,
-  current: FlightPlan
-) => UndoResult<FlightPlan>;
-
-export type FlightPlanUpdateOptions = {
-  /** Groups a sustained interaction with one control into a single undo entry. */
-  coalesceKey?: string;
-  /** Short description surfaced when undoing a change made on another page. */
-  label?: string;
-};
+import { useYjsFlightPlan } from '../hooks/useYjsFlightPlan';
+import { applyFlightPlanToYDoc, seedYDoc } from '../utils/yjsFlightPlanBinding';
 
 interface FlightPlanContextValue {
   flightPlan: FlightPlan;
-  onFlightPlanUpdate: (flightPlan: FlightPlan, options?: FlightPlanUpdateOptions) => void;
-  /**
-   * Replaces the working set outright — import, clear, new plan, change theatre.
-   * Not undoable: it captures nothing and discards the undo history (AD-12).
-   */
+  onFlightPlanUpdate: (flightPlan: FlightPlan) => void;
   replaceFlightPlan: (flightPlan: FlightPlan) => void;
   undo: () => void;
   redo: () => void;
@@ -47,71 +21,102 @@ const FlightPlanContext = createContext<FlightPlanContextValue | null>(null);
 const omitAttackPlanning = ({ attackPlanning: _, ...rest }: FlightPlan) => rest;
 
 export const FlightPlanProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [flightPlan, setFlightPlan] = usePersistedFlightPlan(() =>
-    flightPlanUtils.newFlightPlan()
-  );
+  const { yDoc, flightPlan, isReady } = useYjsFlightPlan();
 
-  const [history, setHistory] = useState<UndoHistory<FlightPlan>>(() => createHistory<FlightPlan>());
-
-  // Current plan and history, readable from callbacks without stale-closure risk.
-  const flightPlanRef = useRef(flightPlan);
+  const flightPlanRef = useRef<FlightPlan | null>(null);
   flightPlanRef.current = flightPlan;
-  const historyRef = useRef(history);
-  historyRef.current = history;
+
+  const undoManagerRef = useRef<Y.UndoManager | null>(null);
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
 
   // Start at 1 if the persisted flight plan already has points (page reload with saved plan)
-  const [fitTrigger, setFitTrigger] = useState<number>(
-    () => flightPlan.points.length > 0 ? 1 : 0
-  );
+  const [fitTrigger, setFitTrigger] = useState(0);
+  const initialFitDone = useRef(false);
+
+  useEffect(() => {
+    if (isReady && flightPlan && flightPlan.points.length > 0 && !initialFitDone.current) {
+      initialFitDone.current = true;
+      setFitTrigger(1);
+    }
+  }, [isReady, flightPlan]);
+
+  // Set up UndoManager once Y.Doc is ready
+  useEffect(() => {
+    if (!isReady || !yDoc) return;
+
+    const yPlan = yDoc.getMap('flightPlan');
+    const um = new Y.UndoManager(yPlan, {
+      captureTimeout: 500,
+      trackedOrigins: new Set(['local']),
+    });
+
+    const updateUndoState = () => {
+      setCanUndo(um.undoStack.length > 0);
+      setCanRedo(um.redoStack.length > 0);
+    };
+
+    um.on('stack-item-added', () => {
+      // Trim undo stack to 50 entries
+      while (um.undoStack.length > 50) {
+        um.undoStack.shift();
+      }
+      updateUndoState();
+    });
+    um.on('stack-item-popped', updateUndoState);
+    um.on('stack-cleared', updateUndoState);
+
+    undoManagerRef.current = um;
+
+    return () => {
+      um.destroy();
+      undoManagerRef.current = null;
+    };
+  }, [isReady, yDoc]);
 
   const requestFitToFlightPlan = useCallback(() => {
     setFitTrigger(prev => prev + 1);
   }, []);
 
-  const handleFlightPlanUpdate = useCallback((newPlan: FlightPlan, options?: FlightPlanUpdateOptions) => {
+  const handleFlightPlanUpdate = useCallback((newPlan: FlightPlan) => {
+    if (!yDoc || !flightPlanRef.current) return;
     const previous = flightPlanRef.current;
     const baseChanged =
       JSON.stringify(omitAttackPlanning(newPlan)) !==
       JSON.stringify(omitAttackPlanning(previous));
 
-    // Only substantive edits are undoable; re-emitting an identical plan is a no-op.
-    if (baseChanged) {
-      historyRef.current = pushHistory(historyRef.current, previous, {
-        ...(options?.coalesceKey ? { coalesceKey: options.coalesceKey } : {}),
-        ...(options?.label ? { label: options.label } : {}),
-      });
-      setHistory(historyRef.current);
-    }
-
     const nextPlan = baseChanged && newPlan.attackPlanning?.results
       ? { ...newPlan, attackPlanning: { params: newPlan.attackPlanning.params } }
       : newPlan;
 
-    flightPlanRef.current = nextPlan;
-    setFlightPlan(nextPlan);
-  }, [setFlightPlan]);
+    yDoc.transact(() => {
+      applyFlightPlanToYDoc(yDoc, previous, nextPlan);
+    }, 'local');
+  }, [yDoc]);
 
   const replaceFlightPlan = useCallback((newPlan: FlightPlan) => {
-    historyRef.current = clearHistory(historyRef.current);
-    setHistory(historyRef.current);
-    setFlightPlan(newPlan);
-  }, [setFlightPlan]);
+    if (!yDoc) return;
+    undoManagerRef.current?.clear();
 
-  /**
-   * Applies an undo/redo result. Refs are advanced synchronously so two
-   * invocations inside one tick (key autorepeat) still see fresh state.
-   */
-  const applyStep = useCallback((step: HistoryStep) => {
-    const result = step(historyRef.current, flightPlanRef.current);
-    if (!result) return;
-    historyRef.current = result.history;
-    flightPlanRef.current = result.state;
-    setHistory(result.history);
-    setFlightPlan(result.state);
-  }, [setFlightPlan]);
+    yDoc.transact(() => {
+      // Clear the Y.Map and apply the new plan
+      const yPlan = yDoc.getMap('flightPlan');
+      for (const key of Array.from(yPlan.keys())) {
+        yPlan.delete(key);
+      }
+      seedYDoc(yDoc, newPlan);
+    }, 'replace');
+  }, [yDoc]);
 
-  const undo = useCallback(() => applyStep(undoHistory), [applyStep]);
-  const redo = useCallback(() => applyStep(redoHistory), [applyStep]);
+  const undo = useCallback(() => {
+    undoManagerRef.current?.undo();
+  }, []);
+
+  const redo = useCallback(() => {
+    undoManagerRef.current?.redo();
+  }, []);
+
+  if (!isReady || !flightPlan) return null;
 
   return (
     <FlightPlanContext.Provider value={{
@@ -120,8 +125,8 @@ export const FlightPlanProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       replaceFlightPlan,
       undo,
       redo,
-      canUndo: historyCanUndo(history),
-      canRedo: historyCanRedo(history),
+      canUndo,
+      canRedo,
       fitToFlightPlanTrigger: fitTrigger,
       requestFitToFlightPlan,
     }}>

@@ -70,6 +70,7 @@ export type WaypointType = 'normal' | 'push' | 'ip' | 'tgt';
 
 // A single turn point
 export type FlightPlanTurnPoint = {
+  id: string;
   lat: number;
   lon: number;
   tas: number; // TAS going into this WP
@@ -211,7 +212,7 @@ export type FlightPlan = {
   };
 }
 
-export const FLIGHT_PLAN_VERSION = "1.5";
+export const FLIGHT_PLAN_VERSION = "1.6";
 export const PERFORMANCE_FILE_VERSION = "1.0";
 export const LIBRARY_FILE_VERSION = "1.0";
 

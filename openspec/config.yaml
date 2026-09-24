@@ -28,6 +28,9 @@ context: |
     shared library and profile live; anything frozen (a finalized version) or
     copied out (share link, copy to another space) embeds an immutable snapshot
     (AD-3).
+  - Flight plan data model — Yjs CRDT (AD-6 revised). The Y.Doc is the source
+    of truth; React state is a derived snapshot. Undo uses Y.UndoManager.
+    Library and performance profiles remain plain React state, not Yjs.
   - Finalized version — a session-coalesced, restorable snapshot identified as
     `Rev N · date · editor` (e.g. `Rev 14 · 2026-07-23 14:32 · Falcon`).
     Autosave persists the working copy but creates no version (AD-5).

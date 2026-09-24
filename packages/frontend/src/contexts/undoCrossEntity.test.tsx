@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, beforeEach } from 'vitest';
-import { renderHook, act } from '@testing-library/react';
+import { renderHook, act, waitFor } from '@testing-library/react';
 import { FlightPlanProvider, useFlightPlan } from './FlightPlanContext';
 import { PerformanceProvider, usePerformance } from './PerformanceContext';
 import { clearRegimeFromAllWaypoints } from '../utils/regimeUtils';
@@ -36,6 +36,7 @@ function makeAircraft(ff: number): Aircraft {
 
 function makePoint(overrides: Partial<FlightPlanTurnPoint> = {}): FlightPlanTurnPoint {
   return {
+    id: crypto.randomUUID(),
     lat: 0, lon: 0, alt: 20000, tas: 400, fuelFlow: 3600,
     windSpeed: 0, windDir: 0,
     ...overrides,
@@ -65,17 +66,31 @@ function expectBoundRegimesExist(plan: FlightPlan, aircraft: Aircraft) {
   }
 }
 
+function deleteDb(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.deleteDatabase('dcsplan-flightplan-ydoc');
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+    req.onblocked = () => resolve();
+  });
+}
+
 const wrapper = ({ children }: { children: React.ReactNode }) => (
   <PerformanceProvider>
     <FlightPlanProvider>{children}</FlightPlanProvider>
   </PerformanceProvider>
 );
 
-function setup() {
+async function setup() {
   const view = renderHook(
     () => ({ plan: useFlightPlan(), perf: usePerformance() }),
     { wrapper }
   );
+
+  await waitFor(() => {
+    expect(view.result.current.plan).toBeDefined();
+    expect(view.result.current.plan.flightPlan).toBeDefined();
+  });
 
   act(() => {
     view.result.current.perf.setPerformance(makeAircraft(3600));
@@ -86,18 +101,19 @@ function setup() {
 }
 
 describe('undo across the plan/profile boundary', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     localStorage.clear();
+    await deleteDb();
   });
 
-  it('arranges a consistent bound leg', () => {
-    const { result } = setup();
+  it('arranges a consistent bound leg', async () => {
+    const { result } = await setup();
     expectBoundRegimesExist(result.current.plan.flightPlan, result.current.perf.performance);
     expect(result.current.plan.canUndo).toBe(false);
   });
 
-  it('editing regime cruise values does not modify the flight plan', () => {
-    const { result } = setup();
+  it('editing regime cruise values does not modify the flight plan', async () => {
+    const { result } = await setup();
 
     act(() => {
       const updated = makeRegime(4000);
@@ -110,8 +126,8 @@ describe('undo across the plan/profile boundary', () => {
     expect(result.current.perf.performance.regimes[0]!.cruise.ff).toBe(4000);
   });
 
-  it.fails('undoing a regime deletion rebinds legs to a regime that no longer exists', () => {
-    const { result } = setup();
+  it.fails('undoing a regime deletion rebinds legs to a regime that no longer exists', async () => {
+    const { result } = await setup();
 
     act(() => {
       result.current.plan.onFlightPlanUpdate(
@@ -124,7 +140,9 @@ describe('undo across the plan/profile boundary', () => {
 
     act(() => { result.current.plan.undo(); });
 
-    expect(result.current.plan.flightPlan.points[1]!.regimeId).toBe(REGIME_ID);
+    await waitFor(() => {
+      expect(result.current.plan.flightPlan.points[1]!.regimeId).toBe(REGIME_ID);
+    });
     expectBoundRegimesExist(result.current.plan.flightPlan, result.current.perf.performance);
   });
 });

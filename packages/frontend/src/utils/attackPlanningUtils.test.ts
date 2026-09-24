@@ -37,8 +37,8 @@ const BASE_PARAMS_LEFT: AttackPlanningParams = {
 const PLAN_WITH_IP_TGT: FlightPlan = {
   ...BASE_PLAN,
   points: [
-    { lat: 35.8, lon: 36.0, tas: 300, alt: 500, fuelFlow: 5000, windSpeed: 0, windDir: 0, waypointType: 'ip' },
-    { lat: 36.0, lon: 36.0, tas: 300, alt: 500, fuelFlow: 5000, windSpeed: 0, windDir: 0, waypointType: 'tgt' },
+    { id: 'ip1', lat: 35.8, lon: 36.0, tas: 300, alt: 500, fuelFlow: 5000, windSpeed: 0, windDir: 0, waypointType: 'ip' },
+    { id: 'tgt1', lat: 36.0, lon: 36.0, tas: 300, alt: 500, fuelFlow: 5000, windSpeed: 0, windDir: 0, waypointType: 'tgt' },
   ],
 };
 
@@ -52,7 +52,7 @@ describe('calculateAttackProfile', () => {
     const plan: FlightPlan = {
       ...BASE_PLAN,
       points: [
-        { lat: 36.0, lon: 36.0, tas: 300, alt: 500, fuelFlow: 5000, windSpeed: 0, windDir: 0, waypointType: 'tgt' },
+        { id: 'tgt1', lat: 36.0, lon: 36.0, tas: 300, alt: 500, fuelFlow: 5000, windSpeed: 0, windDir: 0, waypointType: 'tgt' },
       ],
     };
     expect(calculateAttackProfile(plan, BASE_PARAMS)).toBeNull();
@@ -62,7 +62,7 @@ describe('calculateAttackProfile', () => {
     const plan: FlightPlan = {
       ...BASE_PLAN,
       points: [
-        { lat: 35.8, lon: 36.0, tas: 300, alt: 500, fuelFlow: 5000, windSpeed: 0, windDir: 0, waypointType: 'ip' },
+        { id: 'ip1', lat: 35.8, lon: 36.0, tas: 300, alt: 500, fuelFlow: 5000, windSpeed: 0, windDir: 0, waypointType: 'ip' },
       ],
     };
     expect(calculateAttackProfile(plan, BASE_PARAMS)).toBeNull();

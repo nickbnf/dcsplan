@@ -25,8 +25,8 @@ const makePlan = (overrides: Partial<FlightPlan> = {}): FlightPlan => ({
 });
 
 describe('snapshot embedding on export', () => {
-  it('exports version 1.5', () => {
-    expect(FLIGHT_PLAN_VERSION).toBe('1.5');
+  it('exports version 1.6', () => {
+    expect(FLIGHT_PLAN_VERSION).toBe('1.6');
   });
 
   it('embeds only referenced library entries', () => {

@@ -1,6 +1,5 @@
 import React from 'react';
 import type { FlightPlan } from '../../types/flightPlan';
-import type { FlightPlanUpdateOptions } from '../../contexts/FlightPlanContext';
 import { flightPlanUtils } from '../../utils/flightPlanUtils';
 import type { TheatreMetadata } from '../../hooks/useTheatres';
 import { NewFlightPlanDialog } from './NewFlightPlanDialog';
@@ -12,7 +11,7 @@ interface ButtonZoneProps {
   onRedo?: () => void;
   canUndo?: boolean;
   canRedo?: boolean;
-  onFlightPlanUpdate: (flightPlan: FlightPlan, options?: FlightPlanUpdateOptions) => void;
+  onFlightPlanUpdate: (flightPlan: FlightPlan) => void;
   /** Wholesale replacement — not undoable, clears history (AD-12). */
   onFlightPlanReplace: (flightPlan: FlightPlan) => void;
   isSettingsOpen: boolean;
@@ -73,7 +72,7 @@ export const ButtonZone: React.FC<ButtonZoneProps> = ({
               value={declination}
               onChange={(e) => {
                 const updatedFlightPlan = flightPlanUtils.updateDeclination(flightPlan, parseFloat(e.target.value));
-                onFlightPlanUpdate(updatedFlightPlan, { coalesceKey: 'plan:declination' });
+                onFlightPlanUpdate(updatedFlightPlan);
               }}
               className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
               style={{
@@ -94,7 +93,7 @@ export const ButtonZone: React.FC<ButtonZoneProps> = ({
               value={bankAngle}
               onChange={(e) => {
                 const updatedFlightPlan = flightPlanUtils.updateBankAngle(flightPlan, parseFloat(e.target.value));
-                onFlightPlanUpdate(updatedFlightPlan, { coalesceKey: 'plan:bankAngle' });
+                onFlightPlanUpdate(updatedFlightPlan);
               }}
               className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
               style={{

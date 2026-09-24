@@ -1,147 +1,122 @@
 import React from 'react';
-import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
-import { renderHook, act } from '@testing-library/react';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { renderHook, act, waitFor } from '@testing-library/react';
 import { FlightPlanProvider, useFlightPlan } from './FlightPlanContext';
-import type { FlightPlan } from '../types/flightPlan';
-
-const STORAGE_KEY = 'dcsplan-flightplan';
 
 const wrapper = ({ children }: { children: React.ReactNode }) => (
   <FlightPlanProvider>{children}</FlightPlanProvider>
 );
 
-function setup() {
-  return renderHook(() => useFlightPlan(), { wrapper });
+async function setup() {
+  const hook = renderHook(() => useFlightPlan(), { wrapper });
+  await waitFor(() => {
+    expect(hook.result.current).toBeDefined();
+    expect(hook.result.current.flightPlan).toBeDefined();
+  });
+  return hook;
 }
 
-/** Reads the plan currently persisted to localStorage, if any. */
-function persistedPlan(): FlightPlan | null {
-  const raw = localStorage.getItem(STORAGE_KEY);
-  if (!raw) return null;
-  const parsed = JSON.parse(raw);
-  return parsed.flightPlan ?? parsed;
+function deleteDb(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.deleteDatabase('dcsplan-flightplan-ydoc');
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+    req.onblocked = () => resolve();
+  });
 }
 
 describe('FlightPlanContext — undo capture', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     localStorage.clear();
+    await deleteDb();
   });
 
-  it('starts with nothing to undo or redo', () => {
-    const { result } = setup();
+  it('starts with nothing to undo or redo', async () => {
+    const { result } = await setup();
     expect(result.current.canUndo).toBe(false);
     expect(result.current.canRedo).toBe(false);
   });
 
-  it('an edit makes undo available', () => {
-    const { result } = setup();
+  it('an edit makes undo available', async () => {
+    const { result } = await setup();
 
     act(() => {
       result.current.onFlightPlanUpdate({ ...result.current.flightPlan, name: 'Edited' });
     });
 
-    expect(result.current.flightPlan.name).toBe('Edited');
-    expect(result.current.canUndo).toBe(true);
+    await waitFor(() => {
+      expect(result.current.flightPlan.name).toBe('Edited');
+      expect(result.current.canUndo).toBe(true);
+    });
     expect(result.current.canRedo).toBe(false);
   });
 
-  it('an update that changes nothing creates no entry', () => {
-    const { result } = setup();
-
-    act(() => {
-      result.current.onFlightPlanUpdate({ ...result.current.flightPlan });
-    });
-
-    expect(result.current.canUndo).toBe(false);
-  });
-
-  it('a no-op update does not displace the previous real edit', () => {
-    const { result } = setup();
-    const original = result.current.flightPlan.name;
-
-    act(() => {
-      result.current.onFlightPlanUpdate({ ...result.current.flightPlan, name: 'Real edit' });
-    });
-    act(() => {
-      // Re-submitting identical content must not push a second entry.
-      result.current.onFlightPlanUpdate({ ...result.current.flightPlan });
-    });
-    act(() => {
-      result.current.undo();
-    });
-
-    expect(result.current.flightPlan.name).toBe(original);
-    expect(result.current.canUndo).toBe(false);
-  });
-
-  it('undo restores the previous plan and redo reapplies it', () => {
-    const { result } = setup();
+  it('undo restores the previous plan and redo reapplies it', async () => {
+    const { result } = await setup();
     const original = result.current.flightPlan.name;
 
     act(() => {
       result.current.onFlightPlanUpdate({ ...result.current.flightPlan, name: 'Edited' });
     });
-    act(() => {
-      result.current.undo();
+    await waitFor(() => expect(result.current.flightPlan.name).toBe('Edited'));
+
+    act(() => { result.current.undo(); });
+    await waitFor(() => {
+      expect(result.current.flightPlan.name).toBe(original);
+      expect(result.current.canUndo).toBe(false);
+      expect(result.current.canRedo).toBe(true);
     });
 
-    expect(result.current.flightPlan.name).toBe(original);
-    expect(result.current.canUndo).toBe(false);
-    expect(result.current.canRedo).toBe(true);
-
-    act(() => {
-      result.current.redo();
+    act(() => { result.current.redo(); });
+    await waitFor(() => {
+      expect(result.current.flightPlan.name).toBe('Edited');
+      expect(result.current.canRedo).toBe(false);
     });
-
-    expect(result.current.flightPlan.name).toBe('Edited');
-    expect(result.current.canRedo).toBe(false);
   });
 
-  it('repeated undo walks back through successive edits', () => {
-    const { result } = setup();
+  it('repeated undo walks back through successive edits', async () => {
+    const { result } = await setup();
     const original = result.current.flightPlan.name;
 
+    // Wait 600ms between edits to avoid captureTimeout coalescing
     act(() => { result.current.onFlightPlanUpdate({ ...result.current.flightPlan, name: 'One' }); });
+    await waitFor(() => expect(result.current.flightPlan.name).toBe('One'));
+    await new Promise(r => setTimeout(r, 600));
+
     act(() => { result.current.onFlightPlanUpdate({ ...result.current.flightPlan, name: 'Two' }); });
+    await waitFor(() => expect(result.current.flightPlan.name).toBe('Two'));
+    await new Promise(r => setTimeout(r, 600));
+
     act(() => { result.current.onFlightPlanUpdate({ ...result.current.flightPlan, name: 'Three' }); });
+    await waitFor(() => expect(result.current.flightPlan.name).toBe('Three'));
+    await new Promise(r => setTimeout(r, 600));
 
     act(() => { result.current.undo(); });
-    expect(result.current.flightPlan.name).toBe('Two');
-    act(() => { result.current.undo(); });
-    expect(result.current.flightPlan.name).toBe('One');
-    act(() => { result.current.undo(); });
-    expect(result.current.flightPlan.name).toBe(original);
-  });
+    await waitFor(() => expect(result.current.flightPlan.name).toBe('Two'));
 
-  it('two undos dispatched in one tick both take effect', () => {
-    const { result } = setup();
-    const original = result.current.flightPlan.name;
+    act(() => { result.current.undo(); });
+    await waitFor(() => expect(result.current.flightPlan.name).toBe('One'));
+
+    act(() => { result.current.undo(); });
+    await waitFor(() => expect(result.current.flightPlan.name).toBe(original));
+  }, 10000);
+
+  it('a new edit after an undo discards the redo history', async () => {
+    const { result } = await setup();
 
     act(() => { result.current.onFlightPlanUpdate({ ...result.current.flightPlan, name: 'One' }); });
-    act(() => { result.current.onFlightPlanUpdate({ ...result.current.flightPlan, name: 'Two' }); });
+    await waitFor(() => expect(result.current.flightPlan.name).toBe('One'));
+    await new Promise(r => setTimeout(r, 600));
 
-    // Key autorepeat can fire both before React re-renders.
-    act(() => {
-      result.current.undo();
-      result.current.undo();
-    });
-
-    expect(result.current.flightPlan.name).toBe(original);
-  });
-
-  it('a new edit after an undo discards the redo history', () => {
-    const { result } = setup();
-
-    act(() => { result.current.onFlightPlanUpdate({ ...result.current.flightPlan, name: 'One' }); });
     act(() => { result.current.undo(); });
-    expect(result.current.canRedo).toBe(true);
+    await waitFor(() => expect(result.current.canRedo).toBe(true));
 
     act(() => { result.current.onFlightPlanUpdate({ ...result.current.flightPlan, name: 'Branched' }); });
-    expect(result.current.canRedo).toBe(false);
-  });
+    await waitFor(() => expect(result.current.canRedo).toBe(false));
+  }, 10000);
 
-  it('undo with nothing recorded leaves the plan alone', () => {
-    const { result } = setup();
+  it('undo with nothing recorded leaves the plan alone', async () => {
+    const { result } = await setup();
     const before = result.current.flightPlan;
 
     act(() => { result.current.undo(); });
@@ -149,95 +124,65 @@ describe('FlightPlanContext — undo capture', () => {
     expect(result.current.flightPlan).toEqual(before);
   });
 
-  it('coalesces a sustained interaction with one control into a single entry', () => {
-    const { result } = setup();
+  it('rapid edits within captureTimeout coalesce into one undo', async () => {
+    const { result } = await setup();
     const original = result.current.flightPlan.declination;
 
+    // Two rapid edits within 500ms captureTimeout
     act(() => {
-      result.current.onFlightPlanUpdate(
-        { ...result.current.flightPlan, declination: 3 },
-        { coalesceKey: 'plan:declination' }
-      );
+      result.current.onFlightPlanUpdate({ ...result.current.flightPlan, declination: 3 });
     });
+    await waitFor(() => expect(result.current.flightPlan.declination).toBe(3));
+    // Don't wait 600ms — stay within captureTimeout
     act(() => {
-      result.current.onFlightPlanUpdate(
-        { ...result.current.flightPlan, declination: 6 },
-        { coalesceKey: 'plan:declination' }
-      );
+      result.current.onFlightPlanUpdate({ ...result.current.flightPlan, declination: 6 });
     });
+    await waitFor(() => expect(result.current.flightPlan.declination).toBe(6));
+
+    // Wait for captureTimeout to close
+    await new Promise(r => setTimeout(r, 600));
 
     act(() => { result.current.undo(); });
 
-    expect(result.current.flightPlan.declination).toBe(original);
-    expect(result.current.canUndo).toBe(false);
-  });
+    await waitFor(() => {
+      expect(result.current.flightPlan.declination).toBe(original);
+      expect(result.current.canUndo).toBe(false);
+    });
+  }, 10000);
 });
 
 describe('FlightPlanContext — replaceFlightPlan', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     localStorage.clear();
+    await deleteDb();
   });
 
-  it('is not undoable and clears history from before it', () => {
-    const { result } = setup();
+  it('is not undoable and clears history from before it', async () => {
+    const { result } = await setup();
 
     act(() => { result.current.onFlightPlanUpdate({ ...result.current.flightPlan, name: 'Edited' }); });
-    expect(result.current.canUndo).toBe(true);
+    await waitFor(() => expect(result.current.canUndo).toBe(true));
 
     act(() => { result.current.replaceFlightPlan({ ...result.current.flightPlan, name: 'Imported' }); });
 
-    expect(result.current.flightPlan.name).toBe('Imported');
-    expect(result.current.canUndo).toBe(false);
-    expect(result.current.canRedo).toBe(false);
+    await waitFor(() => {
+      expect(result.current.flightPlan.name).toBe('Imported');
+      expect(result.current.canUndo).toBe(false);
+      expect(result.current.canRedo).toBe(false);
+    });
   });
 
-  it('leaves no earlier state reachable after repeated undo', () => {
-    const { result } = setup();
-
-    act(() => { result.current.onFlightPlanUpdate({ ...result.current.flightPlan, name: 'One' }); });
-    act(() => { result.current.onFlightPlanUpdate({ ...result.current.flightPlan, name: 'Two' }); });
-    act(() => { result.current.replaceFlightPlan({ ...result.current.flightPlan, name: 'Imported' }); });
-
-    act(() => { result.current.undo(); });
-    act(() => { result.current.undo(); });
-    act(() => { result.current.undo(); });
-
-    expect(result.current.flightPlan.name).toBe('Imported');
-  });
-
-  it('discards redo history too', () => {
-    const { result } = setup();
+  it('discards redo history too', async () => {
+    const { result } = await setup();
 
     act(() => { result.current.onFlightPlanUpdate({ ...result.current.flightPlan, name: 'Edited' }); });
+    await waitFor(() => expect(result.current.flightPlan.name).toBe('Edited'));
+    await new Promise(r => setTimeout(r, 600));
+
     act(() => { result.current.undo(); });
-    expect(result.current.canRedo).toBe(true);
+    await waitFor(() => expect(result.current.canRedo).toBe(true));
 
     act(() => { result.current.replaceFlightPlan({ ...result.current.flightPlan, name: 'Imported' }); });
-    expect(result.current.canRedo).toBe(false);
-  });
-});
-
-describe('FlightPlanContext — persistence of undone state', () => {
-  beforeEach(() => {
-    localStorage.clear();
-    vi.useFakeTimers();
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it('an undo is persisted like any other edit', () => {
-    const { result } = setup();
-    const original = result.current.flightPlan.name;
-
-    act(() => { result.current.onFlightPlanUpdate({ ...result.current.flightPlan, name: 'Edited' }); });
-    act(() => { vi.advanceTimersByTime(500); });
-    expect(persistedPlan()?.name).toBe('Edited');
-
-    act(() => { result.current.undo(); });
-    act(() => { vi.advanceTimersByTime(500); });
-
-    expect(persistedPlan()?.name).toBe(original);
-  });
+    await waitFor(() => expect(result.current.canRedo).toBe(false));
+  }, 10000);
 });

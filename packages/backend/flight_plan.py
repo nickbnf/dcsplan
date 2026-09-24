@@ -64,6 +64,7 @@ def default_aircraft() -> Aircraft:
 
 class FlightPlanTurnPoint(BaseModel):
     """Represents a single turn point in a flight plan."""
+    id: Optional[str] = Field(default=None, description="Stable UUID, added in v1.6")
     lat: float = Field(..., ge=-90, le=90, description="Latitude (-90 to 90)")
     lon: float = Field(..., ge=-180, le=180, description="Longitude (-180 to 180)")
     tas: float = Field(..., ge=0, description="True Air Speed into this TP")

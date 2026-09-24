@@ -3,7 +3,6 @@ import { TitleZone } from './sidebar/TitleZone';
 import { ButtonZone } from './sidebar/ButtonZone';
 import { FlightPlanZone } from './sidebar/FlightPlanZone';
 import { ObjectsZone } from './sidebar/ObjectsZone';
-import type { FlightPlanUpdateOptions } from '../contexts/FlightPlanContext';
 import { ImportFlightPlanDialog } from './sidebar/ImportFlightPlanDialog';
 import type { FlightPlan, PictogramType } from '../types/flightPlan';
 import type { DrawingState } from '../hooks/useDrawing';
@@ -23,7 +22,7 @@ interface SidebarProps {
   onRedo?: () => void;
   canUndo?: boolean;
   canRedo?: boolean;
-  onFlightPlanUpdate: (flightPlan: FlightPlan, options?: FlightPlanUpdateOptions) => void;
+  onFlightPlanUpdate: (flightPlan: FlightPlan) => void;
   onFlightPlanReplace: (flightPlan: FlightPlan) => void;
   onStartDrawing: (map: any, existingFlightPlan?: any) => void;
   onStopDrawing: (map: any) => void;

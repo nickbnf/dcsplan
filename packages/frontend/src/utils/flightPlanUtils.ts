@@ -32,7 +32,7 @@ export const flightPlanUtils = {
         const newIndex = flightPlan.points.length;
         const name = `WP${newIndex + 1}`;
 
-        const newPoints = [...flightPlan.points, { lat, lon, tas, alt, fuelFlow, windSpeed, windDir, name, groundAlt: 0 }];
+        const newPoints = [...flightPlan.points, { id: crypto.randomUUID(), lat, lon, tas, alt, fuelFlow, windSpeed, windDir, name, groundAlt: 0 }];
         // Demote the previously-last waypoint to interior: remove its groundAlt
         if (newPoints.length > 1) {
             const prevLast = newPoints[newPoints.length - 2];
@@ -71,6 +71,7 @@ export const flightPlanUtils = {
         const originWpt = flightPlan.points[index];
         const newIndex = index + 1;
         const newPoint: any = {
+            id: crypto.randomUUID(),
             lat, lon,
             tas: originWpt.tas,
             alt,
@@ -102,6 +103,7 @@ export const flightPlanUtils = {
         // Inherit planning fields from destination (the leg is flown at destination altitude)
         const newIndex = index + 1;
         const newPoint = {
+            id: crypto.randomUUID(),
             lat,
             lon,
             tas: destinationWpt.tas,

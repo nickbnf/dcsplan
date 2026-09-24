@@ -138,8 +138,8 @@ describe('PerformanceImportDialog', () => {
   it('orphan regimeId is cleared after replace', async () => {
     mockFlightPlan = makePlan({
       points: [
-        { lat: 0, lon: 0, alt: 0, tas: 400, fuelFlow: 3600, windSpeed: 0, windDir: 0, regimeId: 'old-regime' },
-        { lat: 1, lon: 1, alt: 10000, tas: 400, fuelFlow: 3600, windSpeed: 0, windDir: 0, regimeId: 'r1' },
+        { id: 'wp1', lat: 0, lon: 0, alt: 0, tas: 400, fuelFlow: 3600, windSpeed: 0, windDir: 0, regimeId: 'old-regime' },
+        { id: 'wp2', lat: 1, lon: 1, alt: 10000, tas: 400, fuelFlow: 3600, windSpeed: 0, windDir: 0, regimeId: 'r1' },
       ],
     });
     render(<PerformanceImportDialog onClose={onClose} />);
@@ -175,8 +175,8 @@ describe('PerformanceImportDialog', () => {
   it('shows waypoint impact warning when plan has regime-bound waypoints', async () => {
     mockFlightPlan = makePlan({
       points: [
-        { lat: 0, lon: 0, alt: 0, tas: 400, fuelFlow: 3600, windSpeed: 0, windDir: 0, regimeId: 'r1' },
-        { lat: 1, lon: 1, alt: 10000, tas: 400, fuelFlow: 3600, windSpeed: 0, windDir: 0, regimeId: 'r1' },
+        { id: 'wp1', lat: 0, lon: 0, alt: 0, tas: 400, fuelFlow: 3600, windSpeed: 0, windDir: 0, regimeId: 'r1' },
+        { id: 'wp2', lat: 1, lon: 1, alt: 10000, tas: 400, fuelFlow: 3600, windSpeed: 0, windDir: 0, regimeId: 'r1' },
       ],
     });
     render(<PerformanceImportDialog onClose={onClose} />);

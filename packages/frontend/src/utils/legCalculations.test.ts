@@ -28,8 +28,10 @@ function makeAircraft(overrides: Partial<Aircraft> & { regimes?: Regime[] } = {}
 }
 
 // Helper: build a waypoint at a given position
+let _makePointCounter = 0;
 function makePoint(lat: number, lon: number, overrides: Record<string, any> = {}) {
   return {
+    id: `wp${++_makePointCounter}`,
     lat,
     lon,
     tas: 400,

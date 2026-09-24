@@ -27,6 +27,7 @@ vi.mock('../../utils/flightPlanUtils', async (importOriginal) => {
 });
 
 const makeWpt = (overrides: Partial<FlightPlanTurnPoint> = {}): FlightPlanTurnPoint => ({
+  id: 'wp1',
   lat: 40,
   lon: 20,
   tas: 400,

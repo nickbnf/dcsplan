@@ -270,7 +270,7 @@ describe('PerformancePage', () => {
     it('propagates cruise change to waypoints when TAS changes', async () => {
       const regime2 = makeRegime({ id: 'r1', name: 'Alpha', cruise: { tas: 400, ff: 3600 } });
       const point = {
-        lat: 0, lon: 0, alt: 10000, regimeId: 'r1',
+        id: 'wp1', lat: 0, lon: 0, alt: 10000, regimeId: 'r1',
         tas: 400, fuelFlow: 3600,
         name: '', waypointComment: '', waypoints: [], waypointType: 'normal' as const,
         windSpeed: 0, windDir: 0,
@@ -309,7 +309,7 @@ describe('PerformancePage', () => {
     it('shows referenced delete dialog with leg count', async () => {
       const regime = makeRegime({ id: 'r1', name: 'Alpha' });
       const point = {
-        lat: 0, lon: 0, alt: 10000, regimeId: 'r1',
+        id: 'wp1', lat: 0, lon: 0, alt: 10000, regimeId: 'r1',
         tas: 400, fuelFlow: 3600,
         name: '', waypointComment: '', waypoints: [], waypointType: 'normal' as const,
         windSpeed: 0, windDir: 0,
@@ -338,7 +338,7 @@ describe('PerformancePage', () => {
     it('confirming delete removes regime and clears waypoint bindings', async () => {
       const regime = makeRegime({ id: 'r1', name: 'Alpha' });
       const point = {
-        lat: 0, lon: 0, alt: 10000, regimeId: 'r1',
+        id: 'wp1', lat: 0, lon: 0, alt: 10000, regimeId: 'r1',
         tas: 400, fuelFlow: 3600,
         name: '', waypointComment: '', waypoints: [], waypointType: 'normal' as const,
         windSpeed: 0, windDir: 0,

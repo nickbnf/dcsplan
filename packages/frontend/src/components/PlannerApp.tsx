@@ -4,7 +4,7 @@ import { Sidebar } from './Sidebar';
 import { AboutModal } from './AboutModal';
 import type { FlightPlan, PlanMarker, PictogramType } from '../types/flightPlan';
 import { useDrawing } from '../hooks/useDrawing';
-import { useFlightPlan, type FlightPlanUpdateOptions } from '../contexts/FlightPlanContext';
+import { useFlightPlan } from '../contexts/FlightPlanContext';
 import { useLibrary } from '../contexts/LibraryContext';
 import { SelectionProvider, useSelection } from '../contexts/SelectionContext';
 import { useUndoShortcuts } from '../hooks/useUndoShortcuts';
@@ -30,8 +30,8 @@ const PlannerAppInner: React.FC = () => {
     setActiveTab(next);
   };
 
-  const handleFlightPlanUpdate = (updatedPlan: FlightPlan, options?: FlightPlanUpdateOptions) => {
-    setFlightPlan(updatedPlan, options);
+  const handleFlightPlanUpdate = (updatedPlan: FlightPlan) => {
+    setFlightPlan(updatedPlan);
   };
 
   const handleAddLibraryRef = (uuid: string) => {

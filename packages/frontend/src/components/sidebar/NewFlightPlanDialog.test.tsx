@@ -17,7 +17,7 @@ const emptyPlan: FlightPlan = {
 const nonEmptyPlan: FlightPlan = {
   ...emptyPlan,
   points: [
-    { lat: 35, lon: 36, tas: 400, alt: 3000, fuelFlow: 6000, windSpeed: 0, windDir: 0, name: 'WP1' },
+    { id: 'wp1', lat: 35, lon: 36, tas: 400, alt: 3000, fuelFlow: 6000, windSpeed: 0, windDir: 0, name: 'WP1' },
   ],
 };
 

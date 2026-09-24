@@ -146,19 +146,29 @@ There is no manual Save button and there are **no named versions** — hence the
 
 ---
 
-## AD-6 — Last-write-wins plus full history; no real-time collaboration
+## AD-6 — Yjs CRDT for flight plans; LWW for library and profiles
 
-**Context.** Squadron assets are collaboratively editable by all members, and two members may edit the same plan at once.
+**Context.** Squadron assets are collaboratively editable by all members, and two members may edit the same plan at once. The flight plan is the primary collaborative surface — multiple pilots editing waypoints, timing, and objects on the same route.
 
-**Decision.** No locking, no operational transform, no CRDTs. The latest autosave wins on current state. Nothing is truly lost, because every finalized version is recoverable. Surface **presence + a soft, non-blocking warning** ("Falcon is editing this now") rather than blocking the edit.
+**Decision (revised 2026-09-22).** The flight plan is a **Yjs CRDT document**. Mutations are fine-grained Yjs operations (set a field on a waypoint, insert/delete a waypoint in the array). The Y.Doc is the source of truth; React state is a derived snapshot. Sync to the server uses a Yjs WebSocket provider; local persistence uses `y-indexeddb`. Concurrent edits merge automatically at the field/array-operation level.
 
-**Why.** Real-time collaborative editing is a large, permanent complexity commitment. For squadron-scale planning — a handful of people, rarely simultaneous, with history as the safety net — the cost isn't justified.
+The theatre library and performance profiles remain **plain React state + localStorage**, synced via last-write-wins when server persistence arrives. Their mutation patterns are simpler (fewer concurrent editors, less frequent edits) and do not justify the CRDT overhead.
+
+**Why the revision.** The original AD-6 chose LWW + full history as a deliberate simplification, arguing that real-time collaboration wasn't worth the complexity for squadron-scale planning. That assessment was correct for the *collaboration* payoff alone, but underweighted two things: (1) Yjs gives offline-first sync and conflict resolution as a package — the same machinery that enables real-time collab also solves the multi-device sync problem cleanly, and (2) wiring the flight plan through Yjs *after* building a full LWW-based server would force a large refactor of both client and server. Preparing the client data model now, before the server exists, is strictly cheaper than retrofitting it later.
+
+**Why only the flight plan.** The library and profiles are edited less frequently, by fewer people at once, and their data shapes are simpler. The LWW rough edge (a lost edit survives only in version history) is acceptable there. If experience proves otherwise, moving them to Yjs later is possible without re-architecting the plan layer.
 
 **Consequences.**
-- Two devices belonging to the same user behave identically; the "losing" edits survive in history, not in current state.
-- This is a known rough edge, accepted deliberately, not an oversight.
+- **Undo moves to Y.UndoManager** for the flight plan (see AD-12 revision). Library and profile undo remain snapshot-based.
+- **Concurrent editing on the same plan works** — two members editing different waypoints see each other's changes merge cleanly. Two members editing the *same field* on the *same waypoint* get last-writer-wins at that field, which is the finest grain possible and strictly better than whole-plan LWW.
+- **Presence and cursors** are a natural later addition (Yjs awareness protocol), not a separate design effort.
+- **The server persists Y.Doc state**, not serialized JSON flight plans. The kneeboard endpoint continues to receive a JSON flight plan (derived from the Y.Doc snapshot at generation time).
+- **Anonymous tier** uses the same Yjs data model locally (Y.Doc persisted to IndexedDB), without a sync provider. Signing in adds the WebSocket provider to the existing document — no data migration, just a new transport.
+- **Library and profile sync** (when it arrives) is a separate, simpler system — likely REST-based autosave with LWW, matching the original AD-6 for those entities.
 
-**Spans:** `plan-sync`, `space`, `version-history`
+**Rejected.** *"Yjs for all three entities"* — the library and profile gain little from CRDTs and would triple the migration scope. *"LWW for everything, retrofit Yjs later"* — building a full LWW server for the plan and then replacing it is wasted work; the Yjs client prep costs less than one server rewrite.
+
+**Spans:** `plan-sync`, `space`, `version-history`, `edit-undo`
 
 ---
 
@@ -302,6 +312,13 @@ Reproduced and documented as `it.fails` tests in `packages/frontend/src/contexts
 
 **Decided (2026-09-17): de-mirror.** Resolve a bound leg's TAS/FF from its regime at read time; keep the waypoint fields for Manual legs only. There is then no denormalized copy to go stale, the "direct edits revert the leg to Manual" rule becomes structural rather than something each edit handler must remember to enforce, and the cross-entity undo question dissolves for the regime-editing case — editing a regime no longer writes the plan at all. The decision ships with `extract-performance-profiles`, which is already reworking how regimes resolve through a profile. `propagateRegimeCruiseChange` and the mirrored waypoint fields it writes are removed.
 
+**Revised (2026-09-22): flight plan undo moves to Y.UndoManager.** With AD-6 revised to use Yjs for the flight plan, the plan's undo mechanism changes from a snapshot-based stack to `Y.UndoManager`, which tracks Yjs operations. The conceptual decision — action undo ≠ version restore, two tiers of destructive operation — is unchanged. What changes:
+
+- **"Undo is snapshot-based, and a remote edit discards the local stack"** → Y.UndoManager tracks inverse operations, not snapshots. It composes correctly under concurrency — a remote edit does not discard the local stack, because undoing a local operation no longer risks reverting a remote one. This was the original reason for choosing snapshots over inverse operations; with Yjs handling the composition, the reason dissolves.
+- **One action = one transaction.** Each `onFlightPlanUpdate` call wraps its Yjs mutations in a single `yDoc.transact(...)`, which becomes one Y.UndoManager entry. Coalescing (sustained slider drag → one undo step) maps to Y.UndoManager's `captureTimeout` or to holding the transaction open across coalesced updates — same semantics, different mechanism.
+- **Wholesale-replacement operations still clear the undo stack** — `Y.UndoManager.clear()` on import or new-plan, same rule as before.
+- **Library and profile undo remain snapshot-based.** Only the flight plan moves to Y.UndoManager; the per-entity split (AD-4) still holds, and the cross-entity concern remains open for the same cases.
+
 **Spans:** `edit-undo`, `aircraft-performance`, `map-objects`, `theatre-library`
 
 ---
@@ -316,8 +333,8 @@ Reproduced and documented as `it.fails` tests in `packages/frontend/src/contexts
 | AD-2 | Profile as a first-class entity | `aircraft-performance`, `performance-regime` | `extract-performance-profiles` |
 | AD-3 | Reference vs pinned snapshot | `version-history`, `theatre-library` | `add-version-history` |
 | AD-4 | Three independent histories | `version-history` | `add-version-history` |
-| AD-5 | Autosave ≠ version | `plan-sync`, `version-history` | `add-cloud-sync` |
-| AD-6 | LWW + history, no real-time collab | `plan-sync`, `space` | `add-cloud-sync` |
+| AD-5 | Autosave ≠ version | `plan-sync`, `version-history` | `add-yjs-flightplan` (plan persistence), then `add-cloud-sync` |
+| AD-6 | Yjs CRDT for flight plans; LWW for library/profiles | `plan-sync`, `edit-undo` | `add-yjs-flightplan` (client prep), then `add-cloud-sync` |
 | AD-7 | Soft delete + integrity at delete time | `soft-delete`, `space` | `add-trash-and-soft-delete` |
 | AD-8 | Additive migration | `user-identity`, `plan-sync` | `add-local-data-import` |
 | AD-9 | Anonymous tier is permanent | `user-identity`, `map-objects` | `add-user-accounts` |
