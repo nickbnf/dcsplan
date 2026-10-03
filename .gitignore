@@ -25,3 +25,8 @@ packages/tools/scripts/*.png
 package-lock.json
 
 .playwright-mcp/
+# Backend runtime data (SQLite DB) — keep the dir as a mount point, ignore contents
+packages/backend/data/*
+!packages/backend/data/.gitkeep
+packages/backend/*.db
+packages/backend/.env

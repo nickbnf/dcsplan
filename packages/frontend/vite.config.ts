@@ -5,6 +5,17 @@ import path from 'path'
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
+  // Single-origin dev proxy (D6): mirror the prod Caddy rule — /api -> backend,
+  // with the /api prefix stripped so the backend serves at its own paths.
+  server: {
+    proxy: {
+      '/api': {
+        target: process.env.VITE_DEV_API_TARGET || 'http://localhost:8000',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api/, ''),
+      },
+    },
+  },
   // @ts-ignore - vitest config extension
   test: {
     globals: true,

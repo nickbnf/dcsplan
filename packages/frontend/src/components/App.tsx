@@ -10,10 +10,11 @@ import { About } from './About';
 import { FlightPlanProvider } from '../contexts/FlightPlanContext';
 import { LibraryProvider } from '../contexts/LibraryContext';
 import { PerformanceProvider } from '../contexts/PerformanceContext';
+import { AuthProvider } from '../contexts/AuthContext';
 
 const App: React.FC = () => {
   return (
-    <>
+    <AuthProvider>
       <Helmet>
         <title>DCSPlan - Tactical Flight Planner for DCS</title>
         <meta
@@ -30,7 +31,7 @@ const App: React.FC = () => {
         </Route>
         <Route path="/about" element={<About />} />
       </Routes>
-    </>
+    </AuthProvider>
   );
 };
 

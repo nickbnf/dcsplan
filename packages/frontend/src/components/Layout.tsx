@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { NavLink, Outlet, Link } from 'react-router-dom';
 import { useFlightPlan } from '../contexts/FlightPlanContext';
 import { usePerformance } from '../contexts/PerformanceContext';
+import { AuthMenu } from './AuthMenu';
 
 const tabs = [
   { label: 'NAV', to: '/' },
@@ -58,6 +59,7 @@ const Layout: React.FC = () => {
         {/* App title + About */}
         <div className="flex items-center gap-4 pr-2">
           <span className="text-sm font-aero-label text-gray-700">DCS Tactical Planner</span>
+          <AuthMenu />
           <Link
             to="/about"
             className="text-xs text-gray-500 hover:text-gray-900 underline font-aero-label"

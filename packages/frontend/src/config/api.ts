@@ -2,7 +2,11 @@
  * API configuration
  * Uses Vite environment variables for configuration
  */
-export const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+// Single origin (D6): the backend is served under the same host at /api, routed
+// to the backend by Caddy in prod (prefix stripped) and by the Vite dev proxy in
+// development. A relative base means every request is same-origin (no CORS, and
+// the session cookie is sent automatically).
+export const API_URL = import.meta.env.VITE_API_URL || '/api';
 
 /**
  * Get the full API URL for a given endpoint

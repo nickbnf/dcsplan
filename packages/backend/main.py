@@ -1,11 +1,22 @@
+# Use the OS trust store for TLS verification. This must run before any HTTPS
+# client is created. It lets local dev work behind a TLS-inspecting corporate
+# proxy (whose root CA is in the system store but not in certifi), and is
+# harmless in production, where the system store holds the normal public CAs.
+import truststore
+truststore.inject_into_ssl()
+
 from fastapi import FastAPI, HTTPException, Query, Path
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
-from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.sessions import SessionMiddleware
 from flight_plan import FlightPlan, ImportFlightPlanRequest
 from task_queue import get_task_queue
+from migrations_runner import apply_migrations
+import auth_routes
 import os
+import secrets
 import logging
+from contextlib import asynccontextmanager
 from typing import Optional
 
 # Set up centralized logging configuration
@@ -15,24 +26,39 @@ setup_logging()
 # Set up logger
 logger = logging.getLogger(__name__)
 
-app = FastAPI()
 
-# Get CORS origins from environment variable
-# Defaults to localhost for development if not set
-cors_origins_env = os.getenv("CORS_ORIGINS", "http://localhost:5173")
-# Support comma-separated list of origins
-cors_origins = [origin.strip() for origin in cors_origins_env.split(",")]
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Apply DB migrations and load auth config before serving requests."""
+    apply_migrations()
+    auth_routes.init_auth()
+    yield
 
-logger.info(f"CORS allowed origins: {cors_origins}")
 
-# Add CORS middleware to allow cross-origin requests
+app = FastAPI(lifespan=lifespan)
+
+# Single origin (D6): frontend and backend are served under one host via the
+# Caddy proxy (/api/* -> backend, prefix-stripped), so no CORS is needed.
+
+# Session cookie (signed) — this is "who is logged in" (D5). The secret comes
+# from the environment; an ephemeral one is generated if unset so the anonymous
+# tier (AD-9) still runs when auth is not configured.
+session_secret = os.getenv("SESSION_SECRET")
+if not session_secret:
+    session_secret = secrets.token_urlsafe(32)
+    logger.warning(
+        "SESSION_SECRET not set — using an ephemeral secret (sessions reset on restart)"
+    )
+session_https_only = os.getenv("SESSION_HTTPS_ONLY", "true").lower() != "false"
 app.add_middleware(
-    CORSMiddleware,
-    allow_origins=cors_origins,
-    allow_credentials=True,
-    allow_methods=["*"],  # Allow all HTTP methods
-    allow_headers=["*"],  # Allow all headers
+    SessionMiddleware,
+    secret_key=session_secret,
+    https_only=session_https_only,
+    same_site="lax",
 )
+
+# Discord OAuth + session routes. Reached at /api/auth/* through Caddy (D6).
+app.include_router(auth_routes.router)
 
 # Path to the static directory
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "config", "static")
@@ -112,8 +138,10 @@ async def download_kneeboard(task_id: str = Path(..., description="Task ID")):
     file_data, media_type = result
     return Response(content=file_data, media_type=media_type)
 
-@app.get("/api")
+@app.get("/")
 def read_root():
+    # Formerly "/api"; under single-origin routing Caddy strips the /api prefix,
+    # so the backend serves this at the root (D6).
     return {"message": "Hello from the backend!"}
 
 @app.get("/tiles/{theatre_name}/{z}/{x}/{y}.png")

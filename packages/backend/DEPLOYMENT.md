@@ -69,39 +69,47 @@ podman build -t dcsplan-backend:latest .
 ```bash
 podman run -d \
   --name dcsplan-backend \
-  -p 8000:8000 \
+  -p 5001:5001 \
   -v /var/lib/dcsplan/config:/app/config:ro \
-  -e CORS_ORIGINS="http://localhost:5173,https://yourdomain.com" \
+  -v /var/lib/dcsplan/data:/app/data \
+  -e DISCORD_CLIENT_ID="..." \
+  -e DISCORD_CLIENT_SECRET="..." \
+  -e DISCORD_REDIRECT_URI="https://dcsplan.bonnefon.org/api/auth/discord/callback" \
+  -e SESSION_SECRET="<long-random-string>" \
   --restart=unless-stopped \
   ghcr.io/<username>/<repo>/backend:latest
 ```
 
-### Using the Deployment Script
-
-The `deploy.sh` script automates the build and run process:
-
-```bash
-export CONFIG_DIR=/var/lib/dcsplan/config
-export PORT=8000
-export CORS_ORIGINS="http://localhost:5173,https://yourdomain.com"
-./packages/backend/deploy.sh
-```
+The container listens on port **5001** (see `Dockerfile`), which Caddy proxies
+under a single origin (see [auth-and-single-origin.md](../../docs/auth-and-single-origin.md)).
 
 ## Configuration
 
 ### Environment Variables
 
-- `CORS_ORIGINS`: Comma-separated list of allowed origins (default: `http://localhost:5173`)
-  - Example: `CORS_ORIGINS="https://app.example.com,https://www.example.com"`
+Auth (Discord OAuth + session). If unset, the backend still runs but `/auth/*`
+returns `503` and the anonymous tier keeps working (AD-9):
+
+- `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`: from the Discord application
+- `DISCORD_REDIRECT_URI`: must match the Discord app, e.g. `https://dcsplan.bonnefon.org/api/auth/discord/callback`
+- `SESSION_SECRET`: signing key for the session cookie
+- `SESSION_HTTPS_ONLY` (default `true`): set `false` only for plain-http local dev
+- `DCSPLAN_DB_PATH` (optional): SQLite path (default `/app/data/dcsplan.db` in the container)
+
+See [auth-and-single-origin.md](../../docs/auth-and-single-origin.md) for the full list.
+
+> CORS was removed — the frontend and backend are served under one origin (D6),
+> so there is no `CORS_ORIGINS` variable anymore.
 
 ### Port Mapping
 
-Default mapping is `8000:8000` (host:container). To use a different host port:
+Default mapping is `5001:5001` (host:container); the container listens on 5001
+and Caddy proxies to `localhost:5001`. To use a different host port:
 
 ```bash
 podman run -d \
   --name dcsplan-backend \
-  -p 8080:8000 \  # Host port 8080 maps to container port 8000
+  -p 8080:5001 \  # Host port 8080 maps to container port 5001
   ...
 ```
 
@@ -111,6 +119,13 @@ The static tiles directory must be mounted read-only:
 
 ```bash
 -v /opt/dcsplan/static:/app/static:ro
+```
+
+The runtime data directory (SQLite database) must be mounted read-write so it
+persists across container restarts:
+
+```bash
+-v /var/lib/dcsplan/data:/app/data
 ```
 
 ## Systemd Service (Optional)
@@ -153,14 +168,18 @@ podman rm dcsplan-backend
 # Start a new container with the updated image
 podman run -d \
   --name dcsplan-backend \
-  -p 8000:8000 \
-  -v /opt/dcsplan/static:/app/static:ro \
-  -e CORS_ORIGINS="..." \
+  -p 5001:5001 \
+  -v /var/lib/dcsplan/config:/app/config:ro \
+  -v /var/lib/dcsplan/data:/app/data \
+  -e DISCORD_CLIENT_ID="..." \
+  -e DISCORD_CLIENT_SECRET="..." \
+  -e DISCORD_REDIRECT_URI="https://dcsplan.bonnefon.org/api/auth/discord/callback" \
+  -e SESSION_SECRET="<long-random-string>" \
   --restart=unless-stopped \
   ghcr.io/<username>/<repo>/backend:latest
 ```
 
-Or use the deployment script which handles this automatically.
+The `data` volume is preserved across updates, so accounts survive a redeploy.
 
 ## Updating Static Tiles
 
@@ -195,15 +214,10 @@ podman run -d \
 
 ### Reverse Proxy
 
-For production, consider using a reverse proxy (Nginx, Traefik, etc.) in front of the container:
-
-```nginx
-location /api/ {
-    proxy_pass http://localhost:8000/;
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
-}
-```
+Production runs behind Caddy under a single origin: `/api/*` is proxied to the
+backend on `localhost:5001` (with the `/api` prefix stripped) and everything else
+to the frontend. The exact Caddy block is in
+[auth-and-single-origin.md](../../docs/auth-and-single-origin.md).
 
 ## Troubleshooting
 
@@ -228,20 +242,23 @@ sudo chown -R 1000:1000 /opt/dcsplan/static
 sudo chmod -R 755 /opt/dcsplan/static
 ```
 
-### CORS Issues
+### Auth Not Working
 
-Verify the `CORS_ORIGINS` environment variable includes your frontend URL:
+Check that the Discord/session variables are set in the container:
 
 ```bash
-podman exec dcsplan-backend env | grep CORS
+podman exec dcsplan-backend env | grep -E "DISCORD|SESSION"
 ```
+
+If they are missing, `/auth/*` returns `503` and the startup log warns that auth
+is disabled (the anonymous tier still works).
 
 ### Health Checks
 
 Check if the container is responding:
 
 ```bash
-curl http://localhost:8000/api
+curl http://localhost:5001/
 ```
 
 Should return: `{"message":"Hello from the backend!"}`

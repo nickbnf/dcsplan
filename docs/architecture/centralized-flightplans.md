@@ -323,6 +323,23 @@ Reproduced and documented as `it.fails` tests in `packages/frontend/src/contexts
 
 ---
 
+## AD-13 — Server state is SQLite, accessed with hand-written SQL
+
+**Context.** The move to an account-backed service needs a server datastore, and the FastAPI backend is stateless today (kneeboard generation, tiles, import validation). `add-user-accounts` is the first change to persist anything server-side — a single user record — but every later stateful change (squadrons, then server storage of the three entities under AD-1) inherits whatever it picks. That makes the datastore and its access pattern a cross-capability decision, recorded here rather than buried in one change's `design.md`.
+
+**Decision.** Server state lives in **SQLite**, accessed with **hand-written SQL — no ORM**. Schema evolves through **`yoyo-migrations`** (ordered plain-`.sql` files, applied synchronously at startup). Async runtime access uses **`aiosqlite`**.
+
+**Why.** The schema and query surface are small and will stay comprehensible; an ORM's mapping layer adds indirection for little gain at this scale, and the maintainer prefers explicit SQL. SQLite is zero-infra — a file, no separate service to run in dev or prod. `yoyo` gives ordering, a tracking table, transactions, and rollbacks while keeping migrations as plain SQL. `aiosqlite` keeps DB calls non-blocking on FastAPI's event loop, which matters because the OAuth handlers are already `async` (they `await` Discord).
+
+**Consequences.**
+- **Precedent for every later stateful change.** Squadron storage and the three entities' server persistence use the same datastore, SQL-first access, and migration tool unless a later `AD-n` supersedes this. Change-local `design.md`s cite `AD-13` rather than re-deciding.
+- **Postgres is deferred, not rejected.** SQLite serializes writes (one writer at a time), which is fine for current and near-term load; collaborative squadron writes plus cloud sync may eventually justify Postgres. Because access is hand-written SQL over a thin layer rather than ORM-abstracted, an engine switch is a real but bounded cost — revisit when write concurrency or the hosting model demands it.
+- **Deployment gains a persistent-storage requirement** (the SQLite file / volume) that the stateless service did not have. Early blast radius is small: until the three entities move server-side, a lost database loses only user rows, not user *data*.
+
+**Spans:** `user-identity` (later `space`, `plan-sync`, `soft-delete`)
+
+---
+
 ## Decision → capability → change map
 
 > Changes are referenced by name, not by number — the sequence has already shifted once and names match the `openspec/changes/` directories.
@@ -341,6 +358,7 @@ Reproduced and documented as `it.fails` tests in `packages/frontend/src/contexts
 | AD-10 | Link-based sharing only | `plan-sharing` | `add-plan-sharing` |
 | AD-11 | Discord OAuth only | `user-identity` | `add-user-accounts` |
 | AD-12 | Action undo ≠ version restore | `edit-undo` | `add-edit-undo` (ships first) |
+| AD-13 | Server state is SQLite + hand-written SQL | `user-identity` | `add-user-accounts` |
 
 ---
 

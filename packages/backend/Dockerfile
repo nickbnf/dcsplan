@@ -52,6 +52,17 @@ COPY backend/waypoint_list_page.py .
 COPY backend/overview_map_page.py .
 COPY backend/theatres ./theatres
 
+# User accounts / auth modules + database migrations
+COPY backend/db.py .
+COPY backend/users.py .
+COPY backend/auth_config.py .
+COPY backend/auth_routes.py .
+COPY backend/migrations_runner.py .
+COPY backend/migrations ./migrations
+
+# Runtime data directory (SQLite DB) — mounted as a persistent volume in prod
+RUN mkdir -p /app/data
+
 # Copy shared data files referenced via ../shared/ relative path
 COPY shared/pictogramCatalog.json /shared/pictogramCatalog.json
 
@@ -63,6 +74,9 @@ RUN useradd -m -u 1000 appuser && \
 
 # Switch to non-root user
 USER appuser
+
+# Persist the SQLite database across container restarts
+VOLUME ["/app/data"]
 
 # Expose port
 EXPOSE 5001
