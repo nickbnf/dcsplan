@@ -16,3 +16,5 @@ yoyo-migrations
 httpx-oauth
 itsdangerous
 truststore
+pycrdt
+pycrdt-websocket

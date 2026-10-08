@@ -47,6 +47,7 @@ The split we follow:
 - Profiles and libraries are never browsed globally; they are always seen through the lens of the active space.
 - On leaving a squadron or deleting an account, squadron-shared assets stay with the squadron; private (Personal) assets are deleted. No orphans.
 - Because copy-out is a snapshot, a copy made before leaving a squadron survives intact.
+- **Ownership is modelled as membership, for every space kind** (decided in `add-cloud-sync`, where Personal is materialized). A space is a bare `spaces(id, kind)` row; who owns or belongs to it lives in a `space_members(space_id, user_id, role)` table — a Personal space is one `owner` member, a squadron space is many members with roles. This is chosen over an `owner_user_id` column on `spaces` precisely so squadrons are *additive*: they add rows and a kind, never a rebuild of `spaces`. It also gives AD-7 its substrate directly — "belongs to Personal + N squadrons" is a set of membership rows, and longest-standing-member auto-promotion is `ORDER BY joined_at`. The cost: "exactly one Personal space per user" spans two tables, so it is an application invariant enforced at the single get-or-create path, not a DB constraint. A polymorphic `owner_type`/`owner_id` pair was rejected for losing foreign-key integrity against AD-13's SQL-first datastore.
 
 **Spans:** `space`, `plan-sync`, `theatre-library`, `aircraft-performance`, `plan-sharing`
 
@@ -340,6 +341,47 @@ Reproduced and documented as `it.fails` tests in `packages/frontend/src/contexts
 
 ---
 
+## AD-14 — The Yjs sync socket is served by FastAPI via `pycrdt`
+
+**Context.** AD-6 puts the flight plan in a Y.Doc and says the server persists Y.Doc state, not JSON. `add-cloud-sync` is the first change to give that document a network transport. The client is Yjs; the backend is a single (stateless-until-`add-user-accounts`) FastAPI service with SQLite (AD-13), fronted single-origin by Caddy (`docs/auth-and-single-origin.md`), authenticating with an `itsdangerous` session cookie (AD-11). The open question is who serves the sync WebSocket and persists the document.
+
+**Decision.** FastAPI serves it, using **`pycrdt`** (Python y-crdt bindings) to hold and merge the Y.Doc server-side. One Y.Doc per plan; the WebSocket room key is the `planId`. Updates are persisted into the SQLite database (AD-13) as an append-only log of Yjs updates, periodically squashed to a single state update. Room access is authorized by the existing session cookie against the plan's owning space — no separate token. The client connects with the standard `y-websocket` `WebsocketProvider`, which speaks the same `y-protocols` sync/awareness format as `pycrdt`'s server side.
+
+**Why.** It keeps the whole backend one Python service: no second (Node) process to run, deploy, and monitor; the single-origin Caddy rule is unchanged (the WebSocket upgrade rides the existing `/api/*` route); and the session cookie authorizes rooms directly instead of minting a cross-service token. Because `pycrdt` materializes the document server-side rather than treating it as an opaque blob, the server can derive a JSON snapshot (for the kneeboard endpoint) and, later, coalesce version snapshots (AD-5, `add-version-history`) without a client round-trip.
+
+**Consequences.**
+- **New backend dependency** — `pycrdt` (and possibly `pycrdt-websocket` for the ASGI glue; `add-cloud-sync/design.md` decides whether to adopt it or write a thin handler). Its maturity is verified in that change.
+- **The proxy must pass the WebSocket upgrade.** The dev Vite proxy needs `ws: true`; the prod Caddy `reverse_proxy` already upgrades, confirmed as part of the change.
+- **SQLite holds Yjs update blobs**, a new table alongside the AD-13 user/space/plan tables. Append-plus-squash keeps the log bounded; squashing is persistence housekeeping, not versioning (AD-5).
+- **Postgres pressure (AD-13) applies here too** — collaborative plan writes are the most write-concurrent path in the programme; still within SQLite's single-writer envelope at squadron scale, revisited with AD-13.
+- **Awareness/presence** (cursors) is available later over the same socket (AD-6) with no new transport.
+
+**Rejected.** *Node `y-websocket` reference server* — battle-tested, but adds a second service, a cross-language auth bridge, and an awkward path to persist into the Python-owned SQLite; it cuts against AD-13's one-datastore-one-service shape. *FastAPI as a dumb relay over an opaque update log* — stays in Python and is light, but the server never comprehends the document, so server-side snapshotting (`add-version-history`) and kneeboard derivation would have to be retrofitted; `pycrdt` buys comprehension for a modest dependency.
+
+**Spans:** `plan-sync`, `space` (later `version-history`)
+
+---
+
+## AD-15 — Selection is a space→plan hierarchy chosen on a Home screen
+
+**Context.** The anonymous tier has one plan and no space, so "the plan" is implicit everywhere. The signed-in tier has many plans in a space, and — once squadrons exist — many spaces. Some surfaces are plan-scoped (route/nav, attack, a plan's profile assignment and leg regime bindings); others are space-scoped (the theatre library, the performance profiles themselves per AD-2). A selection model is needed that makes that split legible and stays out of the way while editing. First established in `add-cloud-sync` (Personal space only); it must extend to squadrons without rework.
+
+**Decision.** Selection is a two-level hierarchy — **active space → active plan** — chosen on a dedicated **Home screen**, never on the editing surface. The active space is the spine (it scopes the plan list and every space-scoped surface); the active plan is a child of it, and opening a plan implies its space (AD-1). The editing surface carries only a **read-only breadcrumb** (`Space › Plan`, each segment linking back to its Home level) and groups its tabs into a **plan-scoped cluster** and a **space-scoped cluster** so the dependency is visible. There is **no standalone "space, no plan" state**: space-scoped surfaces are reached through a plan — or an uncommitted draft — context. Selection state is `(activeSpaceId, activePlanId)`.
+
+**Why.** Keeping selection on a separate screen leaves the editing surface almost chrome-free, which is the maintainer's explicit priority. Modelling space as the outer scope — rather than a second peer selector beside the plan — avoids two near-identical switchers competing in the top bar when squadrons land, which is the shape that would actually confuse. Grouping the tabs turns the plan-vs-space split from a surprise into a stated fact.
+
+**Consequences.**
+- **`add-cloud-sync` encodes `(activeSpaceId, activePlanId)` with `activeSpaceId` pinned to Personal and the space switcher unrendered.** Adding squadrons is "render the switcher and let the id vary," not a re-architecture. The breadcrumb ships as just the plan name now and grows a space root later.
+- **A created plan is a local draft until its first waypoint** (defer-commit): it provides the plan context from which space-scoped surfaces are reachable, behaves like the anonymous local plan, and joins the space (and starts syncing) only on first content — so empty drafts never enter the list, which matters because deletion is deferred (AD-7, `add-trash-and-soft-delete`). Change-local specifics in `add-cloud-sync/design.md`.
+- **The active plan is a per-device pointer**, restored on load; if it no longer resolves (deleted elsewhere, not in the space) the app falls back to Home.
+- **Library/profile scoping follows the active space**, so when those sync (a later change) the model already routes them correctly.
+
+**Spans:** `space`, `plan-sync`, `plan-lifecycle` (later squadrons, `plan-sharing`)
+
+**Rejected.** *Active-plan dropdown in the top bar* — one-click switching, but selection lives on the editing surface and, with squadrons, needs a second space dropdown beside it. *Plans drawer overlay* — keeps selection off a separate screen but still on the editing surface; its two-level tree is a reasonable future affordance, not the primary model.
+
+---
+
 ## Decision → capability → change map
 
 > Changes are referenced by name, not by number — the sequence has already shifted once and names match the `openspec/changes/` directories.
@@ -359,6 +401,8 @@ Reproduced and documented as `it.fails` tests in `packages/frontend/src/contexts
 | AD-11 | Discord OAuth only | `user-identity` | `add-user-accounts` |
 | AD-12 | Action undo ≠ version restore | `edit-undo` | `add-edit-undo` (ships first) |
 | AD-13 | Server state is SQLite + hand-written SQL | `user-identity` | `add-user-accounts` |
+| AD-14 | Yjs sync served by FastAPI via `pycrdt` | `plan-sync`, `space` | `add-cloud-sync` |
+| AD-15 | Space→plan selection on a Home screen | `space`, `plan-sync`, `plan-lifecycle` | `add-cloud-sync` |
 
 ---
 
