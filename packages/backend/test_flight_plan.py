@@ -226,74 +226,35 @@ class TestHackEtaReset:
                        data_no_hack.turnpointData[i].efr) < 0.01
 
 
-# ── Aircraft block and v1.2 migration tests ────────────────────────────
+# ── Aircraft model tests ───────────────────────────────────────────────
 
 class TestAircraftBlock:
-    """Tests for the new Aircraft block and legacy v1.2 plan migration."""
+    """Tests for the Aircraft model. Since add-cloud-sync (AD-2) aircraft is a
+    sibling of the flight plan on the wire, not nested in FlightPlan, and the
+    v1.2 top-level-regimes synthesis is gone."""
 
-    def test_default_aircraft_is_created_when_absent(self):
-        """Plan without aircraft or regimes gets default aircraft."""
-        plan = make_plan([make_point(lat=34.0, lon=36.0)])
-        assert plan.aircraft is not None
-        assert plan.aircraft.model == ''
-        assert plan.aircraft.taxiFuel == 0
-        assert plan.aircraft.regimes == []
+    def test_default_aircraft_has_empty_defaults(self):
+        """default_aircraft() yields an empty, zeroed aircraft."""
+        from flight_plan import default_aircraft
+        ac = default_aircraft()
+        assert ac.model == ''
+        assert ac.taxiFuel == 0
+        assert ac.regimes == []
 
-    def test_v12_legacy_regimes_migrated_to_aircraft(self):
-        """v1.2 plan with top-level regimes migrated to aircraft.regimes."""
-        raw = {
-            'theatre': 'syria',
-            'points': [],
+    def test_aircraft_block_parses(self):
+        """An aircraft block parses directly into the Aircraft model."""
+        ac = Aircraft(**{
+            'model': 'F-15E',
+            'takeoffConfiguration': 'MIL',
+            'taxiFuel': 400,
+            'takeoff': {'timeSec': 0, 'fuel': 0, 'distance': 0},
             'regimes': [
                 {'id': 'r1', 'name': 'Alpha', 'cruise': {'tas': 400, 'ff': 3600}},
             ],
-            'declination': 0.0,
-            'bankAngle': 30.0,
-            'initTimeSec': 43200,
-            'initFob': 12000,
-        }
-        plan = FlightPlan(**raw)
-        assert len(plan.aircraft.regimes) == 1
-        assert plan.aircraft.regimes[0].id == 'r1'
-        assert plan.aircraft.regimes[0].name == 'Alpha'
-
-    def test_v12_plan_without_regimes_gets_empty_aircraft_regimes(self):
-        """v1.2 plan with no regimes field gets aircraft with empty regimes."""
-        raw = {
-            'theatre': 'syria',
-            'points': [],
-            'declination': 0.0,
-            'bankAngle': 30.0,
-            'initTimeSec': 43200,
-            'initFob': 12000,
-        }
-        plan = FlightPlan(**raw)
-        assert plan.aircraft.regimes == []
-
-    def test_v13_plan_with_aircraft_accepted_as_is(self):
-        """v1.3 plan with aircraft block is accepted directly."""
-        raw = {
-            'theatre': 'syria',
-            'points': [],
-            'aircraft': {
-                'model': 'F-15E',
-                'takeoffConfiguration': 'MIL',
-                'taxiFuel': 400,
-                'takeoff': {'timeSec': 0, 'fuel': 0, 'distance': 0},
-                'regimes': [
-                    {'id': 'r1', 'name': 'Alpha', 'cruise': {'tas': 400, 'ff': 3600}},
-                ],
-            },
-            'declination': 0.0,
-            'bankAngle': 30.0,
-            'initTimeSec': 43200,
-            'initFob': 12000,
-        }
-        plan = FlightPlan(**raw)
-        assert plan.aircraft.model == 'F-15E'
-        assert plan.aircraft.taxiFuel == 400
-        assert len(plan.aircraft.regimes) == 1
-
+        })
+        assert ac.model == 'F-15E'
+        assert ac.taxiFuel == 400
+        assert len(ac.regimes) == 1
 
 class TestTaxiFuel:
     """Tests for taxi fuel deduction at start of leg 0."""
@@ -308,15 +269,13 @@ class TestTaxiFuel:
         plan_no_taxi = FlightPlan(
             theatre='syria', points=pts, declination=0, bankAngle=30,
             initTimeSec=43200, initFob=12000,
-            aircraft=Aircraft(taxiFuel=0),
         )
         plan_taxi = FlightPlan(
             theatre='syria', points=pts, declination=0, bankAngle=30,
             initTimeSec=43200, initFob=12000,
-            aircraft=Aircraft(taxiFuel=400),
         )
-        data_no_taxi = FlightPlanData(plan_no_taxi)
-        data_taxi = FlightPlanData(plan_taxi)
+        data_no_taxi = FlightPlanData(plan_no_taxi, Aircraft(taxiFuel=0))
+        data_taxi = FlightPlanData(plan_taxi, Aircraft(taxiFuel=400))
 
         # WP1 EFR with taxi fuel should be 400 less
         efr_no_taxi = data_no_taxi.turnpointData[1].efr
@@ -334,9 +293,8 @@ class TestTaxiFuel:
         plan = FlightPlan(
             theatre='syria', points=pts, declination=0, bankAngle=30,
             initTimeSec=43200, initFob=12000,
-            aircraft=Aircraft(taxiFuel=400),
         )
-        data = FlightPlanData(plan)
+        data = FlightPlanData(plan, Aircraft(taxiFuel=400))
         # WP0 EFR should already have taxi fuel deducted
         assert abs(data.turnpointData[0].efr - (12000 - 400)) < 0.01
         # EFR differences: WP0→WP1 is only leg fuel (taxi already subtracted at WP0)
@@ -374,21 +332,13 @@ class TestCrossStackValidation:
         assert len(aircraft.regimes) == 2
         assert aircraft.takeoff.timeSec == 75
 
-    def test_valid_fixture_embedded_in_flight_plan(self):
-        """Valid fixture aircraft block can be embedded in a FlightPlan."""
+    def test_valid_fixture_aircraft_is_a_sibling(self):
+        """The fixture's aircraft block parses as a standalone Aircraft (AD-2:
+        aircraft is a sibling of the plan, not embedded in it)."""
         data = self._load_fixture('aircraft-package.valid.json')
-        plan_data = {
-            'theatre': 'syria',
-            'points': [],
-            'aircraft': data['aircraft'],
-            'declination': 0.0,
-            'bankAngle': 30.0,
-            'initTimeSec': 43200,
-            'initFob': 12000,
-        }
-        plan = FlightPlan(**plan_data)
-        assert plan.aircraft.model == 'F-15E Strike Eagle'
-        assert len(plan.aircraft.regimes) == 2
+        aircraft = Aircraft(**data['aircraft'])
+        assert aircraft.model == 'F-15E Strike Eagle'
+        assert len(aircraft.regimes) == 2
 
     def test_invalid_fixture_rejected_by_pydantic(self):
         """Shared invalid fixture (partial T/O + duplicate names) is rejected by Pydantic."""

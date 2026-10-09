@@ -100,7 +100,7 @@ def _draw_waypoint_icon(draw: ImageDraw.ImageDraw, cx: float, cy: float,
         )
 
 
-def generate_waypoint_list_page(flight_plan: FlightPlan) -> bytes:
+def generate_waypoint_list_page(flight_plan: FlightPlan, aircraft=None) -> bytes:
     """Generate a 768x1024 PNG image with a waypoint list table.
 
     Args:
@@ -129,7 +129,8 @@ def generate_waypoint_list_page(flight_plan: FlightPlan) -> bytes:
     title_bottom = title_y + (title_bbox[3] - title_bbox[1]) + 4
 
     # Aircraft header line (below title, above separator)
-    ac = flight_plan.aircraft
+    from flight_plan import default_aircraft
+    ac = aircraft if aircraft is not None else default_aircraft()
     model = ac.model.strip() if ac.model else ''
     config = ac.takeoffConfiguration.strip() if ac.takeoffConfiguration else ''
     if model and config:

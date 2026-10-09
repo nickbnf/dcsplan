@@ -560,7 +560,7 @@ class TestLeg0GroundAlt:
             climb=RegimeClimb(tas=300, ff=4000, roc=2000),
             descent=RegimeDescent(tas=300, ff=2000, rod=2000),
         )
-        aircraft = Aircraft(regimes=[regime])
+        self._aircraft = Aircraft(regimes=[regime])
         return FlightPlan(
             theatre="syria",
             points=points,
@@ -568,7 +568,6 @@ class TestLeg0GroundAlt:
             bankAngle=30,
             initTimeSec=43200,
             initFob=12000,
-            aircraft=aircraft,
         )
 
     def _ete_level(self, distanceNm, tas=400):
@@ -584,7 +583,7 @@ class TestLeg0GroundAlt:
             FlightPlanTurnPoint(lat=34.0, lon=37.0, tas=400, alt=5000, fuelFlow=6000, windSpeed=0, windDir=0, regimeId="r1"),
         ]
         plan = self._make_plan(points)
-        fp = FlightPlanData(plan)
+        fp = FlightPlanData(plan, self._aircraft)
         leg = fp.legData[0]
         # Level leg: ETE = distance / TAS * 3600
         level_ete = round(leg.distanceNm / 400 * 3600)
@@ -599,7 +598,7 @@ class TestLeg0GroundAlt:
             FlightPlanTurnPoint(lat=34.0, lon=37.0, tas=400, alt=0, fuelFlow=6000, windSpeed=0, windDir=0, regimeId="r1"),
         ]
         plan = self._make_plan(points)
-        fp = FlightPlanData(plan)
+        fp = FlightPlanData(plan, self._aircraft)
         leg = fp.legData[0]
         level_ete = round(leg.distanceNm / 400 * 3600)
         assert leg.eteSec == level_ete
@@ -611,7 +610,7 @@ class TestLeg0GroundAlt:
             FlightPlanTurnPoint(lat=34.0, lon=37.0, tas=400, alt=5000, fuelFlow=6000, windSpeed=0, windDir=0, regimeId="r1"),
         ]
         plan = self._make_plan(points)
-        fp = FlightPlanData(plan)
+        fp = FlightPlanData(plan, self._aircraft)
         leg = fp.legData[0]
         level_ete = round(leg.distanceNm / 400 * 3600)
         assert leg.eteSec == level_ete
@@ -625,7 +624,7 @@ class TestLeg0GroundAlt:
             FlightPlanTurnPoint(lat=34.0, lon=37.0, tas=400, alt=5000, fuelFlow=6000, windSpeed=0, windDir=0, regimeId="r1"),
         ]
         plan = self._make_plan(points)
-        fp = FlightPlanData(plan)
+        fp = FlightPlanData(plan, self._aircraft)
         leg = fp.legData[0]
         level_ete = round(leg.distanceNm / 400 * 3600)
         assert leg.eteSec == level_ete
@@ -640,7 +639,7 @@ class TestLeg0GroundAlt:
             FlightPlanTurnPoint(lat=34.0, lon=38.0, tas=400, alt=5000, fuelFlow=6000, windSpeed=0, windDir=0, regimeId="r1"),
         ]
         plan = self._make_plan(points)
-        fp = FlightPlanData(plan)
+        fp = FlightPlanData(plan, self._aircraft)
         leg1 = fp.legData[1]  # leg from WP1 to WP2
         level_ete = round(leg1.distanceNm / 400 * 3600)
         assert leg1.eteSec == level_ete

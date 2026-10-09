@@ -17,19 +17,19 @@
 
 ## 3. Plan index REST (capability: `space`)
 
-- [ ] 3.1 `GET /spaces/me` — get-or-create the caller's Personal space; verify a test shows first call creates one owner-membership row and a repeat call creates no second space, and an anonymous caller gets 401.
-- [ ] 3.2 `GET /plans` — list the caller's space plans (name, theatre, updatedAt, lastEditor); verify a test returns only the caller's plans and excludes `deleted_at` rows.
-- [ ] 3.3 `POST /plans {id,name,theatre}` (defer-commit registration) and `PATCH /plans/{id} {name}` (rename); verify tests cover success, `409` on a colliding name within the space (A1 backstop), and `404`/no-cross-space access when the plan is not in the caller's space.
+- [x] 3.1 `GET /spaces/me` — get-or-create the caller's Personal space; verify a test shows first call creates one owner-membership row and a repeat call creates no second space, and an anonymous caller gets 401. — `space_routes.py`; `test_space_routes.py` covers idempotent create + 401.
+- [x] 3.2 `GET /plans` — list the caller's space plans (name, theatre, updatedAt, lastEditor); verify a test returns only the caller's plans and excludes `deleted_at` rows. — `lastEditor` null until version-history; test confirms only caller's plans and excludes soft-deleted.
+- [x] 3.3 `POST /plans {id,name,theatre}` (defer-commit registration) and `PATCH /plans/{id} {name}` (rename); verify tests cover success, `409` on a colliding name within the space (A1 backstop), and `404`/no-cross-space access when the plan is not in the caller's space. — all covered; wired into `main.py`. Full backend suite: 242 passed.
 
 ## 4. Sync WebSocket (capability: `plan-sync`; AD-14, AD-5)
 
-- [ ] 4.1 `WS /sync/{planId}` served via the spike's chosen approach, authorized by the session cookie against the plan's owning space; verify a test rejects an unauthorized/unknown `planId` and accepts an authorized one.
-- [ ] 4.2 Persist client updates to `plan_updates` and rehydrate the server document from the log on connect; verify a test where a disconnect/reconnect preserves the document, and confirm no finalized version is created (AD-5) — persistence only.
-- [ ] 4.3 Implement log squash (on empty room or threshold) and verify a test that squashing preserves document state while reducing row count.
+- [x] 4.1 `WS /sync/{planId}` served via the spike's chosen approach, authorized by the session cookie against the plan's owning space; verify a test rejects an unauthorized/unknown `planId` and accepts an authorized one. — `sync.py` (`serve_plan_socket` + `_authorize`), route in `main.py`; `test_sync.py` covers accept + unauth/unknown/foreign-plan rejection over a real TestClient WebSocket.
+- [x] 4.2 Persist client updates to `plan_updates` and rehydrate the server document from the log on connect; verify a test where a disconnect/reconnect preserves the document, and confirm no finalized version is created (AD-5) — persistence only. — `PlanYStore` (BaseYStore over `plan_updates`) + `PlanSyncServer.get_room` pre-loads the doc; tests cover store roundtrip, rehydrate-from-log + persist-new-update, and assert no versions table (AD-5).
+- [x] 4.3 Implement log squash (on empty room or threshold) and verify a test that squashing preserves document state while reducing row count. — `sync.squash_plan` (merge→single full-state update), triggered when the last client leaves a room; tests cover reduce-to-one-preserving-state and single-update no-op. Full backend suite: 250 passed.
 
 ## 5. Backend wire-format reshape (AD-2)
 
-- [ ] 5.1 Un-nest `aircraft` from the request `FlightPlan` model so the kneeboard/import body is `{ flightPlan, aircraft }`, passing `aircraft` separately into the generation/import functions (`flight_plan.py` readers at the former `.aircraft.*` sites); remove the legacy v1.2 synthesis path. Verify existing kneeboard/import tests pass after updating them to the new body shape, and add a test asserting a nested-`aircraft` body is rejected.
+- [x] 5.1 Un-nest `aircraft` from the request `FlightPlan` model so the kneeboard/import body is `{ flightPlan, aircraft }`, passing `aircraft` separately into the generation/import functions (`flight_plan.py` readers at the former `.aircraft.*` sites); remove the legacy v1.2 synthesis path. Verify existing kneeboard/import tests pass after updating them to the new body shape, and add a test asserting a nested-`aircraft` body is rejected. — `aircraft` removed from `FlightPlan` + `migrate_legacy_regimes`; new `KneeboardRequest`/`ImportFlightPlanRequest` carry `aircraft` as a sibling; threaded through `FlightPlanData`/`LegData`/`generate_waypoint_list_page`/`task_queue` (optional trailing param so non-aircraft call sites are unaffected). Updated import/aircraft/taxiFuel/waypoint-header tests; added `TestWireFormatReshape` (nested-aircraft → 422). Full backend suite: 250 passed.
 
 ## 6. Frontend multi-doc & plan-index client (capability: `plan-sync`, `space`)
 

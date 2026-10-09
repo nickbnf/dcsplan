@@ -5,14 +5,16 @@
 import truststore
 truststore.inject_into_ssl()
 
-from fastapi import FastAPI, HTTPException, Query, Path
+from fastapi import FastAPI, HTTPException, Query, Path, WebSocket
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
-from flight_plan import FlightPlan, ImportFlightPlanRequest
+from flight_plan import FlightPlan, ImportFlightPlanRequest, KneeboardRequest
 from task_queue import get_task_queue
 from migrations_runner import apply_migrations
 import auth_routes
+import space_routes
+import sync
 import os
 import secrets
 import logging
@@ -32,7 +34,8 @@ async def lifespan(app: FastAPI):
     """Apply DB migrations and load auth config before serving requests."""
     apply_migrations()
     auth_routes.init_auth()
-    yield
+    async with sync.lifespan_server():  # run the plan-sync WebSocket server
+        yield
 
 
 app = FastAPI(lifespan=lifespan)
@@ -60,6 +63,15 @@ app.add_middleware(
 # Discord OAuth + session routes. Reached at /api/auth/* through Caddy (D6).
 app.include_router(auth_routes.router)
 
+# Space + plan-index routes (add-cloud-sync). Reached at /api/spaces/*, /api/plans/*.
+app.include_router(space_routes.router)
+
+
+# Flight-plan sync WebSocket (add-cloud-sync, AD-14). Reached at /api/sync/{planId}.
+@app.websocket("/sync/{plan_id}")
+async def sync_ws(websocket: WebSocket, plan_id: str):
+    await sync.serve_plan_socket(websocket, plan_id)
+
 # Path to the static directory
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "config", "static")
 TILES_DIR = os.path.join(STATIC_DIR, "tiles")
@@ -71,11 +83,12 @@ BLANK_TILE_PATH = os.path.join(os.path.dirname(__file__), "config", "blank.png")
 
 @app.post("/kneeboard")
 async def generate_kneeboard(
-    flight_plan: FlightPlan,
+    request: KneeboardRequest,
     output: str = Query(default="zip", description="Output type: 'zip' or leg number"),
     details: str = Query(default="", description="Comma-separated list of extra details to show (e.g. 'coords,efr')")
 ):
     """Submit a kneeboard generation task and return task ID."""
+    flight_plan = request.flightPlan  # aircraft is a sibling on the wire (AD-2)
     logger.info(f"=== /kneeboard endpoint called ===")
     logger.info(f"Flight plan has {len(flight_plan.points)} waypoint(s)")
     details_set = {d.strip() for d in details.split(",") if d.strip()} if details else set()
@@ -101,7 +114,7 @@ async def generate_kneeboard(
     
     # Submit task to queue
     task_queue = get_task_queue()
-    task_id = task_queue.submit_task(flight_plan, output, details_set)
+    task_id = task_queue.submit_task(flight_plan, output, details_set, aircraft=request.aircraft)
     
     logger.info(f"Task {task_id} submitted to queue")
     return {"task_id": task_id}
@@ -193,6 +206,6 @@ async def import_flight_plan(request: ImportFlightPlanRequest):
         )
     
     # Pydantic validation is automatic via FastAPI - if we get here, the flight plan is valid
-    # Return the validated flight plan
+    # Return the validated flight plan and its aircraft (siblings on the wire, AD-2)
     logger.info("Flight plan validated successfully")
-    return {"flightPlan": request.flightPlan}
+    return {"flightPlan": request.flightPlan, "aircraft": request.aircraft}

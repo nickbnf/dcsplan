@@ -9,7 +9,7 @@ import pprint
 import logging
 import os
 import json
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
 from typing import Any, List, Tuple, Optional
 from pyproj import Transformer
 
@@ -113,7 +113,6 @@ class FlightPlan(BaseModel):
     """Represents a complete flight plan with waypoints and initial conditions."""
     theatre: str = Field(..., description="Theatre name")
     points: List[FlightPlanTurnPoint]
-    aircraft: Aircraft = Field(default_factory=default_aircraft, description="Aircraft performance data")
     declination: float = Field(..., ge=-25, le=25, description="Magnetic declination")
     bankAngle: float = Field(..., ge=5, le=85, description="Bank angle for turns (degrees)")
     initTimeSec: int = Field(..., ge=0, le=86399, description="Initial time seconds (0-86399)")
@@ -123,23 +122,23 @@ class FlightPlan(BaseModel):
     markers: Optional[List[PlanMarker]] = Field(default=None)
     librarySnapshot: Optional[List[LibraryObject]] = Field(default=None)
 
-    @model_validator(mode='before')
-    @classmethod
-    def migrate_legacy_regimes(cls, data: Any) -> Any:
-        """Accept v1.2 plans with top-level regimes and synthesise aircraft block."""
-        if not isinstance(data, dict):
-            return data
-        if 'regimes' in data:
-            legacy_regimes = data.pop('regimes')
-            if 'aircraft' not in data:
-                data['aircraft'] = {'regimes': legacy_regimes}
-        return data
-
 
 class ImportFlightPlanRequest(BaseModel):
-    """Request model for importing a flight plan with version."""
+    """Request model for importing a flight plan with version.
+
+    Since add-cloud-sync, `aircraft` is a sibling of `flightPlan` on the wire
+    (AD-2), not nested inside it. The v1.2 top-level-regimes synthesis is gone.
+    """
     version: str
     flightPlan: FlightPlan
+    aircraft: Aircraft
+
+
+class KneeboardRequest(BaseModel):
+    """Request model for kneeboard generation: the plan and its aircraft, side
+    by side on the wire (AD-2)."""
+    flightPlan: FlightPlan
+    aircraft: Aircraft
 
 def get_effective_exit_time(exit_time_sec: int | None, eta: int) -> int:
     return max(exit_time_sec if exit_time_sec is not None else eta, eta)
@@ -543,7 +542,7 @@ class LegData:
     turn_angle_rad: float       # Turn angle in radians (along the arc)
     turn_direction: int         # Turn direction: 1 for counter-clockwise, -1 for clockwise
 
-    def __init__(self, flightPlan: FlightPlan, indexWptFrom: int, indexWptTo: int, inbound_bearing: float, transformer: Transformer = None, navigation_mode: str = "geographic"):
+    def __init__(self, flightPlan: FlightPlan, aircraft: Aircraft, indexWptFrom: int, indexWptTo: int, inbound_bearing: float, transformer: Transformer = None, navigation_mode: str = "geographic"):
         """Initialize a new leg from indexWptFrom to indexWptTo."""
 
         logger.info(f"== Calculating leg from {indexWptFrom} to {indexWptTo} ==")
@@ -629,7 +628,7 @@ class LegData:
 
         # Regime-aware ETE and fuel
         regime_id = flightPlan.points[indexWptTo].regimeId
-        regime = next((r for r in flightPlan.aircraft.regimes if r.id == regime_id), None) if regime_id else None
+        regime = next((r for r in aircraft.regimes if r.id == regime_id), None) if regime_id else None
         origin_pt = flightPlan.points[indexWptFrom]
         dest_pt = flightPlan.points[indexWptTo]
         leg_index = indexWptFrom  # leg 0 = first leg (from point 0 to point 1)
@@ -644,7 +643,7 @@ class LegData:
             ff=dest_pt.fuelFlow,
             regime=regime,
             leg_index=leg_index,
-            takeoff=flightPlan.aircraft.takeoff,
+            takeoff=aircraft.takeoff,
         )
         if seg['kind'] == 'level':
             gs = apply_wind(seg['tas'], dest_pt.windSpeed, dest_pt.windDir, self.course)
@@ -679,7 +678,8 @@ class FlightPlanData:
     totalFuel: float
     fuelReserve: float
 
-    def __init__(self, flightPlan: FlightPlan):
+    def __init__(self, flightPlan: FlightPlan, aircraft: Aircraft | None = None):
+        aircraft = aircraft if aircraft is not None else default_aircraft()
         self.turnpointData = []
         self.legData = []
         self.totalDistanceNm = 0
@@ -694,20 +694,20 @@ class FlightPlanData:
 
         hackOffsetSec: int | None = None
         previousEta = flightPlan.initTimeSec
-        previousEfr = flightPlan.initFob - flightPlan.aircraft.taxiFuel
+        previousEfr = flightPlan.initFob - aircraft.taxiFuel
 
         for i in range(len(flightPlan.points)):
             if i == 0:
                 tp = TurnpointData()
                 tp.etaSec = flightPlan.initTimeSec
-                tp.efr = flightPlan.initFob - flightPlan.aircraft.taxiFuel
+                tp.efr = flightPlan.initFob - aircraft.taxiFuel
                 if flightPlan.points[0].hack:
                     hackOffsetSec = flightPlan.initTimeSec
                 self.turnpointData.append(tp)
             else:
                 if i < len(flightPlan.points):
                     inbound_bearing = self.legData[-1].heading if len(self.legData) > 0 else 0
-                    leg = LegData(flightPlan, i-1, i, inbound_bearing, transformer, navigation_mode)
+                    leg = LegData(flightPlan, aircraft, i-1, i, inbound_bearing, transformer, navigation_mode)
                     self.legData.append(leg)
                 tp = TurnpointData()
                 arrivalEta = previousEta + leg.eteSec

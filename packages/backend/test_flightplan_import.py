@@ -47,10 +47,12 @@ def valid_flight_plan_data():
 
 @pytest.fixture
 def valid_import_request(valid_flight_plan_data):
-    """Create a valid import request."""
+    """Create a valid import request. Since add-cloud-sync, `aircraft` is a
+    sibling of `flightPlan` on the wire (AD-2)."""
     return {
         "version": "1.1",
-        "flightPlan": valid_flight_plan_data
+        "flightPlan": valid_flight_plan_data,
+        "aircraft": {}
     }
 
 
@@ -122,7 +124,8 @@ class TestValidImports:
                 "bankAngle": 30.0,
                 "initTimeSec": 43200,
                 "initFob": 12000
-            }
+            },
+            "aircraft": {}
         }
         response = client.post("/flightplan/import", json=request)
         assert response.status_code == 200
@@ -151,7 +154,8 @@ class TestValidImports:
                 "bankAngle": 30.0,
                 "initTimeSec": 43200,
                 "initFob": 12000
-            }
+            },
+            "aircraft": {}
         }
         response = client.post("/flightplan/import", json=request)
         assert response.status_code == 200
@@ -541,3 +545,26 @@ class TestEdgeCases:
         valid_import_request["flightPlan"]["initFob"] = 0.0
         response = client.post("/flightplan/import", json=valid_import_request)
         assert response.status_code == 200
+
+
+class TestWireFormatReshape:
+    """add-cloud-sync (AD-2): aircraft is a sibling of flightPlan on the wire."""
+
+    def test_nested_aircraft_body_is_rejected(self, valid_flight_plan_data):
+        """Old shape — aircraft nested inside flightPlan, no top-level aircraft —
+        is rejected (422), since aircraft is now a required sibling."""
+        nested = dict(valid_flight_plan_data)
+        nested["aircraft"] = {"model": "F-15E"}  # nested, not a sibling
+        response = client.post(
+            "/flightplan/import", json={"version": "1.1", "flightPlan": nested}
+        )
+        assert response.status_code == 422
+
+    def test_sibling_aircraft_is_echoed_back(self, valid_import_request):
+        """The reshaped body returns flightPlan and aircraft as siblings."""
+        valid_import_request["aircraft"] = {"model": "F-15E", "taxiFuel": 400}
+        response = client.post("/flightplan/import", json=valid_import_request)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["aircraft"]["model"] == "F-15E"
+        assert data["aircraft"]["taxiFuel"] == 400

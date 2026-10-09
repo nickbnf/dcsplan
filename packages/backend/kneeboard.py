@@ -59,7 +59,7 @@ class MapInfo(BaseModel):
     tileSize: Optional[int] = 256
 
 
-def generate_kneeboard_single_png(flight_plan: FlightPlan, leg_index: int, details: set[str] = None) -> bytes:
+def generate_kneeboard_single_png(flight_plan: FlightPlan, leg_index: int, details: set[str] = None, aircraft=None) -> bytes:
     """
     Generate a 768x1024 PNG image with the map for the given leg of the flight plan.
     
@@ -78,14 +78,14 @@ def generate_kneeboard_single_png(flight_plan: FlightPlan, leg_index: int, detai
         raise ValueError("Flight plan must have at least 2 waypoints to generate a leg map")
     
     # Generate map for the given leg
-    flightPlanData = FlightPlanData(flight_plan)
+    flightPlanData = FlightPlanData(flight_plan, aircraft)
     logger.info(f"Flight plan data: {pprint.pformat(flightPlanData)}")
     leg_map_png = generate_leg_map(flight_plan, flightPlanData, leg_index, details or set())
     logger.info(f"Kneeboard PNG generated: {len(leg_map_png)} bytes")
 
     return leg_map_png
 
-def generate_kneeboard_zip(flight_plan: FlightPlan, progress_callback: Optional[Callable[[str], None]] = None, details: set[str] = None) -> bytes:
+def generate_kneeboard_zip(flight_plan: FlightPlan, progress_callback: Optional[Callable[[str], None]] = None, details: set[str] = None, aircraft=None) -> bytes:
     """
     Generate a ZIP file containing all the leg maps for the flight plan.
     
@@ -100,7 +100,7 @@ def generate_kneeboard_zip(flight_plan: FlightPlan, progress_callback: Optional[
         raise ValueError("Flight plan must have at least 2 waypoints to generate a leg map")
     
     # Generate all leg maps
-    flightPlanData = FlightPlanData(flight_plan)
+    flightPlanData = FlightPlanData(flight_plan, aircraft)
     leg_maps = []
     for i in range(len(flightPlanData.legData)):
         logger.info(f"Processing leg {i+1}/{len(flightPlanData.legData)}")
@@ -116,7 +116,7 @@ def generate_kneeboard_zip(flight_plan: FlightPlan, progress_callback: Optional[
     # Generate waypoint list page
     if progress_callback:
         progress_callback("Generating waypoint list page...")
-    wpts_page = generate_waypoint_list_page(flight_plan)
+    wpts_page = generate_waypoint_list_page(flight_plan, aircraft)
     logger.info(f"Waypoint list page generated: {len(wpts_page)} bytes")
 
     # Generate overview map page (imported here to avoid circular import)
