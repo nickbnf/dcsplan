@@ -68,7 +68,7 @@ Naming or renaming a plan SHALL be rejected when the name, compared trimmed and 
 
 ### Requirement: Plan-scoped surfaces follow the active plan; space-scoped surfaces do not
 
-Plan-scoped surfaces (route/navigation, attack planning, and a plan's performance assignment and per-leg regime bindings) SHALL operate on the active plan. Space-scoped surfaces (the theatre library and the performance profiles themselves) SHALL NOT change when the active plan changes. Space-scoped editing surfaces SHALL be reached through an active plan or draft context; a signed-in user with no active plan or draft SHALL be directed to select or create one rather than shown an empty editing surface.
+Plan-scoped surfaces (navigation, attack planning, and a plan's performance assignment and per-leg regime bindings) SHALL operate on the active plan. Space-scoped surfaces (the theatre library and the performance profiles) SHALL NOT change when the active plan changes, and SHALL be reached through an active plan or draft context.
 
 #### Scenario: Switching the active plan changes only plan-scoped surfaces
 - **WHEN** a signed-in user switches from one active plan to another on the same theatre

@@ -18,6 +18,9 @@ interface ButtonZoneProps {
   onSettingsToggle: () => void;
   importTrigger: React.ReactNode;
   onExport: () => void;
+  /** Show the in-sidebar New-plan button. Hidden when signed in, where new plans
+   *  are created from the Flight Plans home screen instead. Defaults to true. */
+  showNewButton?: boolean;
 }
 
 const actionButtonClass =
@@ -39,6 +42,7 @@ export const ButtonZone: React.FC<ButtonZoneProps> = ({
   onSettingsToggle,
   importTrigger,
   onExport,
+  showNewButton = true,
 }) => {
   const declination = flightPlan.declination;
   const bankAngle = flightPlan.bankAngle;
@@ -129,11 +133,13 @@ export const ButtonZone: React.FC<ButtonZoneProps> = ({
             <span aria-hidden>⬇</span> Export
           </button>
         </div>
-        <NewFlightPlanDialog
-          currentPlan={flightPlan}
-          theatres={theatres}
-          onCreatePlan={onFlightPlanReplace}
-        />
+        {showNewButton && (
+          <NewFlightPlanDialog
+            currentPlan={flightPlan}
+            theatres={theatres}
+            onCreatePlan={onFlightPlanReplace}
+          />
+        )}
       </div>
     </div>
   );

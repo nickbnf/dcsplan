@@ -8,6 +8,7 @@ import type { FlightPlan, PictogramType } from '../types/flightPlan';
 import type { DrawingState } from '../hooks/useDrawing';
 import { useTheatres } from '../hooks/useTheatres';
 import { useFlightPlan } from '../contexts/FlightPlanContext';
+import { useAuth } from '../contexts/AuthContext';
 import { usePerformance } from '../contexts/PerformanceContext';
 import { flightPlanUtils } from '../utils/flightPlanUtils';
 import { useLibrary } from '../contexts/LibraryContext';
@@ -57,6 +58,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const { theatres, isLoading: isLoadingTheatres } = useTheatres();
   const { library, setLibrary } = useLibrary();
   const { requestFitToFlightPlan } = useFlightPlan();
+  const { status } = useAuth();
   const { performance, setPerformance } = usePerformance();
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
@@ -79,6 +81,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         onFlightPlanReplace={onFlightPlanReplace}
         isSettingsOpen={isSettingsOpen}
         onSettingsToggle={() => setIsSettingsOpen(o => !o)}
+        showNewButton={status !== 'authenticated'}
         importTrigger={
           <ImportFlightPlanDialog
             onImport={(importedFlightPlan) => {

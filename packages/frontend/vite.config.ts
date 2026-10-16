@@ -12,6 +12,9 @@ export default defineConfig({
       '/api': {
         target: process.env.VITE_DEV_API_TARGET || 'http://localhost:8000',
         changeOrigin: true,
+        // Pass the WebSocket upgrade through for the plan-sync socket
+        // (/api/sync/{planId}, add-cloud-sync AD-14).
+        ws: true,
         rewrite: (path) => path.replace(/^\/api/, ''),
       },
     },

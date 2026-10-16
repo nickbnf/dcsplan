@@ -39,6 +39,11 @@ function renderZone(overrides: Partial<React.ComponentProps<typeof ButtonZone>> 
 }
 
 describe('ButtonZone action row', () => {
+  it('hides the New button when showNewButton is false (signed-in)', () => {
+    renderZone({ showNewButton: false });
+    expect(screen.queryByRole('button', { name: /new/i })).not.toBeInTheDocument();
+  });
+
   it('shows New flight plan button instead of Clear', () => {
     renderZone();
     expect(screen.getByRole('button', { name: /new/i })).toBeInTheDocument();

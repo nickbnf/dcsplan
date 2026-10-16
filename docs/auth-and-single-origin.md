@@ -89,3 +89,19 @@ The previous `api.dcsplan.bonnefon.org` host is no longer needed and can be reti
 In development the same shape is provided by the Vite dev proxy (see
 `packages/frontend/vite.config.ts`): requests to `/api` are proxied to the
 backend dev server, so the frontend always talks to a relative `/api` base.
+
+## Plan-sync WebSocket (add-cloud-sync, AD-14)
+
+The flight-plan sync socket is served by the backend at `/sync/{planId}` and
+reached at `/api/sync/{planId}` through the same single-origin routing, so the
+`SameSite=Lax` session cookie authorizes it with no extra setup (the socket is
+same-origin). It rides the existing `/api/*` handler:
+
+- **Caddy (prod):** `reverse_proxy` upgrades WebSocket connections automatically,
+  so the `handle /api/*` block above already carries the sync socket — no extra
+  directive is required.
+- **Vite (dev):** the `/api` proxy sets `ws: true` so the upgrade is forwarded to
+  the backend dev server.
+
+The client opens `wss://<host>/api/sync/<planId>` (or `ws://` on plain-http dev).
+No new environment variables: persistence reuses the SQLite database (AD-13).
