@@ -60,6 +60,12 @@ COPY backend/auth_routes.py .
 COPY backend/migrations_runner.py .
 COPY backend/migrations ./migrations
 
+# Spaces, plan index and plan sync (add-cloud-sync, unify-plan-name)
+COPY backend/spaces.py .
+COPY backend/plans.py .
+COPY backend/space_routes.py .
+COPY backend/sync.py .
+
 # Runtime data directory (SQLite DB) — mounted as a persistent volume in prod
 RUN mkdir -p /app/data
 
