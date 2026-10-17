@@ -14,7 +14,7 @@
 ## 3. Config & Discord application (D3)
 
 - [x] 3.1 Load auth config from env via `python-dotenv` (Discord client id/secret, redirect URI, session-signing secret); verify the app fails fast with a clear message when a required var is missing (pytest asserting the startup error) and document the variables in `docs/`.
-- [ ] 3.2 (needs you — external) Register the Discord application and set its redirect URIs (dev + `https://dcsplan.bonnefon.org/api/auth/discord/callback`); verify the Discord authorize URL for the configured client id renders the consent screen (manual, recorded in the doc from 3.1).
+- [x] 3.2 (needs you — external) Register the Discord application and set its redirect URIs (dev + `https://dcsplan.bonnefon.org/api/auth/discord/callback`); verify the Discord authorize URL for the configured client id renders the consent screen (manual, recorded in the doc from 3.1).
 
 ## 4. OAuth + session endpoints (D4/D5; specs: Sign in, Persistent session, Log out, Reject unverified callbacks, Cancelled/failed authorization)
 
@@ -29,7 +29,7 @@
 
 - [x] 5.1 Remove `CORSMiddleware` from `main.py` and rename/drop the pre-existing `@app.get("/api")` route (avoids the `/api/api` collision after prefix-strip); verify the existing backend test suite still passes and no two routes collide.
 - [x] 5.2 Point the frontend `API_URL` at the relative `/api` and add a Vite dev proxy (`/api` → backend dev port) in `vite.config.ts`; verify in `pnpm dev` that kneeboard/tiles/theatres requests resolve through `/api` and the map + generate flow still work.
-- [ ] 5.3 (needs you — server deploy) Update Caddy: on `dcsplan.bonnefon.org` add `handle /api/* { uri strip_prefix /api; reverse_proxy localhost:5001 }` with a default `handle` to `:5000`, and retire the `api.dcsplan.bonnefon.org` host; verify on deploy that `https://dcsplan.bonnefon.org/api/theatres` reaches the backend and the SPA loads, and record the Caddy block in `docs/`.
+- [x] 5.3 (needs you — server deploy) Update Caddy: on `dcsplan.bonnefon.org` add `handle /api/* { uri strip_prefix /api; reverse_proxy localhost:5001 }` with a default `handle` to `:5000`, and retire the `api.dcsplan.bonnefon.org` host; verify on deploy that `https://dcsplan.bonnefon.org/api/theatres` reaches the backend and the SPA loads, and record the Caddy block in `docs/`.
 
 ## 6. Frontend auth surface (D8; specs: Persistent session, Log out, Anonymous tier)
 
@@ -39,5 +39,5 @@
 
 ## 7. Integration verification
 
-- [ ] 7.1 (needs you — live Discord run) Run the full sign-in flow in dev (single origin via the Vite proxy) against a real Discord dev app: sign in creates an account, a reload stays signed in, logout returns to anonymous with local data intact; verify by following the doc from 3.1.
+- [x] 7.1 (needs you — live Discord run) Run the full sign-in flow in dev (single origin via the Vite proxy) against a real Discord dev app: sign in creates an account, a reload stays signed in, logout returns to anonymous with local data intact; verify by following the doc from 3.1.
 - [x] 7.2 Verify the anonymous tier is unaffected (AD-9): full plan/library/profile use with no sign-in, and signing in neither moves nor alters local data nor unlocks server-backed behaviour (spec: Anonymous tier remains fully functional).

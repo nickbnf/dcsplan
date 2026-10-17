@@ -8,7 +8,7 @@ from pycrdt import Doc, Map
 import plans
 from db import connect
 from migrations_runner import apply_migrations
-from plans import DuplicatePlanName
+from plans import DuplicatePlanId
 
 
 @pytest.fixture()
@@ -40,38 +40,25 @@ def test_create_and_list(db_path):
     assert [p["id"] for p in listed] == ["p1"]
 
 
-def test_duplicate_name_rejected_in_same_space(db_path):
+def test_duplicate_names_allowed_in_same_space(db_path):
     sid = _seed_space()
     asyncio.run(plans.create_plan("p1", sid, "Alpha", "caucasus"))
-    with pytest.raises(DuplicatePlanName):
-        asyncio.run(plans.create_plan("p2", sid, "Alpha", "caucasus"))
+    asyncio.run(plans.create_plan("p2", sid, "Alpha", "caucasus"))
+    assert len(asyncio.run(plans.list_plans(sid))) == 2
 
 
-def test_same_name_allowed_in_different_space(db_path):
-    s1 = _seed_space("s1")
-    s2 = _seed_space("s2")
-    asyncio.run(plans.create_plan("p1", s1, "Alpha", "caucasus"))
-    other = asyncio.run(plans.create_plan("p2", s2, "Alpha", "caucasus"))
-    assert other["id"] == "p2"
-
-
-def test_rename_unique_and_collision(db_path):
+def test_duplicate_id_raises(db_path):
     sid = _seed_space()
     asyncio.run(plans.create_plan("p1", sid, "Alpha", "caucasus"))
-    asyncio.run(plans.create_plan("p2", sid, "Bravo", "caucasus"))
-
-    updated = asyncio.run(plans.rename_plan("p2", sid, "Charlie"))
-    assert updated["name"] == "Charlie"
-
-    with pytest.raises(DuplicatePlanName):
-        asyncio.run(plans.rename_plan("p2", sid, "Alpha"))
+    with pytest.raises(DuplicatePlanId):
+        asyncio.run(plans.create_plan("p1", sid, "Bravo", "caucasus"))
 
 
-def test_rename_plan_not_in_space_returns_none(db_path):
-    s1 = _seed_space("s1")
-    s2 = _seed_space("s2")
-    asyncio.run(plans.create_plan("p1", s1, "Alpha", "caucasus"))
-    assert asyncio.run(plans.rename_plan("p1", s2, "X")) is None
+def test_is_plan_id():
+    assert plans.is_plan_id("AAAAAAAAAAA1")
+    assert plans.is_plan_id("k7Hq2mXv9B3n")
+    for bad in ("local", "AAAAAAAAAAA", "AAAAAAAAAAA0", "AAAAAAAAAAAO", "AAAAAAAAAAAI", "AAAAAAAAAAAl", "A" * 13):
+        assert not plans.is_plan_id(bad)
 
 
 def test_list_excludes_soft_deleted(db_path):

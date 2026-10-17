@@ -3,14 +3,13 @@
 The signed-in user's Personal space and the flight plans it holds. All routes
 require a session; the anonymous tier stores plans on the device and never calls
 these (AD-9). Plan *content* syncs over the WebSocket (plan-sync); these routes
-manage the index — materialize the space, list, register (defer-commit), rename.
+manage the index — materialize the space, list, register (defer-commit). Plans
+are renamed only inside their document; the server keeps `plans.name` in step.
 
 Reached at /api/* through Caddy (the /api prefix is stripped, D6).
 """
-from typing import Optional
-
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 import plans
 import spaces
@@ -29,13 +28,10 @@ async def require_user(request: Request) -> dict:
 
 
 class CreatePlanRequest(BaseModel):
-    id: str  # client-generated (draft -> committed, AD-15)
+    # Client-generated (draft -> committed, AD-15), 12 base58 characters (AD-16).
+    id: str = Field(pattern=plans.PLAN_ID_PATTERN)
     name: str
     theatre: str
-
-
-class RenamePlanRequest(BaseModel):
-    name: str
 
 
 def _public_plan(plan: dict) -> dict:
@@ -70,22 +66,7 @@ async def create_plan(body: CreatePlanRequest, user: dict = Depends(require_user
     space = await spaces.get_or_create_personal_space(user["id"])
     try:
         plan = await plans.create_plan(body.id, space["id"], body.name, body.theatre)
-    except plans.DuplicatePlanName:
-        raise HTTPException(status_code=409, detail="A plan with that name already exists")
+    except plans.DuplicatePlanId:
+        raise HTTPException(status_code=409, detail="A plan with that id already exists")
     return _public_plan(plan)
 
-
-@router.patch("/plans/{plan_id}")
-async def rename_plan(
-    plan_id: str, body: RenamePlanRequest, user: dict = Depends(require_user)
-):
-    """Rename a plan the caller owns. 409 on a name collision, 404 if the plan is
-    not a live plan in the caller's space (no cross-space access)."""
-    space = await spaces.get_or_create_personal_space(user["id"])
-    try:
-        updated = await plans.rename_plan(plan_id, space["id"], body.name)
-    except plans.DuplicatePlanName:
-        raise HTTPException(status_code=409, detail="A plan with that name already exists")
-    if updated is None:
-        raise HTTPException(status_code=404, detail="Plan not found")
-    return _public_plan(updated)

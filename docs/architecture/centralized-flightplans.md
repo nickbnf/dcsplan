@@ -372,13 +372,34 @@ Reproduced and documented as `it.fails` tests in `packages/frontend/src/contexts
 
 **Consequences.**
 - **`add-cloud-sync` encodes `(activeSpaceId, activePlanId)` with `activeSpaceId` pinned to Personal and the space switcher unrendered.** Adding squadrons is "render the switcher and let the id vary," not a re-architecture. The breadcrumb ships as just the plan name now and grows a space root later.
-- **A created plan is a local draft until its first waypoint** (defer-commit): it provides the plan context from which space-scoped surfaces are reachable, behaves like the anonymous local plan, and joins the space (and starts syncing) only on first content — so empty drafts never enter the list, which matters because deletion is deferred (AD-7, `add-trash-and-soft-delete`). Change-local specifics in `add-cloud-sync/design.md`.
-- **The active plan is a per-device pointer**, restored on load; if it no longer resolves (deleted elsewhere, not in the space) the app falls back to Home.
+- **A created plan is a local draft until its first edit** (defer-commit; widened from "first waypoint" by `unify-plan-name`): it provides the plan context from which space-scoped surfaces are reachable, behaves like the anonymous local plan, and joins the space (and starts syncing) on its first edit of any kind. A draft left unchanged is discarded; a draft with edits is never discarded, and a failed commit is retried — so untouched drafts never enter the list, which matters because deletion is deferred (AD-7, `add-trash-and-soft-delete`). Change-local specifics in `add-cloud-sync/design.md` and `unify-plan-name/design.md` (D8).
+- **The active plan is the plan named by the address** (*superseded in part by AD-16*): `/p/:id/…` selects the plan; off a plan's address (library, `/`) the last opened plan, remembered per device, stays active. If it no longer resolves (deleted elsewhere, not in the space) the app falls back to Home. The breadcrumb shows the plan's own name, not the index entry.
 - **Library/profile scoping follows the active space**, so when those sync (a later change) the model already routes them correctly.
 
 **Spans:** `space`, `plan-sync`, `plan-lifecycle` (later squadrons, `plan-sharing`)
 
 **Rejected.** *Active-plan dropdown in the top bar* — one-click switching, but selection lives on the editing surface and, with squadrons, needs a second space dropdown beside it. *Plans drawer overlay* — keeps selection off a separate screen but still on the editing surface; its two-level tree is a reasonable future affordance, not the primary model.
+
+---
+
+## AD-16 — Plans are addressed by a short id at `/p/:id/:slug`
+
+**Context.** `add-cloud-sync` gave signed-in plans two names (the index `plans.name` and the document's own `name`) and no addresses: the active plan lived in a per-device pointer, and routes were flat (`/`, `/performance`, `/attack`). Plans need stable, shareable addresses (AD-10 share links build on them), and an address built from the name would break on every rename and collide on duplicate names.
+
+**Decision.** Every plan has a **12-character base58 id** (no `0 O I l`, about 70 bits), generated on the device at creation and never changed. The anonymous plan keeps the reserved id `local`. A plan's views live at **`/p/:id/:slug`** (NAV), `…/perf` and `…/attack`; the slug is a cosmetic rendering of the name, and only the id is used to resolve the plan. **The address is the active selection.** The name exists only inside the plan's document; the server keeps `plans.name` in step as updates arrive. Plan names are not unique.
+
+**Why.** An id-keyed address survives renames, survives duplicate names, and can be shared. A short id avoids long UUID URLs without a second id to map. Client generation keeps offline creation and defer-commit (AD-15) working: a draft has its address before it reaches the server. The randomness makes addresses unguessable, but they are not a security boundary — access is still checked against space membership (AD-1).
+
+**Consequences.**
+- **A rename replaces the address in place** (`navigate(…, { replace: true })`): same route, so the editor stays mounted; no history entry. Stale or missing slugs are corrected the same way, which also covers renames synced from another device.
+- **Plan names lose the uniqueness rule** that `add-cloud-sync` had; a CRDT field cannot reject concurrent or offline renames after the fact.
+- **The index name can lag** while a plan is edited offline; it catches up when the updates reach the server.
+- **The space-scoped library stays at `/library`.** Squadron addressing (e.g. `/s/:space/…`) is left to the squadrons change.
+- **Share links (AD-10) will reuse these addresses** rather than inventing a separate public id.
+
+**Spans:** `plan-addressing`, `space`, `plan-sync` (later `plan-sharing`)
+
+**Rejected.** *Name-based addresses* — break on rename and collide on duplicates. *Base58-encoded UUIDs* — 22 characters, and two representations of one id. *A separate public-id column* — two ids per plan. *Sequential or hashid ids* — enumerable, and they need the server to assign ids, which breaks offline draft creation.
 
 ---
 
@@ -403,6 +424,7 @@ Reproduced and documented as `it.fails` tests in `packages/frontend/src/contexts
 | AD-13 | Server state is SQLite + hand-written SQL | `user-identity` | `add-user-accounts` |
 | AD-14 | Yjs sync served by FastAPI via `pycrdt` | `plan-sync`, `space` | `add-cloud-sync` |
 | AD-15 | Space→plan selection on a Home screen | `space`, `plan-sync`, `plan-lifecycle` | `add-cloud-sync` |
+| AD-16 | Plans addressed by short id at `/p/:id/:slug` | `plan-addressing`, `space`, `plan-sync` | `unify-plan-name` |
 
 ---
 

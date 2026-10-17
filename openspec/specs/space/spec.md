@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Defines the space as the unit of ownership for a signed-in user's flight plans (AD-1): the Personal space and its membership, the plan collection it holds, which plan is active, unique plan naming, and how plan-scoped and space-scoped surfaces relate to the active-plan selection (AD-15). The anonymous tier is space-less and holds a single local plan (AD-9).
+Defines the space as the unit of ownership for a signed-in user's flight plans (AD-1): the Personal space and its membership, the plan collection it holds, which plan is active, and how plan-scoped and space-scoped surfaces relate to the active-plan selection (AD-15). The anonymous tier is space-less and holds a single local plan (AD-9).
 
 ## Requirements
 
@@ -26,11 +26,19 @@ A signed-in account SHALL have exactly one Personal space, materialized on first
 
 ### Requirement: The Personal space holds the user's flight plans and the list is viewable
 
-A signed-in user SHALL be able to view the list of flight plans held in their Personal space, each identified by name and theatre. The **anonymous** tier holds a single local plan and presents no plan list.
+A signed-in user SHALL be able to view the list of flight plans held in their Personal space, each identified by name and theatre. Names in the list SHALL be read-only; a plan is renamed only from its editor. Selecting a plan in the list SHALL open it at its address. The **anonymous** tier holds a single local plan and presents no plan list.
 
 #### Scenario: Signed-in user views the plan list
 - **WHEN** a signed-in user opens the plan list
 - **THEN** every plan in their Personal space is shown with its name and theatre
+
+#### Scenario: The list offers no rename
+- **WHEN** a signed-in user views the plan list
+- **THEN** no control to rename a plan is offered there
+
+#### Scenario: Selecting a plan opens its address
+- **WHEN** a signed-in user selects a plan in the list
+- **THEN** the plan opens at `/p/:id/:slug`
 
 #### Scenario: Anonymous user has a single plan and no list
 - **WHEN** an anonymous user uses the app
@@ -40,15 +48,19 @@ A signed-in user SHALL be able to view the list of flight plans held in their Pe
 
 ### Requirement: The user selects the active plan and the selection persists on the device
 
-A signed-in user SHALL be able to select which plan in the space is active. The selection SHALL persist on the device across reloads. If the selected plan no longer resolves — removed on another device, or not in the space — the app SHALL fall back to the plan list rather than report an error. In the **anonymous** tier the single plan is always the active plan.
+The active plan SHALL be the plan addressed by the current `/p/:id/…` address. On surfaces outside a plan's address (such as the theatre library), the active plan SHALL be the plan last opened on the device. If the addressed or last-opened plan no longer resolves, the app SHALL fall back to the plan list rather than report an error. In the **anonymous** tier the single plan is always the active plan.
 
 #### Scenario: Selecting a plan makes it active
-- **WHEN** a signed-in user selects a plan from the list
+- **WHEN** a signed-in user opens a plan's address
 - **THEN** that plan becomes the active plan and the plan-scoped surfaces operate on it
 
 #### Scenario: The active plan is restored on reload
-- **WHEN** a signed-in user reloads the app
-- **THEN** the plan that was active before the reload is active again
+- **WHEN** a signed-in user reloads the app on a plan's address
+- **THEN** that plan is active again
+
+#### Scenario: The last-opened plan backs space-scoped surfaces
+- **WHEN** a signed-in user moves from a plan's address to the theatre library
+- **THEN** the plan they last opened remains the active plan
 
 #### Scenario: An unresolvable selection falls back to the list
 - **WHEN** the active plan can no longer be resolved on load
@@ -57,20 +69,6 @@ A signed-in user SHALL be able to select which plan in the space is active. The 
 #### Scenario: Anonymous single plan is always active
 - **WHEN** an anonymous user uses the app
 - **THEN** the single local plan is the active plan with no selection step
-
----
-
-### Requirement: Plan names are unique within a space
-
-Naming or renaming a plan SHALL be rejected when the name, compared trimmed and exactly, collides with another plan in the same space. The user SHALL be informed and the colliding name SHALL NOT be applied. A name unique within the space SHALL be accepted. (The **anonymous** tier holds a single plan, so no collision is possible.)
-
-#### Scenario: Renaming to a unique name succeeds
-- **WHEN** a signed-in user renames a plan to a name no other plan in the space uses
-- **THEN** the rename is applied
-
-#### Scenario: Renaming to a colliding name is rejected
-- **WHEN** a signed-in user renames a plan to a name another plan in the same space already uses
-- **THEN** the rename is rejected, the user is informed the name must be unique, and the plan keeps its previous name
 
 ---
 

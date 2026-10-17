@@ -22,6 +22,8 @@ import sync
 import users
 from migrations_runner import apply_migrations
 
+PA = "AAAAAAAAAAA1"  # a well-formed 12-char base58 plan id
+
 
 @pytest.fixture()
 def ctx(tmp_path, monkeypatch):
@@ -66,41 +68,56 @@ def _seed_plan(discord_id: str, plan_id: str) -> str:
 
 def test_authorized_connection_accepted(ctx):
     app, _db = ctx
-    uid = _seed_plan("d-1", "pA")
+    uid = _seed_plan("d-1", PA)
     with TestClient(app) as client:
         client.get(f"/testlogin/{uid}")
-        with client.websocket_connect("/sync/pA") as ws:
+        with client.websocket_connect(f"/sync/{PA}") as ws:
             # The server sends the Yjs SyncStep1 to a new client on connect.
             assert isinstance(ws.receive_bytes(), (bytes, bytearray))
 
 
 def test_unauthenticated_rejected(ctx):
     app, _db = ctx
-    _seed_plan("d-1", "pA")
+    _seed_plan("d-1", PA)
     with TestClient(app) as client:
         with pytest.raises(WebSocketDisconnect):
-            with client.websocket_connect("/sync/pA"):
+            with client.websocket_connect(f"/sync/{PA}"):
                 pass
 
 
 def test_unknown_plan_rejected(ctx):
     app, _db = ctx
-    uid = _seed_plan("d-1", "pA")
+    uid = _seed_plan("d-1", PA)
     with TestClient(app) as client:
         client.get(f"/testlogin/{uid}")
         with pytest.raises(WebSocketDisconnect):
-            with client.websocket_connect("/sync/does-not-exist"):
+            with client.websocket_connect("/sync/AAAAAAAAAAA9"):
                 pass
 
 
 def test_other_users_plan_rejected(ctx):
     app, _db = ctx
-    _seed_plan("d-1", "pA")  # owned by d-1
+    _seed_plan("d-1", PA)  # owned by d-1
     other = asyncio.run(users.upsert_user("d-2"))["id"]
     with TestClient(app) as client:
         client.get(f"/testlogin/{other}")
         with pytest.raises(WebSocketDisconnect):
-            with client.websocket_connect("/sync/pA"):
+            with client.websocket_connect(f"/sync/{PA}"):
+                pass
+
+
+def test_malformed_plan_id_rejected_before_db_lookup(ctx, monkeypatch):
+    app, _db = ctx
+    uid = _seed_plan("d-1", PA)
+
+    async def boom(_plan_id):
+        raise AssertionError("get_plan must not be called for a malformed id")
+
+    monkeypatch.setattr(plans, "get_plan", boom)
+    with TestClient(app) as client:
+        client.get(f"/testlogin/{uid}")
+        with pytest.raises(WebSocketDisconnect):
+            with client.websocket_connect("/sync/not-a-plan-id"):
                 pass
 
 
@@ -108,7 +125,7 @@ def test_other_users_plan_rejected(ctx):
 
 def test_planystore_write_read_roundtrip(ctx):
     _app, _db = ctx
-    store = sync.PlanYStore("pA")
+    store = sync.PlanYStore(PA)
     doc = Doc()
     doc.get("data", type=Map)["k"] = "v"
     asyncio.run(store.write(doc.get_update()))
@@ -120,19 +137,19 @@ def test_planystore_write_read_roundtrip(ctx):
 
 def test_room_rehydrates_from_log_and_persists_new_updates(ctx):
     _app, db = ctx
-    _seed_plan("d-1", "pA")
+    _seed_plan("d-1", PA)
     seed = Doc()
     seed.get("data", type=Map)["x"] = 1
-    asyncio.run(plans.append_update("pA", seed.get_update()))
+    asyncio.run(plans.append_update(PA, seed.get_update()))
 
     async def body():
         async with sync.sync_server:
-            room = await sync.sync_server.get_room("pA")
+            room = await sync.sync_server.get_room(PA)
             loaded = room.ydoc.get("data", type=Map)["x"]  # rehydrated from the log
             await room.ydoc_observed.wait()  # observer attaches once the room is ready
             room.ydoc.get("data", type=Map)["y"] = 2  # new edit -> persisted by ystore
             await asyncio.sleep(0.5)
-            return loaded, await plans.count_updates("pA")
+            return loaded, await plans.count_updates(PA)
 
     loaded, count = asyncio.run(body())
     assert loaded == 1
@@ -145,6 +162,66 @@ def test_room_rehydrates_from_log_and_persists_new_updates(ctx):
     assert "versions" not in tables
 
 
+# --- unify-plan-name D2: the index follows the document ------------------
+
+def _room_edit(server, plan_id, mutate):
+    """Open the plan's room, apply `mutate(flightPlan_map)` to the server doc, and
+    return the plan row once the store has persisted the update."""
+    async def body():
+        async with server:
+            room = await server.get_room(plan_id)
+            await room.ydoc_observed.wait()
+            mutate(room.ydoc.get("flightPlan", type=Map))
+            await asyncio.sleep(0.4)
+            return await plans.get_plan(plan_id)
+    return asyncio.run(body())
+
+
+def test_rename_in_document_updates_index_name(ctx):
+    _app, _db = ctx
+    _seed_plan("d-1", PA)  # index name "Alpha"
+    row = _room_edit(sync.sync_server, PA, lambda m: m.__setitem__("name", "Renamed"))
+    assert row["name"] == "Renamed"
+
+
+def test_non_name_edit_bumps_updated_at_only(ctx):
+    _app, _db = ctx
+    _seed_plan("d-1", PA)
+    before = asyncio.run(plans.get_plan(PA))
+    row = _room_edit(sync.sync_server, PA, lambda m: m.__setitem__("bankAngle", 30))
+    assert row["name"] == "Alpha"
+    assert row["updated_at"] > before["updated_at"]
+
+
+def test_offline_rename_updates_index_when_it_reaches_the_server(ctx):
+    _app, _db = ctx
+    _seed_plan("d-1", PA)
+    # Server already holds the document with its original name.
+    base = Doc()
+    base.get("flightPlan", type=Map)["name"] = "Alpha"
+    asyncio.run(plans.append_update(PA, base.get_update()))
+
+    # A client, offline, renames its copy; the diff reaches the server later.
+    client_doc = Doc()
+    client_doc.apply_update(base.get_update())
+    state_before = client_doc.get_state()
+    client_doc.get("flightPlan", type=Map)["name"] = "Renamed Offline"
+    offline_update = client_doc.get_update(state_before)
+
+    async def deliver():
+        async with sync.sync_server:
+            room = await sync.sync_server.get_room(PA)
+            await room.ydoc_observed.wait()
+            before = (await plans.get_plan(PA))["name"]
+            room.ydoc.apply_update(offline_update)  # the client reconnects
+            await asyncio.sleep(0.4)
+            return before, (await plans.get_plan(PA))["name"]
+
+    before, after = asyncio.run(deliver())
+    assert before == "Alpha"
+    assert after == "Renamed Offline"
+
+
 # --- 4.3 squash ------------------------------------------------------------
 
 def test_squash_reduces_rows_preserving_state(ctx):
@@ -152,16 +229,16 @@ def test_squash_reduces_rows_preserving_state(ctx):
     doc = Doc()
     m = doc.get("data", type=Map)
     m["a"] = 1
-    asyncio.run(plans.append_update("pA", doc.get_update()))
+    asyncio.run(plans.append_update(PA, doc.get_update()))
     m["b"] = 2
-    asyncio.run(plans.append_update("pA", doc.get_update()))
-    assert asyncio.run(plans.count_updates("pA")) == 2
+    asyncio.run(plans.append_update(PA, doc.get_update()))
+    assert asyncio.run(plans.count_updates(PA)) == 2
 
-    asyncio.run(sync.squash_plan("pA"))
+    asyncio.run(sync.squash_plan(PA))
 
-    assert asyncio.run(plans.count_updates("pA")) == 1
+    assert asyncio.run(plans.count_updates(PA)) == 1
     replay = Doc()
-    replay.apply_update(asyncio.run(plans.load_updates("pA"))[0])
+    replay.apply_update(asyncio.run(plans.load_updates(PA))[0])
     rm = replay.get("data", type=Map)
     assert rm["a"] == 1 and rm["b"] == 2
 
@@ -170,6 +247,6 @@ def test_squash_is_noop_for_single_update(ctx):
     _app, _db = ctx
     doc = Doc()
     doc.get("data", type=Map)["a"] = 1
-    asyncio.run(plans.append_update("pA", doc.get_update()))
-    asyncio.run(sync.squash_plan("pA"))
-    assert asyncio.run(plans.count_updates("pA")) == 1
+    asyncio.run(plans.append_update(PA, doc.get_update()))
+    asyncio.run(sync.squash_plan(PA))
+    assert asyncio.run(plans.count_updates(PA)) == 1

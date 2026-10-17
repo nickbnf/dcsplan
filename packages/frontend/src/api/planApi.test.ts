@@ -47,30 +47,14 @@ describe('planApi', () => {
     });
   });
 
-  it('createPlan surfaces 409 as DuplicatePlanNameError', async () => {
+  it('createPlan surfaces a failed registration as an error', async () => {
     mockFetch(409, {});
-    await expect(api.createPlan({ id: 'p2', name: 'Alpha', theatre: 'caucasus' })).rejects.toBeInstanceOf(
-      api.DuplicatePlanNameError,
+    await expect(api.createPlan({ id: 'p2', name: 'Alpha', theatre: 'caucasus' })).rejects.toThrow(
+      /Failed to create plan \(409\)/,
     );
   });
 
-  it('renamePlan PATCHes /api/plans/{id}', async () => {
-    const f = mockFetch(200, { id: 'p1', name: 'Bravo', theatre: 'caucasus', updatedAt: 't', lastEditor: null });
-    const updated = await api.renamePlan('p1', 'Bravo');
-    expect(updated.name).toBe('Bravo');
-    const [url, init] = f.mock.calls[0];
-    expect(url).toBe('/api/plans/p1');
-    expect(init).toMatchObject({ method: 'PATCH' });
-    expect(JSON.parse((init as RequestInit).body as string)).toEqual({ name: 'Bravo' });
-  });
-
-  it('renamePlan surfaces 409 as DuplicatePlanNameError', async () => {
-    mockFetch(409, {});
-    await expect(api.renamePlan('p1', 'Alpha')).rejects.toBeInstanceOf(api.DuplicatePlanNameError);
-  });
-
-  it('renamePlan surfaces 404 as PlanNotFoundError', async () => {
-    mockFetch(404, {});
-    await expect(api.renamePlan('nope', 'X')).rejects.toBeInstanceOf(api.PlanNotFoundError);
+  it('offers no rename call (renames happen in the plan document)', () => {
+    expect((api as Record<string, unknown>).renamePlan).toBeUndefined();
   });
 });

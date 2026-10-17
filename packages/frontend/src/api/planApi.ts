@@ -3,7 +3,8 @@
  *
  * The signed-in tier's Personal space and the plans it holds. Plan *content*
  * syncs over the WebSocket (useYjsFlightPlan); this client manages the index —
- * materialize the space, list, register (defer-commit), rename. All requests are
+ * materialize the space, list, register (defer-commit). Plans are renamed only in
+ * their document; the server keeps the listed name in step. All requests are
  * same-origin so the session cookie is sent automatically.
  */
 import { getApiUrl } from '../config/api';
@@ -19,22 +20,6 @@ export interface PlanSummary {
   theatre: string;
   updatedAt: string;
   lastEditor: string | null;
-}
-
-/** A plan name already used by another plan in the same space (A1). */
-export class DuplicatePlanNameError extends Error {
-  constructor(name?: string) {
-    super(name ? `A plan named "${name}" already exists` : 'A plan with that name already exists');
-    this.name = 'DuplicatePlanNameError';
-  }
-}
-
-/** The plan does not exist in the caller's space. */
-export class PlanNotFoundError extends Error {
-  constructor() {
-    super('Plan not found');
-    this.name = 'PlanNotFoundError';
-  }
 }
 
 async function request(endpoint: string, init?: RequestInit): Promise<Response> {
@@ -66,16 +51,7 @@ export async function createPlan(plan: {
   theatre: string;
 }): Promise<PlanSummary> {
   const resp = await request('plans', { method: 'POST', body: JSON.stringify(plan) });
-  if (resp.status === 409) throw new DuplicatePlanNameError(plan.name);
   if (!resp.ok) throw new Error(`Failed to create plan (${resp.status})`);
   return resp.json();
 }
 
-/** Rename a plan the caller owns. */
-export async function renamePlan(id: string, name: string): Promise<PlanSummary> {
-  const resp = await request(`plans/${id}`, { method: 'PATCH', body: JSON.stringify({ name }) });
-  if (resp.status === 409) throw new DuplicatePlanNameError(name);
-  if (resp.status === 404) throw new PlanNotFoundError();
-  if (!resp.ok) throw new Error(`Failed to rename plan (${resp.status})`);
-  return resp.json();
-}

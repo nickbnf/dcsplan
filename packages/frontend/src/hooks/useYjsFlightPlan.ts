@@ -92,6 +92,8 @@ export interface UseYjsFlightPlanOptions {
 export type UseYjsFlightPlanResult = {
   yDoc: Y.Doc;
   flightPlan: FlightPlan | null;
+  /** The plan id `flightPlan` belongs to; lags `planId` for a render while switching. */
+  loadedPlanId: string | null;
   isReady: boolean;
   /** True while a synced plan is still catching up with the server (plan-sync). */
   isSyncing: boolean;
@@ -111,6 +113,7 @@ export function useYjsFlightPlan(
   const [flightPlan, setFlightPlan] = useState<FlightPlan | null>(null);
   const [isReady, setIsReady] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [loadedPlanId, setLoadedPlanId] = useState<string | null>(null);
   const yDocRef = useRef<Y.Doc | null>(null);
   // Read the latest values at open time without re-running the doc effect.
   const seedRef = useRef<FlightPlan | undefined>(seedPlan);
@@ -128,6 +131,7 @@ export function useYjsFlightPlan(
     yDocRef.current = yDoc;
     setIsReady(false);
     setFlightPlan(null);
+    setLoadedPlanId(null);
     const openSynced = syncAtOpenRef.current;
     setIsSyncing(openSynced);
 
@@ -139,6 +143,7 @@ export function useYjsFlightPlan(
       if (cancelled || subscribed) return;
       subscribed = true;
       setFlightPlan(snapshotFromYDoc(yDoc));
+      setLoadedPlanId(planId);
       setIsReady(true);
       yDoc.on('update', () => {
         if (!cancelled) setFlightPlan(snapshotFromYDoc(yDoc));
@@ -188,5 +193,5 @@ export function useYjsFlightPlan(
     return () => { ws.destroy(); };
   }, [planId, sync, syncUrl]);
 
-  return { yDoc: yDocRef.current!, flightPlan, isReady, isSyncing };
+  return { yDoc: yDocRef.current!, flightPlan, loadedPlanId, isReady, isSyncing };
 }

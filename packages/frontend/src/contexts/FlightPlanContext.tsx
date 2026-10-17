@@ -17,6 +17,8 @@ interface FlightPlanContextValue {
   requestFitToFlightPlan: () => void;
   /** True while a synced plan is catching up with the server (plan-sync). */
   isSyncing: boolean;
+  /** The id of the plan `flightPlan` belongs to. */
+  flightPlanId: string;
 }
 
 const FlightPlanContext = createContext<FlightPlanContextValue | null>(null);
@@ -25,7 +27,7 @@ const omitAttackPlanning = ({ attackPlanning: _, ...rest }: FlightPlan) => rest;
 
 export const FlightPlanProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const selection = usePlanSelection();
-  const { yDoc, flightPlan, isReady, isSyncing } = useYjsFlightPlan(
+  const { yDoc, flightPlan, loadedPlanId, isReady, isSyncing } = useYjsFlightPlan(
     selection.activePlanId,
     { sync: selection.sync, seedPlan: selection.isDraft ? selection.draftSeed ?? undefined : undefined },
   );
@@ -33,13 +35,30 @@ export const FlightPlanProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const flightPlanRef = useRef<FlightPlan | null>(null);
   flightPlanRef.current = flightPlan;
 
-  // Defer-commit (AD-15): a draft joins the space on its first waypoint.
-  const pointsCount = flightPlan?.points.length ?? 0;
+  // Defer-commit (AD-15, unify-plan-name D8): a draft joins the space on its
+  // first user edit of any kind, and each later edit retries a commit that has
+  // not landed. Only the draft's own document counts — for a render after
+  // switching, `flightPlan` still holds the previously loaded plan — and only
+  // user transactions count, not the seed (`migration`) or the IndexedDB load.
+  const draftLoaded = selection.isDraft && loadedPlanId === selection.activePlanId;
+  const [draftEdits, setDraftEdits] = useState<{ planId: string | null; count: number }>({ planId: null, count: 0 });
   useEffect(() => {
-    if (selection.isDraft && pointsCount > 0) {
-      void selection.commitDraft();
+    if (!draftLoaded || !yDoc) return;
+    const planId = selection.activePlanId;
+    const onUpdate = (_update: Uint8Array, origin: unknown) => {
+      const userEdit = origin === 'local' || origin === 'replace' || origin instanceof Y.UndoManager;
+      if (!userEdit) return;
+      setDraftEdits((e) => ({ planId, count: e.planId === planId ? e.count + 1 : 1 }));
+    };
+    yDoc.on('update', onUpdate);
+    return () => yDoc.off('update', onUpdate);
+  }, [draftLoaded, yDoc, selection.activePlanId]);
+  const editCount = draftEdits.planId === selection.activePlanId ? draftEdits.count : 0;
+  useEffect(() => {
+    if (draftLoaded && editCount > 0) {
+      void selection.commitDraft(flightPlanRef.current?.name);
     }
-  }, [selection.isDraft, pointsCount, selection.commitDraft]);
+  }, [draftLoaded, editCount, selection.commitDraft]);
 
   const undoManagerRef = useRef<Y.UndoManager | null>(null);
   const [canUndo, setCanUndo] = useState(false);
@@ -131,7 +150,7 @@ export const FlightPlanProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     undoManagerRef.current?.redo();
   }, []);
 
-  if (!isReady || !flightPlan) return null;
+  if (!isReady || !flightPlan || !loadedPlanId) return null;
 
   return (
     <FlightPlanContext.Provider value={{
@@ -145,6 +164,7 @@ export const FlightPlanProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       fitToFlightPlanTrigger: fitTrigger,
       requestFitToFlightPlan,
       isSyncing,
+      flightPlanId: loadedPlanId,
     }}>
       {children}
     </FlightPlanContext.Provider>

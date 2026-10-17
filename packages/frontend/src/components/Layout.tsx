@@ -5,15 +5,11 @@ import { usePerformance } from '../contexts/PerformanceContext';
 import { useAuth } from '../contexts/AuthContext';
 import { usePlanSelection } from '../contexts/PlanSelectionContext';
 import { AuthMenu } from './AuthMenu';
+import { planPath } from '../utils/planAddress';
 
-// Plan-scoped surfaces follow the active plan; the space-scoped surface (library)
-// does not (AD-15). The clusters are separated by a divider so the dependency is
-// visible rather than surprising.
-const planTabs = [
-  { label: 'NAV', to: '/' },
-  { label: 'PERF', to: '/performance' },
-  { label: 'ATTACK', to: '/attack' },
-];
+// Plan-scoped surfaces follow the active plan and live under its address
+// (AD-16); the space-scoped surface (library) does not (AD-15). The clusters are
+// separated by a divider so the dependency is visible rather than surprising.
 const spaceTabs = [{ label: 'LIBRARY', to: '/library' }];
 
 const tabClass = ({ isActive }: { isActive: boolean }) =>
@@ -44,17 +40,33 @@ const RegimeConsistencyGuard: React.FC = () => {
 
 const Layout: React.FC = () => {
   const { status } = useAuth();
-  const { atHome, isLoadingSelection, activePlanName } = usePlanSelection();
+  const { atHome, isResolving, requestUnresolved, activePlanId, hasActivePlan, commitError } = usePlanSelection();
+  const { flightPlan, flightPlanId } = useFlightPlan();
   const location = useLocation();
   const onHome = location.pathname === '/plans';
+  const signedIn = status === 'authenticated';
 
-  // Routing (AD-15): anonymous has no Home; a signed-in user with no active plan
-  // belongs on Home.
-  if (status !== 'authenticated' && onHome) return <Navigate to="/" replace />;
-  if (atHome && !onHome) return <Navigate to="/plans" replace />;
+  // Routing (AD-15, AD-16). Nothing is judged while auth or the plan list loads.
+  if (!isResolving) {
+    // An address that does not resolve: signed-in → Home, anonymous → their plan.
+    if (requestUnresolved) return <Navigate to={signedIn ? '/plans' : '/p/local'} replace />;
+    // Anonymous has no Home.
+    if (!signedIn && onHome) return <Navigate to="/" replace />;
+    // A signed-in user with no plan to open belongs on Home.
+    if (atHome && !onHome) return <Navigate to="/plans" replace />;
+  }
+
+  // Tab links follow the active plan's address; the name is only trusted once
+  // the loaded document is the active plan (otherwise the slug is corrected later).
+  const planName = flightPlanId === activePlanId ? flightPlan.name : '';
+  const planTabs = [
+    { label: 'NAV', to: planPath(activePlanId, planName), end: true },
+    { label: 'PERF', to: planPath(activePlanId, planName, 'perf'), end: false },
+    { label: 'ATTACK', to: planPath(activePlanId, planName, 'attack'), end: false },
+  ];
 
   const showEditingTabs = !onHome;
-  const showBreadcrumb = status === 'authenticated' && !onHome && !!activePlanName;
+  const showBreadcrumb = signedIn && !onHome && hasActivePlan && !!planName;
 
   return (
     <div className="h-screen w-screen flex flex-col overflow-hidden">
@@ -66,9 +78,9 @@ const Layout: React.FC = () => {
             <Link
               to="/plans"
               className="flex items-center px-3 h-full font-aero-label text-sm text-gray-600 hover:text-avio-primary truncate max-w-[12rem]"
-              title={activePlanName ?? undefined}
+              title={planName}
             >
-              ‹ {activePlanName}
+              ‹ {planName}
             </Link>
           )}
           {onHome && (
@@ -77,8 +89,8 @@ const Layout: React.FC = () => {
           {showEditingTabs && (
             <div className="flex h-full items-center">
               {/* Plan-scoped cluster */}
-              {planTabs.map(({ label, to }) => (
-                <NavLink key={to} to={to} end={to === '/'} className={tabClass}>{label}</NavLink>
+              {planTabs.map(({ label, to, end }) => (
+                <NavLink key={label} to={to} end={end} className={tabClass}>{label}</NavLink>
               ))}
               {/* Divider: plan-scoped | space-scoped */}
               <span className="mx-2 h-5 w-px bg-gray-300" aria-hidden />
@@ -99,9 +111,16 @@ const Layout: React.FC = () => {
         </div>
       </div>
 
+      {/* A new plan whose save to the account failed (kept, retried on reconnect). */}
+      {commitError && (
+        <div role="status" className="shrink-0 px-4 py-1.5 text-xs font-aero-label bg-amber-50 text-amber-800 border-b border-amber-200">
+          {commitError}
+        </div>
+      )}
+
       {/* Screen content */}
       <div className="flex flex-1 overflow-hidden">
-        {isLoadingSelection ? (
+        {isResolving ? (
           <div className="flex-1 flex items-center justify-center text-sm text-gray-500 font-aero-label">
             Loading your plans…
           </div>

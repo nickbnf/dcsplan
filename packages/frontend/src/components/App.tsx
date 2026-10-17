@@ -8,11 +8,36 @@ import AttackPlanningPage from './AttackPlanningPage';
 import { TheatreLibraryPage } from './TheatreLibraryPage';
 import PlansHomePage from './PlansHomePage';
 import { About } from './About';
+import { PlanRedirect, PlanRoute } from './PlanRoutes';
 import { FlightPlanProvider } from '../contexts/FlightPlanContext';
 import { LibraryProvider } from '../contexts/LibraryContext';
 import { PerformanceProvider } from '../contexts/PerformanceContext';
 import { AuthProvider } from '../contexts/AuthContext';
 import { PlanSelectionProvider } from '../contexts/PlanSelectionContext';
+
+/**
+ * The route table (unify-plan-name D4). Plan-scoped views live under a plan's
+ * address `/p/:id/:slug`; the library and the Flight Plans home do not. The old
+ * flat routes redirect to the active plan's address.
+ */
+export const AppRoutes: React.FC = () => (
+  <Routes>
+    <Route element={<PlanSelectionProvider><PerformanceProvider><FlightPlanProvider><LibraryProvider><Layout /></LibraryProvider></FlightPlanProvider></PerformanceProvider></PlanSelectionProvider>}>
+      <Route path="/" element={<PlanRedirect />} />
+      <Route path="/performance" element={<PlanRedirect tab="perf" />} />
+      <Route path="/attack" element={<PlanRedirect tab="attack" />} />
+      <Route path="/plans" element={<PlansHomePage />} />
+      <Route path="/library" element={<TheatreLibraryPage />} />
+      <Route path="/p/:id" element={<PlanRedirect />} />
+      <Route path="/p/:id/:slug" element={<PlanRoute />}>
+        <Route index element={<PlannerApp />} />
+        <Route path="perf" element={<PerformancePage />} />
+        <Route path="attack" element={<AttackPlanningPage />} />
+      </Route>
+    </Route>
+    <Route path="/about" element={<About />} />
+  </Routes>
+);
 
 const App: React.FC = () => {
   return (
@@ -24,16 +49,7 @@ const App: React.FC = () => {
           content="Plan missions for the DCS flight simulator. Generate detailed kneeboards for navigation, especially for aircraft with limited onboard systems."
         />
       </Helmet>
-      <Routes>
-        <Route element={<PlanSelectionProvider><PerformanceProvider><FlightPlanProvider><LibraryProvider><Layout /></LibraryProvider></FlightPlanProvider></PerformanceProvider></PlanSelectionProvider>}>
-          <Route path="/" element={<PlannerApp />} />
-          <Route path="/plans" element={<PlansHomePage />} />
-          <Route path="/performance" element={<PerformancePage />} />
-          <Route path="/attack" element={<AttackPlanningPage />} />
-          <Route path="/library" element={<TheatreLibraryPage />} />
-        </Route>
-        <Route path="/about" element={<About />} />
-      </Routes>
+      <AppRoutes />
     </AuthProvider>
   );
 };

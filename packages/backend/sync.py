@@ -5,11 +5,15 @@ keyed by `planId`. The socket is authorized by the session cookie against the
 plan's owning space. Updates are persisted to the `plan_updates` log (AD-13) and
 the room's doc is rehydrated from that log on first open. Persistence creates no
 finalized version (AD-5) — versioning is a later change.
+
+The plan's name lives only inside its document; on every persisted update the
+store keeps the `plans` index in step (name on change, `updated_at` always), so
+renames made offline reach the Flight Plans list on reconnect (unify-plan-name D2).
 """
 from contextlib import asynccontextmanager
-from typing import AsyncIterator
+from typing import AsyncIterator, Optional
 
-from pycrdt import Doc
+from pycrdt import Doc, Map
 from pycrdt.store import BaseYStore
 from pycrdt.websocket import WebsocketServer, YRoom
 from pycrdt.websocket.websocket import HttpxWebsocket
@@ -19,16 +23,36 @@ import plans
 import spaces
 
 
-class PlanYStore(BaseYStore):
-    """A YStore backed by the `plan_updates` log for one plan (room)."""
+def doc_plan_name(ydoc: Doc) -> Optional[str]:
+    """The plan name held in a flight-plan document (root map `flightPlan`)."""
+    name = ydoc.get("flightPlan", type=Map).get("name")
+    return name if isinstance(name, str) else None
 
-    def __init__(self, plan_id: str, metadata_callback=None, log=None):
+
+class PlanYStore(BaseYStore):
+    """A YStore backed by the `plan_updates` log for one plan (room).
+
+    Given the room's `ydoc`, it also keeps the plan index in step with the
+    document: `write` runs after the update has been applied to the server doc.
+    """
+
+    def __init__(self, plan_id: str, ydoc: Optional[Doc] = None, metadata_callback=None, log=None):
         self.plan_id = plan_id
+        self.ydoc = ydoc
         self.metadata_callback = metadata_callback
         self.log = log
+        self._last_name = doc_plan_name(ydoc) if ydoc is not None else None
 
     async def write(self, data: bytes) -> None:
         await plans.append_update(self.plan_id, data)
+        if self.ydoc is None:
+            return
+        name = doc_plan_name(self.ydoc)
+        if name is not None and name != self._last_name:
+            await plans.touch_plan(self.plan_id, name=name)
+            self._last_name = name
+        else:
+            await plans.touch_plan(self.plan_id)
 
     async def read(self) -> AsyncIterator[tuple[bytes, bytes, float]]:
         for update in await plans.load_updates(self.plan_id):
@@ -56,7 +80,7 @@ class PlanSyncServer(WebsocketServer):
             self.rooms[name] = YRoom(
                 ready=self.rooms_ready,
                 ydoc=ydoc,
-                ystore=PlanYStore(name),
+                ystore=PlanYStore(name, ydoc),
                 exception_handler=self.exception_handler,
                 log=self.log,
             )
@@ -79,6 +103,8 @@ async def lifespan_server():
 async def _authorize(websocket: WebSocket, plan_id: str) -> bool:
     """A socket is allowed only if the session user is a member of the plan's
     owning space (AD-1). Anonymous callers and unknown/foreign plans are denied."""
+    if not plans.is_plan_id(plan_id):  # reject before any DB lookup (AD-16)
+        return False
     user_id = websocket.session.get("user_id")
     if not user_id:
         return False

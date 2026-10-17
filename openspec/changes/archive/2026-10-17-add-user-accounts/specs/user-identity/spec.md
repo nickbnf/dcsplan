@@ -45,7 +45,7 @@ While signed in, the system SHALL keep the user signed in across page reloads an
 
 ### Requirement: Log out
 
-A signed-in user SHALL be able to log out, returning to the anonymous state. Logging out SHALL NOT delete or modify the local flight plan, theatre library, or performance profile held on the device.
+A signed-in user SHALL be able to log out, returning to the anonymous state. Logging out SHALL NOT delete or modify the anonymous local flight plan, theatre library, or performance profile held on the device. (Cached copies of synced plans are cleared on logout; see `plan-sync`.)
 
 #### Scenario: Logout returns to anonymous
 
@@ -55,7 +55,7 @@ A signed-in user SHALL be able to log out, returning to the anonymous state. Log
 #### Scenario: Logout preserves local data
 
 - **WHEN** a user logs out
-- **THEN** their local flight plan, theatre library, and performance profile remain intact and usable
+- **THEN** their anonymous local flight plan, theatre library, and performance profile remain intact and usable
 
 ### Requirement: Anonymous tier remains fully functional
 

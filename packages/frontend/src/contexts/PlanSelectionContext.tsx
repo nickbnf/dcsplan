@@ -7,23 +7,26 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import { matchPath, useLocation } from 'react-router-dom';
 import { useAuth } from './AuthContext';
 import type { FlightPlan } from '../types/flightPlan';
 import { flightPlanUtils } from '../utils/flightPlanUtils';
 import { ANON_PLAN_ID, clearPlanStore } from '../hooks/useYjsFlightPlan';
+import { generatePlanId } from '../utils/planId';
 import {
   createPlan as apiCreatePlan,
   getMySpace,
   listPlans as apiListPlans,
-  renamePlan as apiRenamePlan,
   type PlanSummary,
 } from '../api/planApi';
 
 /**
- * The plan-selection layer (capability: space; AD-1, AD-15). It owns which
- * space and plan are active, the signed-in plan list, and the draft lifecycle
- * (defer-commit), and derives the `(planId, sync)` the flight-plan Y.Doc opens
- * with. Anonymous is space-less and always on the single local plan (AD-9).
+ * The plan-selection layer (capability: space, plan-addressing; AD-1, AD-15, AD-16).
+ *
+ * The URL is the active selection: `/p/:id/…` names the plan to open, and it is
+ * resolved during render so the flight-plan Y.Doc opens the right plan first
+ * (unify-plan-name D3). Off a plan's address (`/plans`, `/library`) the last
+ * opened plan stays active. Anonymous users always have their `local` plan.
  */
 
 const SELECTION_KEY = 'dcsplan-active-selection';
@@ -33,41 +36,44 @@ interface StoredSelection {
   planId: string;
 }
 
-interface DraftMeta {
+interface Draft {
+  id: string;
   name: string;
   theatre: string;
+  seed: FlightPlan;
+  /** A commit was attempted (the draft has edits): never discard it. */
+  pendingCommit: boolean;
 }
 
 export interface PlanSelectionValue {
-  /** The plan id the flight-plan Y.Doc should open (ANON or a uuid). */
+  /** The plan id the flight-plan Y.Doc should open (`local` or a short id). */
   activePlanId: string;
+  /** A real plan is active (always true for anonymous). */
+  hasActivePlan: boolean;
   /** Attach the WebSocket provider for this plan (signed-in, committed, not anon). */
   sync: boolean;
   /** The active plan is an uncommitted local draft. */
   isDraft: boolean;
-  /** Signed-in with no real plan selected — the app should show Home. */
+  /** Signed-in with no plan to open — the app should show Home. */
   atHome: boolean;
-  /** Loading the space + plan list right after sign-in (avoids a Home flash). */
-  isLoadingSelection: boolean;
-  /** Display name of the active plan (draft or committed), or null when anonymous. */
-  activePlanName: string | null;
+  /** Auth or the signed-in plan list is still loading; addresses are not judged yet. */
+  isResolving: boolean;
+  /** The id in the current `/p/:id/…` address, if any. */
+  requestedPlanId: string | null;
+  /** The current address names a plan that does not resolve (after resolving). */
+  requestUnresolved: boolean;
   /** Initial plan to seed the active draft's store with (on its chosen theatre). */
   draftSeed: FlightPlan | null;
   spaceId: string | null;
   plans: PlanSummary[];
-  /** Create a local draft (no server row yet) and make it active. */
-  newDraft: (theatre: string, name?: string) => void;
-  /** Register the active draft in the space (called on its first waypoint). */
-  commitDraft: () => Promise<void>;
-  /** Discard the active draft and clear its local store. */
-  abandonDraft: () => Promise<void>;
-  /** Make an existing committed plan active. */
-  selectPlan: (planId: string) => void;
-  /** Rename a committed plan (A1 unique within the space). */
-  renamePlan: (planId: string, name: string) => Promise<void>;
+  /** Create a local draft (no server row yet); returns its id so the caller can open its address. */
+  newDraft: (theatre: string, name?: string) => string;
+  /** Register the draft in the space (called on its first edit, and on each later
+   *  edit until it lands). `name` is the draft's current name, if known. */
+  commitDraft: (name?: string) => Promise<void>;
+  /** Why the current draft is not saved to the account yet, if a commit failed. */
+  commitError: string | null;
   refreshPlans: () => Promise<PlanSummary[]>;
-  /** Return to Home (clear the active selection without a plan). */
-  goHome: () => void;
 }
 
 const PlanSelectionContext = createContext<PlanSelectionValue | null>(null);
@@ -90,17 +96,27 @@ function writeStored(sel: StoredSelection | null) {
   }
 }
 
+/** The plan id named by a `/p/:id/…` address, if any. */
+export function planIdFromPath(pathname: string): string | null {
+  const m = matchPath('/p/:id/*', pathname) ?? matchPath('/p/:id', pathname);
+  return m?.params.id ?? null;
+}
+
 export const PlanSelectionProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { status } = useAuth();
+  const { pathname } = useLocation();
+  const requestedPlanId = planIdFromPath(pathname);
 
   const [spaceId, setSpaceId] = useState<string | null>(null);
   const [plans, setPlans] = useState<PlanSummary[]>([]);
-  const [activePlanId, setActivePlanId] = useState<string>(ANON_PLAN_ID);
-  const [isDraft, setIsDraft] = useState(false);
-  const [isLoadingSelection, setIsLoadingSelection] = useState(false);
-  const [draftName, setDraftName] = useState<string | null>(null);
-  const [draftSeed, setDraftSeed] = useState<FlightPlan | null>(null);
-  const draftMetaRef = useRef<DraftMeta | null>(null);
+  const [listLoaded, setListLoaded] = useState(false);
+  const [draft, setDraft] = useState<Draft | null>(null);
+  const draftRef = useRef<Draft | null>(null);
+  draftRef.current = draft;
+  const [commitError, setCommitError] = useState<string | null>(null);
+  const commitInFlight = useRef(false);
+  // The plan last opened at its address, so space-scoped routes keep it active.
+  const [lastOpenedId, setLastOpenedId] = useState<string | null>(() => readStored()?.planId ?? null);
   // Committed plan ids we have seen, so logout can clear their local stores.
   const knownPlanIds = useRef<Set<string>>(new Set());
 
@@ -111,32 +127,21 @@ export const PlanSelectionProvider: React.FC<{ children: React.ReactNode }> = ({
     return list;
   }, []);
 
-  // Load space + plans and restore the active selection when signing in.
+  // Load the space + plan list when signing in.
   useEffect(() => {
     if (status !== 'authenticated') return;
     let cancelled = false;
-    setIsLoadingSelection(true);
+    setListLoaded(false);
     (async () => {
       try {
         const space = await getMySpace();
         if (cancelled) return;
         setSpaceId(space.id);
-        const list = await refreshPlans();
-        if (cancelled) return;
-        const stored = readStored();
-        if (stored && list.some((p) => p.id === stored.planId)) {
-          setActivePlanId(stored.planId);
-          setIsDraft(false);
-        } else {
-          // Unresolvable or no stored selection → Home (no active plan).
-          setActivePlanId(ANON_PLAN_ID);
-          setIsDraft(false);
-          writeStored(null);
-        }
+        await refreshPlans();
       } catch {
-        /* backend unreachable — stay on the local plan */
+        /* backend unreachable — addresses will not resolve; the app falls back to Home */
       } finally {
-        if (!cancelled) setIsLoadingSelection(false);
+        if (!cancelled) setListLoaded(true);
       }
     })();
     return () => {
@@ -153,115 +158,151 @@ export const PlanSelectionProvider: React.FC<{ children: React.ReactNode }> = ({
       void Promise.all(ids.map((id) => clearPlanStore(id)));
       setSpaceId(null);
       setPlans([]);
-      setActivePlanId(ANON_PLAN_ID);
-      setIsDraft(false);
-      draftMetaRef.current = null;
-      setDraftSeed(null);
+      setListLoaded(false);
+      setDraft(null);
+      setCommitError(null);
+      setLastOpenedId(null);
       writeStored(null);
     }
     prevStatus.current = status;
   }, [status]);
 
+  // --- Resolution (D3), during render ---------------------------------------
+  const signedIn = status === 'authenticated';
+  const isResolving = status === 'loading' || (signedIn && !listLoaded);
+  const inSpace = (id: string | null) => !!id && plans.some((p) => p.id === id);
+  const isCurrentDraft = (id: string | null) => !!id && draft?.id === id;
+
+  let resolvedId: string | null = null;
+  let requestUnresolved = false;
+  if (!signedIn) {
+    resolvedId = ANON_PLAN_ID;
+    requestUnresolved = !isResolving && requestedPlanId !== null && requestedPlanId !== ANON_PLAN_ID;
+  } else if (!isResolving) {
+    if (requestedPlanId !== null) {
+      if (isCurrentDraft(requestedPlanId) || inSpace(requestedPlanId)) resolvedId = requestedPlanId;
+      else requestUnresolved = true;
+    } else if (isCurrentDraft(lastOpenedId) || inSpace(lastOpenedId)) {
+      resolvedId = lastOpenedId;
+    }
+  }
+
+  const activePlanId = resolvedId ?? ANON_PLAN_ID;
+  const isDraft = signedIn && resolvedId !== null && isCurrentDraft(resolvedId);
+  const sync = signedIn && resolvedId !== null && !isDraft;
+  const hasActivePlan = !signedIn || resolvedId !== null;
+  const atHome = signedIn && !isResolving && resolvedId === null;
+
+  // Remember the plan opened at its address (persist committed plans only).
+  useEffect(() => {
+    if (!signedIn || requestedPlanId === null || resolvedId !== requestedPlanId) return;
+    setLastOpenedId(requestedPlanId);
+    if (!isDraft && spaceId) writeStored({ spaceId, planId: requestedPlanId });
+  }, [signedIn, requestedPlanId, resolvedId, isDraft, spaceId]);
+
+  // Leaving an uncommitted draft (another plan's address, or Home) abandons it:
+  // it never reached the space, so only its local store needs clearing. Only a
+  // draft whose address has been visited can be left — `newDraft` is called from
+  // Home just before navigating to the draft.
+  const draftVisited = useRef<string | null>(null);
+  useEffect(() => {
+    if (!draft || draft.pendingCommit) return; // a draft with edits is never discarded
+    if (requestedPlanId === draft.id) {
+      draftVisited.current = draft.id;
+      return;
+    }
+    if (draftVisited.current !== draft.id) return;
+    const leftForAnotherPlan = requestedPlanId !== null;
+    if (leftForAnotherPlan || pathname === '/plans') {
+      const id = draft.id;
+      setDraft(null);
+      setLastOpenedId((prev) => (prev === id ? null : prev));
+      void clearPlanStore(id);
+    }
+  }, [draft, requestedPlanId, pathname]);
+
   const newDraft = useCallback((theatre: string, name = 'New flight plan') => {
-    const id = crypto.randomUUID();
-    draftMetaRef.current = { name, theatre };
-    setDraftName(name);
-    setDraftSeed({ ...flightPlanUtils.newFlightPlan(theatre), name });
-    setActivePlanId(id);
-    setIsDraft(true);
-    // A draft is local-only until its first waypoint; don't persist it as the
-    // restorable selection (it isn't in the space list yet).
-    writeStored(null);
+    const id = generatePlanId();
+    setDraft({ id, name, theatre, seed: { ...flightPlanUtils.newFlightPlan(theatre), name }, pendingCommit: false });
+    setCommitError(null);
+    return id;
   }, []);
 
-  const commitDraft = useCallback(async () => {
-    if (!isDraft || !draftMetaRef.current) return;
-    const meta = draftMetaRef.current;
-    await apiCreatePlan({ id: activePlanId, name: meta.name, theatre: meta.theatre });
-    knownPlanIds.current.add(activePlanId);
-    draftMetaRef.current = null;
-    setDraftName(null);
-    setDraftSeed(null);
-    setIsDraft(false); // flips `sync` on → the Y.Doc attaches its provider
-    if (spaceId) writeStored({ spaceId, planId: activePlanId });
-    await refreshPlans();
-  }, [isDraft, activePlanId, spaceId, refreshPlans]);
+  const commitDraft = useCallback(
+    async (name?: string) => {
+      const d = draftRef.current;
+      if (!d || commitInFlight.current) return;
+      commitInFlight.current = true;
+      // From now on the draft has edits: it is kept even if the commit fails.
+      setDraft((prev) => (prev && prev.id === d.id ? { ...prev, pendingCommit: true } : prev));
 
-  const abandonDraft = useCallback(async () => {
-    if (!isDraft) return;
-    const draftId = activePlanId;
-    draftMetaRef.current = null;
-    setDraftName(null);
-    setDraftSeed(null);
-    setIsDraft(false);
-    setActivePlanId(ANON_PLAN_ID);
-    writeStored(null);
-    await clearPlanStore(draftId);
-  }, [isDraft, activePlanId]);
+      const landed = (created: PlanSummary) => {
+        knownPlanIds.current.add(d.id);
+        // Add it to the list in the same render that clears the draft, so the
+        // address never looks unresolved in between.
+        setPlans((prev) => [created, ...prev.filter((p) => p.id !== created.id)]);
+        setDraft((prev) => (prev && prev.id === d.id ? null : prev));
+        setCommitError(null);
+        if (spaceId) writeStored({ spaceId, planId: d.id });
+        void refreshPlans();
+      };
 
-  const selectPlan = useCallback(
-    (planId: string) => {
-      setActivePlanId(planId);
-      setIsDraft(false);
-      setDraftSeed(null);
-      knownPlanIds.current.add(planId);
-      if (spaceId) writeStored({ spaceId, planId });
+      try {
+        landed(await apiCreatePlan({ id: d.id, name: name || d.name, theatre: d.theatre }));
+      } catch {
+        // An earlier attempt may have landed with its response lost (409):
+        // reconcile with the server's list before reporting a failure.
+        try {
+          const found = (await refreshPlans()).find((p) => p.id === d.id);
+          if (found) {
+            landed(found);
+            return;
+          }
+        } catch {
+          /* still unreachable */
+        }
+        setCommitError(
+          'This new plan is not saved to your account yet. It will be retried when you are back online.',
+        );
+      } finally {
+        commitInFlight.current = false;
+      }
     },
-    [spaceId],
+    [spaceId, refreshPlans],
   );
 
-  const renamePlan = useCallback(
-    async (planId: string, name: string) => {
-      await apiRenamePlan(planId, name);
-      await refreshPlans();
-    },
-    [refreshPlans],
-  );
+  // Retry a failed commit when connectivity returns (the next edit retries too).
+  const pendingDraft = draft?.pendingCommit ? draft.id : null;
+  useEffect(() => {
+    if (!pendingDraft) return;
+    const onOnline = () => void commitDraft();
+    window.addEventListener('online', onOnline);
+    return () => window.removeEventListener('online', onOnline);
+  }, [pendingDraft, commitDraft]);
 
-  const goHome = useCallback(() => {
-    setActivePlanId(ANON_PLAN_ID);
-    setIsDraft(false);
-    draftMetaRef.current = null;
-    setDraftSeed(null);
-    writeStored(null);
-  }, []);
-
-  const sync =
-    status === 'authenticated' && activePlanId !== ANON_PLAN_ID && !isDraft;
-  const atHome =
-    status === 'authenticated' &&
-    !isLoadingSelection &&
-    activePlanId === ANON_PLAN_ID &&
-    !isDraft;
-
-  const activePlanName = useMemo(() => {
-    if (activePlanId === ANON_PLAN_ID) return null;
-    if (isDraft) return draftName;
-    return plans.find((p) => p.id === activePlanId)?.name ?? null;
-  }, [activePlanId, isDraft, draftName, plans]);
+  const draftSeed = isDraft ? draft?.seed ?? null : null;
 
   const value = useMemo<PlanSelectionValue>(
     () => ({
       activePlanId,
+      hasActivePlan,
       sync,
       isDraft,
       atHome,
-      isLoadingSelection,
-      activePlanName,
+      isResolving,
+      requestedPlanId,
+      requestUnresolved,
       draftSeed,
       spaceId,
       plans,
       newDraft,
       commitDraft,
-      abandonDraft,
-      selectPlan,
-      renamePlan,
+      commitError,
       refreshPlans,
-      goHome,
     }),
     [
-      activePlanId, sync, isDraft, atHome, isLoadingSelection, activePlanName, draftSeed, spaceId, plans,
-      newDraft, commitDraft, abandonDraft, selectPlan, renamePlan, refreshPlans, goHome,
+      activePlanId, hasActivePlan, sync, isDraft, atHome, isResolving, requestedPlanId,
+      requestUnresolved, draftSeed, spaceId, plans, newDraft, commitDraft, commitError, refreshPlans,
     ],
   );
 
@@ -270,21 +311,20 @@ export const PlanSelectionProvider: React.FC<{ children: React.ReactNode }> = ({
 
 const ANON_SELECTION: PlanSelectionValue = {
   activePlanId: ANON_PLAN_ID,
+  hasActivePlan: true,
   sync: false,
   isDraft: false,
   atHome: false,
-  isLoadingSelection: false,
-  activePlanName: null,
+  isResolving: false,
+  requestedPlanId: null,
+  requestUnresolved: false,
   draftSeed: null,
   spaceId: null,
   plans: [],
-  newDraft: () => {},
+  newDraft: () => ANON_PLAN_ID,
   commitDraft: async () => {},
-  abandonDraft: async () => {},
-  selectPlan: () => {},
-  renamePlan: async () => {},
+  commitError: null,
   refreshPlans: async () => [],
-  goHome: () => {},
 };
 
 /**

@@ -6,6 +6,8 @@ path.
 """
 import asyncio
 
+P1, P2, PD = "AAAAAAAAAAA1", "AAAAAAAAAAA2", "AAAAAAAAAAAD"
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -74,21 +76,21 @@ def test_list_returns_only_callers_plans_and_excludes_deleted(ctx):
 
     login_as("d-2")
     client.get("/spaces/me")
-    client.post("/plans", json={"id": "p2", "name": "Other", "theatre": "nevada"})
+    client.post("/plans", json={"id": P2, "name": "Other", "theatre": "nevada"})
 
     login_as("d-1")
     client.get("/spaces/me")
-    client.post("/plans", json={"id": "p1", "name": "Mine", "theatre": "caucasus"})
-    client.post("/plans", json={"id": "pd", "name": "Doomed", "theatre": "caucasus"})
+    client.post("/plans", json={"id": P1, "name": "Mine", "theatre": "caucasus"})
+    client.post("/plans", json={"id": PD, "name": "Doomed", "theatre": "caucasus"})
 
     async def soft_delete():
         async with connect() as c:
-            await c.execute("UPDATE plans SET deleted_at = 't' WHERE id = 'pd'")
+            await c.execute("UPDATE plans SET deleted_at = 't' WHERE id = 'AAAAAAAAAAAD'")
 
     asyncio.run(soft_delete())
 
     listed = client.get("/plans").json()
-    assert [p["id"] for p in listed] == ["p1"]  # not p2 (other user), not pd (deleted)
+    assert [p["id"] for p in listed] == [P1]  # not P2 (other user), not PD (deleted)
     assert listed[0]["name"] == "Mine" and listed[0]["theatre"] == "caucasus"
 
 
@@ -98,42 +100,41 @@ def test_create_plan_success(ctx):
     app, client, login_as = ctx
     login_as("d-1")
     client.get("/spaces/me")
-    resp = client.post("/plans", json={"id": "p1", "name": "Alpha", "theatre": "caucasus"})
+    resp = client.post("/plans", json={"id": P1, "name": "Alpha", "theatre": "caucasus"})
     assert resp.status_code == 201
-    assert resp.json()["id"] == "p1"
+    assert resp.json()["id"] == P1
 
 
-def test_create_plan_duplicate_name_409(ctx):
+def test_duplicate_names_are_allowed(ctx):
     app, client, login_as = ctx
     login_as("d-1")
     client.get("/spaces/me")
-    client.post("/plans", json={"id": "p1", "name": "Alpha", "theatre": "caucasus"})
-    dup = client.post("/plans", json={"id": "p2", "name": "Alpha", "theatre": "caucasus"})
+    assert client.post("/plans", json={"id": P1, "name": "Alpha", "theatre": "caucasus"}).status_code == 201
+    assert client.post("/plans", json={"id": P2, "name": "Alpha", "theatre": "caucasus"}).status_code == 201
+    assert [p["name"] for p in client.get("/plans").json()].count("Alpha") == 2
+
+
+def test_duplicate_id_is_409(ctx):
+    app, client, login_as = ctx
+    login_as("d-1")
+    client.get("/spaces/me")
+    client.post("/plans", json={"id": P1, "name": "Alpha", "theatre": "caucasus"})
+    dup = client.post("/plans", json={"id": P1, "name": "Bravo", "theatre": "caucasus"})
     assert dup.status_code == 409
 
 
-def test_rename_success_and_collision(ctx):
+@pytest.mark.parametrize("bad_id", ["p1", "AAAAAAAAAAA", "AAAAAAAAAAA0", "AAAAAAAAAAAl", "a" * 13, "../etc/passwd"])
+def test_malformed_id_is_422(ctx, bad_id):
     app, client, login_as = ctx
     login_as("d-1")
     client.get("/spaces/me")
-    client.post("/plans", json={"id": "p1", "name": "Alpha", "theatre": "caucasus"})
-    client.post("/plans", json={"id": "p2", "name": "Bravo", "theatre": "caucasus"})
-
-    ok = client.patch("/plans/p2", json={"name": "Charlie"})
-    assert ok.status_code == 200 and ok.json()["name"] == "Charlie"
-
-    collision = client.patch("/plans/p2", json={"name": "Alpha"})
-    assert collision.status_code == 409
+    resp = client.post("/plans", json={"id": bad_id, "name": "Alpha", "theatre": "caucasus"})
+    assert resp.status_code == 422
 
 
-def test_rename_plan_in_other_space_404(ctx):
+def test_rename_route_is_gone(ctx):
     app, client, login_as = ctx
-
-    login_as("d-2")
-    client.get("/spaces/me")
-    client.post("/plans", json={"id": "p2", "name": "Other", "theatre": "nevada"})
-
     login_as("d-1")
     client.get("/spaces/me")
-    resp = client.patch("/plans/p2", json={"name": "Hijack"})
-    assert resp.status_code == 404  # not in the caller's space
+    client.post("/plans", json={"id": P1, "name": "Alpha", "theatre": "caucasus"})
+    assert client.patch(f"/plans/{P1}", json={"name": "Bravo"}).status_code in (404, 405)

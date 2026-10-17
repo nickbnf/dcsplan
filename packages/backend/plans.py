@@ -3,12 +3,12 @@
 The `plans` table is the space's list of flight plans (name/theatre/metadata);
 the actual plan content is a per-plan append-only log of Yjs updates in
 `plan_updates` (AD-6, AD-14), periodically squashed (AD-5). A plan's `id` is
-client-generated (draft -> committed, AD-15).
+client-generated (draft -> committed, AD-15): 12 base58 characters (AD-16).
 
-Unique names within a space (A1) are enforced by the `UNIQUE(space_id, name)`
-constraint; a violation surfaces as `DuplicatePlanName`.
+Plan names need not be unique (unify-plan-name); `plans.name` is a
+server-maintained copy of the name inside the plan's document.
 """
-import uuid
+import re
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -17,12 +17,22 @@ import aiosqlite
 from db import connect
 
 
-class DuplicatePlanName(Exception):
-    """Raised when a plan name collides with another plan in the same space."""
+# 12 characters from the base58 alphabet (no 0, O, I, l) — AD-16.
+PLAN_ID_PATTERN = r"^[1-9A-HJ-NP-Za-km-z]{12}$"
+_PLAN_ID_RE = re.compile(PLAN_ID_PATTERN)
 
-    def __init__(self, name: str):
-        super().__init__(f"A plan named {name!r} already exists in this space")
-        self.name = name
+
+def is_plan_id(value: str) -> bool:
+    """Whether `value` is a well-formed plan id."""
+    return bool(_PLAN_ID_RE.match(value))
+
+
+class DuplicatePlanId(Exception):
+    """Raised when a plan id is already taken (a ~70-bit collision: not retried)."""
+
+    def __init__(self, plan_id: str):
+        super().__init__(f"A plan with id {plan_id!r} already exists")
+        self.plan_id = plan_id
 
 
 def _now() -> str:
@@ -33,7 +43,7 @@ def _now() -> str:
 
 async def create_plan(plan_id: str, space_id: str, name: str, theatre: str) -> dict:
     """Register a plan in a space (the defer-commit step). Raises
-    DuplicatePlanName if the name is already used in that space."""
+    DuplicatePlanId if the id is already taken."""
     plan = {
         "id": plan_id,
         "space_id": space_id,
@@ -52,9 +62,7 @@ async def create_plan(plan_id: str, space_id: str, name: str, theatre: str) -> d
                 plan,
             )
     except aiosqlite.IntegrityError as exc:
-        if "plans.space_id, plans.name" in str(exc) or "UNIQUE" in str(exc).upper():
-            raise DuplicatePlanName(name) from exc
-        raise
+        raise DuplicatePlanId(plan_id) from exc
     return plan
 
 
@@ -77,28 +85,18 @@ async def get_plan(plan_id: str) -> Optional[dict]:
             return dict(row) if row is not None else None
 
 
-async def rename_plan(plan_id: str, space_id: str, name: str) -> Optional[dict]:
-    """Rename a plan that belongs to `space_id`. Returns the updated plan, or
-    None if no such live plan exists in that space. Raises DuplicatePlanName on
-    a name collision within the space."""
+
+async def touch_plan(plan_id: str, name: Optional[str] = None) -> None:
+    """Refresh a plan's `updated_at`, and its index `name` when given — the
+    server-maintained copy of the document's name (unify-plan-name D2)."""
     async with connect() as db:
-        async with db.execute(
-            "SELECT 1 FROM plans WHERE id = ? AND space_id = ? AND deleted_at IS NULL",
-            (plan_id, space_id),
-        ) as cur:
-            if await cur.fetchone() is None:
-                return None
-        try:
+        if name is None:
+            await db.execute("UPDATE plans SET updated_at = ? WHERE id = ?", (_now(), plan_id))
+        else:
             await db.execute(
                 "UPDATE plans SET name = ?, updated_at = ? WHERE id = ?",
                 (name, _now(), plan_id),
             )
-        except aiosqlite.IntegrityError as exc:
-            if "plans.space_id, plans.name" in str(exc) or "UNIQUE" in str(exc).upper():
-                raise DuplicatePlanName(name) from exc
-            raise
-        async with db.execute("SELECT * FROM plans WHERE id = ?", (plan_id,)) as cur:
-            return dict(await cur.fetchone())
 
 
 # --- Plan-update log (AD-14) ----------------------------------------------

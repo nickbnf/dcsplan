@@ -1,14 +1,16 @@
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as Dialog from '@radix-ui/react-dialog';
 import { usePlanSelection } from '../contexts/PlanSelectionContext';
 import { useTheatres } from '../hooks/useTheatres';
 import type { PlanSummary } from '../api/planApi';
+import { planPath } from '../utils/planAddress';
 
 /**
- * Home screen (AD-15): the signed-in landing where plans are chosen and managed,
- * kept off the editing surface. Selecting a plan makes it active and opens NAV.
- * The space switcher is reserved (unrendered) until squadrons arrive.
+ * Home screen (AD-15): the signed-in landing where plans are chosen, kept off the
+ * editing surface. Selecting a plan opens it at its address (AD-16). Names are
+ * read-only here — a plan is renamed only in its editor. The space switcher is
+ * reserved (unrendered) until squadrons arrive.
  */
 
 function formatEdited(iso: string): string {
@@ -26,16 +28,14 @@ function formatEdited(iso: string): string {
 
 const NewPlanDialog: React.FC<{
   theatres: { id: string; name: string }[];
-  existingNames: string[];
   onCreate: (theatre: string, name: string) => void;
-}> = ({ theatres, existingNames, onCreate }) => {
+}> = ({ theatres, onCreate }) => {
   const [open, setOpen] = useState(false);
   const [theatre, setTheatre] = useState('');
   const [name, setName] = useState('');
 
   const trimmed = name.trim();
-  const collides = existingNames.some((n) => n === trimmed);
-  const canCreate = trimmed.length > 0 && !collides && theatre.length > 0;
+  const canCreate = trimmed.length > 0 && theatre.length > 0;
 
   const handleOpen = (next: boolean) => {
     if (next) {
@@ -75,9 +75,6 @@ const NewPlanDialog: React.FC<{
               className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-avio-primary focus:border-transparent"
               placeholder="Flight plan name"
             />
-            {collides && (
-              <p className="mt-1 text-xs text-red-600">Name must be unique.</p>
-            )}
           </div>
           <div className="mb-6">
             <label className="block text-sm font-aero-label text-gray-600 mb-2">Theatre</label>
@@ -110,96 +107,34 @@ const NewPlanDialog: React.FC<{
 const PlanRow: React.FC<{
   plan: PlanSummary;
   theatreName: string;
-  otherNames: string[];
   onSelect: () => void;
-  onRename: (name: string) => void;
-}> = ({ plan, theatreName, otherNames, onSelect, onRename }) => {
-  const [editing, setEditing] = useState(false);
-  const [name, setName] = useState(plan.name);
-
-  const trimmed = name.trim();
-  const collides = otherNames.some((n) => n === trimmed);
-  const canSave = trimmed.length > 0 && !collides && trimmed !== plan.name;
-
-  const startEdit = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setName(plan.name);
-    setEditing(true);
-  };
-  const save = () => {
-    if (canSave) onRename(trimmed);
-    setEditing(false);
-  };
-
-  if (editing) {
-    return (
-      <li className="flex items-center gap-2 px-4 py-3 border-b border-gray-200">
-        <div className="flex-1">
-          <input
-            autoFocus
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') save(); if (e.key === 'Escape') setEditing(false); }}
-            className="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-avio-primary"
-          />
-          {collides && <p className="mt-1 text-xs text-red-600">Name must be unique.</p>}
-        </div>
-        <button
-          onClick={save}
-          disabled={!canSave}
-          className="px-2.5 py-1 text-xs font-aero-label rounded bg-avio-primary text-white hover:bg-avio-primary-hover disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          Save
-        </button>
-        <button onClick={() => setEditing(false)} className="px-2.5 py-1 text-xs rounded border border-gray-300 hover:bg-gray-50">
-          Cancel
-        </button>
-      </li>
-    );
-  }
-
-  return (
-    <li
-      onClick={onSelect}
-      className="flex items-center justify-between px-4 py-3 border-b border-gray-200 cursor-pointer hover:bg-avio-panel transition-colors"
-    >
-      <div className="min-w-0">
-        <div className="text-sm font-medium text-gray-900 truncate">{plan.name}</div>
-        <div className="text-xs text-gray-500">
-          {theatreName}
-          {plan.updatedAt ? ` · edited ${formatEdited(plan.updatedAt)}` : ''}
-          {plan.lastEditor ? ` · ${plan.lastEditor}` : ''}
-        </div>
+}> = ({ plan, theatreName, onSelect }) => (
+  <li
+    onClick={onSelect}
+    className="flex items-center justify-between px-4 py-3 border-b border-gray-200 cursor-pointer hover:bg-avio-panel transition-colors"
+  >
+    <div className="min-w-0">
+      <div className="text-sm font-medium text-gray-900 truncate">{plan.name}</div>
+      <div className="text-xs text-gray-500">
+        {theatreName}
+        {plan.updatedAt ? ` · edited ${formatEdited(plan.updatedAt)}` : ''}
+        {plan.lastEditor ? ` · ${plan.lastEditor}` : ''}
       </div>
-      <div className="flex items-center gap-3 pl-3 shrink-0">
-        <button
-          onClick={startEdit}
-          className="text-xs text-gray-500 hover:text-avio-primary font-aero-label"
-          aria-label={`Rename ${plan.name}`}
-        >
-          Rename
-        </button>
-        <span className="text-gray-400" aria-hidden>›</span>
-      </div>
-    </li>
-  );
-};
+    </div>
+    <span className="text-gray-400 pl-3 shrink-0" aria-hidden>›</span>
+  </li>
+);
 
 const PlansHomePage: React.FC = () => {
-  const { plans, selectPlan, newDraft, renamePlan } = usePlanSelection();
+  const { plans, newDraft } = usePlanSelection();
   const { theatres } = useTheatres();
   const navigate = useNavigate();
 
   const theatreName = (id: string) => theatres.find((t) => t.id === id)?.name ?? id;
-  const allNames = useMemo(() => plans.map((p) => p.name), [plans]);
-
-  const handleSelect = (id: string) => {
-    selectPlan(id);
-    navigate('/');
-  };
+  const handleSelect = (p: PlanSummary) => navigate(planPath(p.id, p.name));
   const handleCreate = (theatre: string, name: string) => {
-    newDraft(theatre, name);
-    navigate('/');
+    const id = newDraft(theatre, name);
+    navigate(planPath(id, name));
   };
 
   return (
@@ -210,7 +145,7 @@ const PlansHomePage: React.FC = () => {
           <h1 className="text-sm font-aero-label uppercase tracking-wide text-gray-600">
             Your plans · Personal
           </h1>
-          <NewPlanDialog theatres={theatres} existingNames={allNames} onCreate={handleCreate} />
+          <NewPlanDialog theatres={theatres} onCreate={handleCreate} />
         </div>
 
         <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
@@ -225,9 +160,7 @@ const PlansHomePage: React.FC = () => {
                   key={p.id}
                   plan={p}
                   theatreName={theatreName(p.theatre)}
-                  otherNames={allNames.filter((n) => n !== p.name)}
-                  onSelect={() => handleSelect(p.id)}
-                  onRename={(name) => renamePlan(p.id, name)}
+                  onSelect={() => handleSelect(p)}
                 />
               ))}
             </ul>

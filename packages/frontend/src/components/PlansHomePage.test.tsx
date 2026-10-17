@@ -29,14 +29,12 @@ const plan = (id: string, name: string, theatre = 'caucasus') => ({
 beforeEach(() => {
   navigate.mockClear();
   Object.assign(sel, {
-    plans: [plan('p1', 'Ingress Alpha'), plan('p2', 'Strike Batumi', 'nevada')],
-    selectPlan: vi.fn(),
-    newDraft: vi.fn(),
-    renamePlan: vi.fn(),
+    plans: [plan('AAAAAAAAAAA1', 'Ingress Alpha'), plan('AAAAAAAAAAA2', 'Strike Batumi', 'nevada')],
+    newDraft: vi.fn(() => 'AAAAAAAAAAA9'),
   });
 });
 
-describe('PlansHomePage (9.1)', () => {
+describe('PlansHomePage', () => {
   it('lists the space plans with name and theatre', () => {
     render(<PlansHomePage />);
     expect(screen.getByText('Ingress Alpha')).toBeInTheDocument();
@@ -44,49 +42,31 @@ describe('PlansHomePage (9.1)', () => {
     expect(screen.getByText(/Nevada/)).toBeInTheDocument();
   });
 
-  it('selecting a plan makes it active and opens NAV', () => {
+  it('selecting a plan opens its address', () => {
     render(<PlansHomePage />);
     fireEvent.click(screen.getByText('Ingress Alpha'));
-    expect(sel.selectPlan).toHaveBeenCalledWith('p1');
-    expect(navigate).toHaveBeenCalledWith('/');
+    expect(navigate).toHaveBeenCalledWith('/p/AAAAAAAAAAA1/ingress-alpha');
   });
 
-  it('creating a plan makes a draft and opens NAV', () => {
+  it('offers no rename control', () => {
+    render(<PlansHomePage />);
+    expect(screen.queryByRole('button', { name: /rename/i })).not.toBeInTheDocument();
+  });
+
+  it('creating a plan makes a draft and opens its address', () => {
     render(<PlansHomePage />);
     fireEvent.click(screen.getByRole('button', { name: /new plan/i }));
-    const name = screen.getByPlaceholderText('Flight plan name');
-    fireEvent.change(name, { target: { value: 'Fresh Plan' } });
+    fireEvent.change(screen.getByPlaceholderText('Flight plan name'), { target: { value: 'Fresh Plan' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create' }));
     expect(sel.newDraft).toHaveBeenCalledWith('caucasus', 'Fresh Plan');
-    expect(navigate).toHaveBeenCalledWith('/');
+    expect(navigate).toHaveBeenCalledWith('/p/AAAAAAAAAAA9/fresh-plan');
   });
 
-  it('blocks a New-plan name that collides with an existing plan (A1)', () => {
+  it('allows a New-plan name that another plan already uses', () => {
     render(<PlansHomePage />);
     fireEvent.click(screen.getByRole('button', { name: /new plan/i }));
-    const name = screen.getByPlaceholderText('Flight plan name');
-    fireEvent.change(name, { target: { value: 'Ingress Alpha' } });
-    expect(screen.getByText('Name must be unique.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Create' })).toBeDisabled();
-    expect(sel.newDraft).not.toHaveBeenCalled();
-  });
-
-  it('blocks a rename that collides with another plan (A1)', () => {
-    render(<PlansHomePage />);
-    fireEvent.click(screen.getByRole('button', { name: 'Rename Strike Batumi' }));
-    const input = screen.getByDisplayValue('Strike Batumi');
-    fireEvent.change(input, { target: { value: 'Ingress Alpha' } });
-    expect(screen.getByText('Name must be unique.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
-    expect(sel.renamePlan).not.toHaveBeenCalled();
-  });
-
-  it('applies a valid rename', () => {
-    render(<PlansHomePage />);
-    fireEvent.click(screen.getByRole('button', { name: 'Rename Strike Batumi' }));
-    const input = screen.getByDisplayValue('Strike Batumi');
-    fireEvent.change(input, { target: { value: 'Strike Poti' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
-    expect(sel.renamePlan).toHaveBeenCalledWith('p2', 'Strike Poti');
+    fireEvent.change(screen.getByPlaceholderText('Flight plan name'), { target: { value: 'Ingress Alpha' } });
+    expect(screen.queryByText('Name must be unique.')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Create' })).toBeEnabled();
   });
 });
