@@ -2,7 +2,7 @@ import type { Aircraft } from '../types/flightPlan';
 import { parseAircraftBlock } from './performanceStorage';
 
 type ValidationResult =
-  | { ok: true; aircraft: Aircraft; name?: string }
+  | { ok: true; aircraft: Aircraft }
   | { ok: false; errors: string[] };
 
 export function validatePerformancePackage(parsed: unknown): ValidationResult {
@@ -19,9 +19,7 @@ export function validatePerformancePackage(parsed: unknown): ValidationResult {
   const result = parseAircraftBlock(obj['aircraft']);
   if (!result.ok) return result;
 
-  const name = typeof obj['name'] === 'string' && obj['name'].trim()
-    ? obj['name'].trim()
-    : undefined;
-
-  return { ok: true, aircraft: result.aircraft, name };
+  // A `name` written by earlier versions is ignored: profiles are labelled
+  // from their aircraft (performance-profile).
+  return { ok: true, aircraft: result.aircraft };
 }

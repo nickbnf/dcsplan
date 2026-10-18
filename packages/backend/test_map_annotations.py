@@ -62,3 +62,36 @@ def test_draw_comment_strip_empty_does_nothing():
     draw_comment_strip(draw, "   ", 768, 1024)
     pixels = list(img.getdata())
     assert all(p[3] == 0 for p in pixels)
+
+
+# --- Unresolved library refs (add-library-profile-sync, task 6.2; map-objects) ---
+
+def _plan_with_refs(refs, snapshot):
+    from flight_plan import FlightPlan
+    return FlightPlan.model_validate({
+        "theatre": "caucasus", "points": [], "declination": 0, "bankAngle": 45,
+        "initTimeSec": 0, "initFob": 0, "name": "P",
+        "libraryRefs": refs, "librarySnapshot": snapshot,
+    })
+
+
+def _drawn_pixels(plan, draw_fn):
+    from map_annotations import draw_plan_objects, draw_threat_rings
+    img = Image.new("RGBA", (400, 400), (0, 0, 0, 0))
+    to_px = lambda lat, lon: (200 + (lon - 41) * 100, 200 - (lat - 42) * 100)
+    if draw_fn == "objects":
+        draw_plan_objects(img, plan, to_px)
+    else:
+        draw_threat_rings(ImageDraw.Draw(img), img, plan, to_px)
+    return sum(1 for px in img.getdata() if px[3] != 0)
+
+
+def test_unresolved_ref_is_skipped_on_the_kneeboard():
+    """A ref with no snapshot entry draws nothing and raises nothing."""
+    sam = {"id": "sam", "type": "sam_site", "lat": 42.0, "lon": 41.0, "name": "SA-10", "range": 1.0}
+    only_resolved = _plan_with_refs([{"uuid": "sam"}], [sam])
+    with_dangling = _plan_with_refs([{"uuid": "sam"}, {"uuid": "gone"}], [sam])
+    for fn in ("objects", "rings"):
+        assert _drawn_pixels(only_resolved, fn) > 0
+        assert _drawn_pixels(with_dangling, fn) == _drawn_pixels(only_resolved, fn)
+    assert _drawn_pixels(_plan_with_refs([{"uuid": "gone"}], []), "objects") == 0

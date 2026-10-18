@@ -12,6 +12,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from flight_plan import FlightPlan, ImportFlightPlanRequest, KneeboardRequest
 from task_queue import get_task_queue
 from migrations_runner import apply_migrations
+import asset_routes
 import auth_routes
 import space_routes
 import sync
@@ -65,6 +66,10 @@ app.include_router(auth_routes.router)
 
 # Space + plan-index routes (add-cloud-sync). Reached at /api/spaces/*, /api/plans/*.
 app.include_router(space_routes.router)
+
+# Library + profile sync routes (add-library-profile-sync). Reached at
+# /api/libraries/*, /api/profiles/*, /api/changes.
+app.include_router(asset_routes.router)
 
 
 # Flight-plan sync WebSocket (add-cloud-sync, AD-14). Reached at /api/sync/{planId}.

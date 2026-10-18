@@ -3,7 +3,6 @@ import {
   hasStoredPerformance,
   savePerformance,
   PERFORMANCE_STORAGE_KEY,
-  DEFAULT_PROFILE_NAME,
 } from './performanceStorage';
 
 const FLIGHT_PLAN_STORAGE_KEY = 'dcsplan-flightplan';
@@ -25,8 +24,7 @@ export function bootstrapPerformanceFromLegacyPlan(): void {
     if (!fp.aircraft || typeof fp.aircraft !== 'object') return;
 
     if (!hasStoredPerformance()) {
-      const name = fp.aircraft.model?.trim() || DEFAULT_PROFILE_NAME;
-      savePerformance({ name, aircraft: fp.aircraft });
+      savePerformance(fp.aircraft);
     }
 
     delete fp.aircraft;
@@ -42,38 +40,29 @@ export function bootstrapPerformanceFromLegacyPlan(): void {
 }
 
 /**
- * Ensures `dcsplan.performance` has the profiled shape ({ version, name, aircraft }).
- * Runs after bootstrapPerformanceFromLegacyPlan so a pre-1.5 user gets both
- * migrations in a single boot. Must run synchronously before React mounts.
+ * Ensures `dcsplan.performance` holds a profile, as `{ version, aircraft }`
+ * (performance-profile, Anonymous profile bootstrap). Runs after
+ * bootstrapPerformanceFromLegacyPlan so a pre-1.5 user gets both in a single
+ * boot. A `name` from earlier versions is left in place and ignored on read.
+ * Must run synchronously before React mounts.
  */
 export function migratePerformanceProfile(): void {
   try {
     const raw = localStorage.getItem(PERFORMANCE_STORAGE_KEY);
     if (!raw) {
-      savePerformance({ name: DEFAULT_PROFILE_NAME, aircraft: defaultAircraft() });
+      savePerformance(defaultAircraft());
       return;
     }
-
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object') {
-      savePerformance({ name: DEFAULT_PROFILE_NAME, aircraft: defaultAircraft() });
+      savePerformance(defaultAircraft());
       return;
     }
-
-    if (typeof parsed.name === 'string' && parsed.name.trim()) return;
-
-    if ('aircraft' in parsed && parsed.aircraft && typeof parsed.aircraft === 'object') {
-      const name = parsed.aircraft.model?.trim() || DEFAULT_PROFILE_NAME;
-      parsed.name = name;
-      localStorage.setItem(PERFORMANCE_STORAGE_KEY, JSON.stringify(parsed));
-      return;
-    }
-
-    const name = parsed.model?.trim() || DEFAULT_PROFILE_NAME;
-    savePerformance({ name, aircraft: parsed });
+    if ('aircraft' in parsed) return;   // already an envelope
+    savePerformance(parsed);           // a bare aircraft block: wrap it
   } catch {
     try {
-      savePerformance({ name: DEFAULT_PROFILE_NAME, aircraft: defaultAircraft() });
+      savePerformance(defaultAircraft());
     } catch {
       // storage completely unavailable — app will start with in-memory defaults
     }

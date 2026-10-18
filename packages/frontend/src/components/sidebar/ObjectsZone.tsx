@@ -5,6 +5,74 @@ import { useLibrary } from '../../contexts/LibraryContext';
 import { useObjectSelection } from '../../contexts/ObjectSelectionContext';
 import { getPictogramDef, isRangedType, getAllPictograms } from '../../utils/pictogramCatalog';
 import { TypeStampedAddToggle } from './TypeStampedAddToggle';
+import type { EntryStatus } from '../../sync/assetSync';
+
+// ── Missing-object placeholder ────────────────────────────────────────────────
+
+const TRASH_ICON = (
+  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+);
+
+interface MissingObjectCardProps {
+  ref_: PlanLibraryRef;
+  status: EntryStatus;
+  isSelected: boolean;
+  onSelect: () => void;
+  onDelete: () => void;
+  cardRef: React.RefObject<HTMLDivElement | null>;
+}
+
+/**
+ * A library ref whose entry is not in the library (map-objects: missing-object
+ * placeholder). *Deleted* offers removal from the plan; *not synced yet* is
+ * neutral and resolves by itself once the entry arrives. The ref itself is
+ * never changed by being shown.
+ */
+const MissingObjectCard: React.FC<MissingObjectCardProps> = ({
+  ref_, status, isSelected, onSelect, onDelete, cardRef,
+}) => {
+  const deleted = status === 'deleted';
+  return (
+    <div
+      ref={cardRef}
+      data-testid="missing-object-card"
+      data-state={deleted ? 'deleted' : 'pending'}
+      onClick={onSelect}
+      className={`p-3 rounded border border-dashed cursor-pointer ${
+        isSelected ? 'border-[#FFB300] bg-amber-50' : 'border-gray-300 bg-white'
+      }`}
+    >
+      <div className="flex items-center gap-2">
+        <span
+          aria-hidden
+          className="w-5 h-5 shrink-0 rounded-full border border-gray-400 text-gray-400 text-xs font-aero-label flex items-center justify-center"
+        >
+          ?
+        </span>
+        <span className="text-sm font-aero-label text-gray-500 flex-1">
+          {deleted ? 'Object deleted from the library' : 'Not synced yet'}
+        </span>
+        {deleted && (
+          <button
+            onClick={e => { e.stopPropagation(); onDelete(); }}
+            className="text-gray-400 hover:text-red-500 transition-colors p-1 hover:bg-gray-100 rounded"
+            title="Remove from plan"
+          >
+            {TRASH_ICON}
+          </button>
+        )}
+      </div>
+      {!deleted && (
+        <div className="text-xs font-aero-label text-gray-400 mt-1">
+          This object will appear once your library has synced.
+        </div>
+      )}
+      {ref_.comment && (
+        <div className="text-xs font-aero-label text-gray-600 mt-1 whitespace-pre-wrap">{ref_.comment}</div>
+      )}
+    </div>
+  );
+};
 
 // ── Library ref card ──────────────────────────────────────────────────────────
 
@@ -23,7 +91,7 @@ const LibraryRefCard: React.FC<LibraryRefCardProps> = ({
   onUpdateComment,
   onDelete,
 }) => {
-  const { library } = useLibrary();
+  const { library, entryStatus } = useLibrary();
   const entry = library.find(e => e.id === ref_.uuid);
   const [commentValue, setCommentValue] = useState(ref_.comment ?? '');
   const cardRef = useRef<HTMLDivElement>(null);
@@ -50,18 +118,14 @@ const LibraryRefCard: React.FC<LibraryRefCardProps> = ({
 
   if (!entry) {
     return (
-      <div
-        ref={cardRef}
-        className={`p-3 rounded border cursor-pointer ${isSelected ? 'border-[#FFB300] bg-amber-50' : 'border-gray-200 bg-white'}`}
-        onClick={onSelect}
-      >
-        <div className="flex items-center justify-between">
-          <span className="text-xs text-gray-400 font-aero-label italic">Library entry not found ({ref_.uuid.slice(0, 8)}…)</span>
-          <button onClick={e => { e.stopPropagation(); onDelete(); }} className="text-gray-300 hover:text-red-400 transition-colors p-1 hover:bg-gray-100 rounded" title="Remove from plan">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-          </button>
-        </div>
-      </div>
+      <MissingObjectCard
+        ref_={ref_}
+        status={entryStatus(ref_.uuid)}
+        isSelected={isSelected}
+        onSelect={onSelect}
+        onDelete={onDelete}
+        cardRef={cardRef}
+      />
     );
   }
 

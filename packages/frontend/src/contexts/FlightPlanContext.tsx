@@ -60,6 +60,15 @@ export const FlightPlanProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     }
   }, [draftLoaded, editCount, selection.commitDraft]);
 
+  // A committed plan's name lives in its document; keep its row in the plan
+  // list in step as it changes here, so the list is right the moment the user
+  // goes back to it (plan-sync). Only once this plan's document is the one loaded.
+  const committedLoaded = selection.sync && loadedPlanId === selection.activePlanId;
+  const loadedName = committedLoaded ? flightPlan?.name : undefined;
+  useEffect(() => {
+    if (loadedName !== undefined) selection.notePlanName(selection.activePlanId, loadedName);
+  }, [loadedName, selection.activePlanId, selection.notePlanName]);
+
   const undoManagerRef = useRef<Y.UndoManager | null>(null);
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
@@ -176,3 +185,7 @@ export const useFlightPlan = (): FlightPlanContextValue => {
   if (!ctx) throw new Error('useFlightPlan must be used inside FlightPlanProvider');
   return ctx;
 };
+
+/** The flight-plan context if one is mounted, else null (for providers that
+ * only need the plan in some tiers, such as PerformanceProvider). */
+export const useOptionalFlightPlan = (): FlightPlanContextValue | null => useContext(FlightPlanContext);

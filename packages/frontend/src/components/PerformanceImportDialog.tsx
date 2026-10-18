@@ -11,11 +11,11 @@ interface Props {
 
 const PerformanceImportDialog: React.FC<Props> = ({ onClose }) => {
   const { flightPlan, replaceFlightPlan } = useFlightPlan();
-  const { setPerformance, setProfileName } = usePerformance();
+  const { tier, setPerformance, addProfile, setEditingProfileId } = usePerformance();
+  const signedIn = tier === 'signed-in';
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [fileName, setFileName] = useState<string | null>(null);
   const [validatedAircraft, setValidatedAircraft] = useState<Aircraft | null>(null);
-  const [validatedName, setValidatedName] = useState<string | undefined>(undefined);
   const [errors, setErrors] = useState<string[]>([]);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -25,7 +25,6 @@ const PerformanceImportDialog: React.FC<Props> = ({ onClose }) => {
     setFileName(file.name);
     setErrors([]);
     setValidatedAircraft(null);
-    setValidatedName(undefined);
 
     let parsed: unknown;
     try {
@@ -41,8 +40,17 @@ const PerformanceImportDialog: React.FC<Props> = ({ onClose }) => {
       setErrors(result.errors);
     } else {
       setValidatedAircraft(result.aircraft);
-      setValidatedName(result.name);
     }
+  };
+
+  /** Signed in: import adds a new profile and opens it for editing; the plan
+   * and the other profiles are untouched (performance-profile, tier-branched). */
+  const handleAdd = () => {
+    if (!validatedAircraft) return;
+    const aircraft: Aircraft = JSON.parse(JSON.stringify(validatedAircraft));
+    const id = addProfile({ aircraft });
+    setEditingProfileId(id);
+    onClose();
   };
 
   const handleReplace = () => {
@@ -50,8 +58,6 @@ const PerformanceImportDialog: React.FC<Props> = ({ onClose }) => {
 
     const newAircraft: Aircraft = JSON.parse(JSON.stringify(validatedAircraft));
     setPerformance(newAircraft);
-    const importedName = validatedName || newAircraft.model?.trim() || 'Imported profile';
-    setProfileName(importedName);
 
     const importedRegimeIds = new Set(newAircraft.regimes.map(r => r.id));
     const newPoints = flightPlan.points.map(p =>
@@ -75,7 +81,7 @@ const PerformanceImportDialog: React.FC<Props> = ({ onClose }) => {
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 bg-black/50" />
         <Dialog.Content aria-describedby="perf-import-desc" className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-lg shadow-lg p-6 w-[420px] max-w-[90vw]">
-          <Dialog.Title className="text-base font-semibold mb-4">Replace performance?</Dialog.Title>
+          <Dialog.Title className="text-base font-semibold mb-4">{signedIn ? 'Add performance profile' : 'Replace performance?'}</Dialog.Title>
 
           {/* File picker */}
           <input
@@ -110,7 +116,7 @@ const PerformanceImportDialog: React.FC<Props> = ({ onClose }) => {
                     <span className="text-gray-500">Regimes:</span>{' '}
                     {validatedAircraft.regimes.length}
                   </div>
-                  {waypointsWithRegime > 0 && (
+                  {!signedIn && waypointsWithRegime > 0 && (
                     <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
                       {waypointsWithRegime} waypoint{waypointsWithRegime !== 1 ? 's' : ''} currently use a regime.
                       Bindings that no longer match will revert to Manual.
@@ -134,13 +140,23 @@ const PerformanceImportDialog: React.FC<Props> = ({ onClose }) => {
             >
               Cancel
             </button>
-            <button
-              onClick={handleReplace}
-              disabled={!validatedAircraft}
-              className="px-4 py-2 text-sm bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              Replace
-            </button>
+            {signedIn ? (
+              <button
+                onClick={handleAdd}
+                disabled={!validatedAircraft}
+                className="px-4 py-2 text-sm bg-avio-primary text-white rounded hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Add profile
+              </button>
+            ) : (
+              <button
+                onClick={handleReplace}
+                disabled={!validatedAircraft}
+                className="px-4 py-2 text-sm bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Replace
+              </button>
+            )}
           </div>
         </Dialog.Content>
       </Dialog.Portal>

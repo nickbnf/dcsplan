@@ -403,6 +403,33 @@ Reproduced and documented as `it.fails` tests in `packages/frontend/src/contexts
 
 ---
 
+## AD-17 — A library is a container with its own id; entries are addressed by UUID within the space
+
+**Context.** `add-library-profile-sync` moves the theatre library to the server. Today a space has exactly one library per theatre, so the obvious model is "the library is an attribute of `(space, theatre)`". Two future shapes are already anticipated: **several libraries per space and theatre**, and a **hierarchy** (e.g. *All SAMs*, *All factories*). An API built on `(space, theatre)` would have to change every route and row to support either.
+
+**Decision.**
+- **A library is a resource with its own server-generated id**, owned by a space and tagged with a theatre. Clients look libraries up by theatre and always receive a **list**. Today that list has exactly one element, created on first access.
+- **"One per (space, theatre)" is a constraint, not part of the key**, so it can be dropped later.
+- **Library entries keep their client-generated UUIDs, unique across all libraries of a space** (not per library, and not globally). Moving an entry between libraries is then a change of container, never of identity.
+- **Plans reference entries by UUID only** (`libraryRefs.uuid`) and never name a library.
+
+**Why.** Container addressing makes both future shapes additive:
+- *Several libraries per theatre:* drop the constraint and add library creation.
+- *A hierarchy:* a nullable parent on the library.
+
+Neither touches entry ids, entry routes, or any stored plan. Uniqueness per space rather than global is forced by import: the same exported plan, with the same snapshot UUIDs, can be imported into two spaces.
+
+**Consequences.**
+- Clients must already treat "the libraries for this theatre" as a list, even though it has one element.
+- A theatre's library can be unknown to an offline device that never opened that theatre online. Writes made there are queued against the theatre and resolved to a library id on reconnect (`add-library-profile-sync`, design D7).
+- Performance profiles follow the same identity rule: client-generated ids, unique per space. They are a flat list with no container; nothing anticipates grouping them.
+
+**Spans:** `theatre-library`, `space`, `space-asset-sync`, `map-objects`
+
+**Rejected.** *A library as an attribute of `(space, theatre)`* — simplest now, but a breaking change for every route and row later. *Entry ids unique per library* — moving an entry would change its identity and break plan references. *Globally unique entry ids* — collide when one plan file is imported into two spaces.
+
+---
+
 ## Decision → capability → change map
 
 > Changes are referenced by name, not by number — the sequence has already shifted once and names match the `openspec/changes/` directories.
@@ -425,6 +452,7 @@ Reproduced and documented as `it.fails` tests in `packages/frontend/src/contexts
 | AD-14 | Yjs sync served by FastAPI via `pycrdt` | `plan-sync`, `space` | `add-cloud-sync` |
 | AD-15 | Space→plan selection on a Home screen | `space`, `plan-sync`, `plan-lifecycle` | `add-cloud-sync` |
 | AD-16 | Plans addressed by short id at `/p/:id/:slug` | `plan-addressing`, `space`, `plan-sync` | `unify-plan-name` |
+| AD-17 | A library is a container; entries unique per space | `theatre-library`, `space`, `space-asset-sync` | `add-library-profile-sync` |
 
 ---
 

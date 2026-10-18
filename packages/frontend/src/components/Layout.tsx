@@ -5,6 +5,8 @@ import { usePerformance } from '../contexts/PerformanceContext';
 import { useAuth } from '../contexts/AuthContext';
 import { usePlanSelection } from '../contexts/PlanSelectionContext';
 import { AuthMenu } from './AuthMenu';
+import { SyncIndicator } from './SyncIndicator';
+import { SessionExpiredDialog } from './SessionExpiredDialog';
 import { planPath } from '../utils/planAddress';
 
 // Plan-scoped surfaces follow the active plan and live under its address
@@ -20,11 +22,19 @@ const tabClass = ({ isActive }: { isActive: boolean }) =>
       : 'border-transparent text-gray-500 hover:text-gray-800 hover:border-gray-300',
   ].join(' ');
 
-const RegimeConsistencyGuard: React.FC = () => {
+/**
+ * Anonymous tier only: clear leg bindings whose regime no longer exists in the
+ * single profile (performance-regime). Signed in, an unresolved regime may just
+ * not have synced yet, so it is kept and computes as Manual at read time;
+ * clearing it would write into the shared plan and erase the binding on every
+ * device.
+ */
+export const RegimeConsistencyGuard: React.FC = () => {
   const { flightPlan, onFlightPlanUpdate } = useFlightPlan();
-  const { performance } = usePerformance();
+  const { performance, tier } = usePerformance();
 
   useEffect(() => {
+    if (tier !== 'anonymous') return;
     const regimeIds = new Set(performance.regimes.map(r => r.id));
     const hasOrphans = flightPlan.points.some(p => p.regimeId && !regimeIds.has(p.regimeId));
     if (!hasOrphans) return;
@@ -33,7 +43,7 @@ const RegimeConsistencyGuard: React.FC = () => {
     );
     onFlightPlanUpdate({ ...flightPlan, points: newPoints });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [performance.regimes]);
+  }, [performance.regimes, tier]);
 
   return null;
 };
@@ -104,6 +114,8 @@ const Layout: React.FC = () => {
 
         <div className="flex items-center gap-4 pr-2">
           <span className="text-sm font-aero-label text-gray-700">DCS Tactical Planner</span>
+          <SyncIndicator />
+          <SessionExpiredDialog />
           <AuthMenu />
           <Link to="/about" className="text-xs text-gray-500 hover:text-gray-900 underline font-aero-label">
             About

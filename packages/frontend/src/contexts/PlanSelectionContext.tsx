@@ -13,11 +13,13 @@ import type { FlightPlan } from '../types/flightPlan';
 import { flightPlanUtils } from '../utils/flightPlanUtils';
 import { ANON_PLAN_ID, clearPlanStore } from '../hooks/useYjsFlightPlan';
 import { generatePlanId } from '../utils/planId';
+import { userPrefix } from '../sync/assetCache';
 import {
   createPlan as apiCreatePlan,
   getMySpace,
   listPlans as apiListPlans,
   type PlanSummary,
+  type SpaceSummary,
 } from '../api/planApi';
 
 /**
@@ -74,6 +76,9 @@ export interface PlanSelectionValue {
   /** Why the current draft is not saved to the account yet, if a commit failed. */
   commitError: string | null;
   refreshPlans: () => Promise<PlanSummary[]>;
+  /** The open plan's own name changed (in its document): show it in the list
+   * at once, without waiting for the server's copy (plan-sync). */
+  notePlanName: (planId: string, name: string) => void;
 }
 
 const PlanSelectionContext = createContext<PlanSelectionValue | null>(null);
@@ -96,6 +101,32 @@ function writeStored(sel: StoredSelection | null) {
   }
 }
 
+// The space and plan list are cached per user so a signed-in user who starts
+// offline still reaches their plans (user-identity offline start, design D9).
+interface CachedIndex {
+  space: SpaceSummary;
+  plans: PlanSummary[];
+}
+
+const indexKey = (userId: string) => `${userPrefix(userId)}planIndex`;
+
+function readIndex(userId: string): CachedIndex | null {
+  try {
+    const raw = localStorage.getItem(indexKey(userId));
+    return raw ? (JSON.parse(raw) as CachedIndex) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeIndex(userId: string, index: CachedIndex) {
+  try {
+    localStorage.setItem(indexKey(userId), JSON.stringify(index));
+  } catch {
+    /* ignore: offline start falls back to Home */
+  }
+}
+
 /** The plan id named by a `/p/:id/…` address, if any. */
 export function planIdFromPath(pathname: string): string | null {
   const m = matchPath('/p/:id/*', pathname) ?? matchPath('/p/:id', pathname);
@@ -103,7 +134,8 @@ export function planIdFromPath(pathname: string): string | null {
 }
 
 export const PlanSelectionProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { status } = useAuth();
+  const { status, user } = useAuth();
+  const userId = user?.id ?? null;
   const { pathname } = useLocation();
   const requestedPlanId = planIdFromPath(pathname);
 
@@ -120,26 +152,46 @@ export const PlanSelectionProvider: React.FC<{ children: React.ReactNode }> = ({
   // Committed plan ids we have seen, so logout can clear their local stores.
   const knownPlanIds = useRef<Set<string>>(new Set());
 
+  const spaceRef = useRef<SpaceSummary | null>(null);
+
+  const notePlanName = useCallback((planId: string, name: string) => {
+    setPlans((prev) => {
+      const i = prev.findIndex((p) => p.id === planId);
+      if (i < 0 || prev[i].name === name) return prev;
+      const next = [...prev];
+      next[i] = { ...prev[i], name };
+      return next;
+    });
+  }, []);
+
   const refreshPlans = useCallback(async () => {
     const list = await apiListPlans();
     setPlans(list);
     list.forEach((p) => knownPlanIds.current.add(p.id));
+    if (userId && spaceRef.current) writeIndex(userId, { space: spaceRef.current, plans: list });
     return list;
-  }, []);
+  }, [userId]);
 
-  // Load the space + plan list when signing in.
+  // Load the space + plan list when signing in; fall back to the cached copy
+  // when the server cannot be reached.
   useEffect(() => {
-    if (status !== 'authenticated') return;
+    if (status !== 'authenticated' || !userId) return;
     let cancelled = false;
     setListLoaded(false);
     (async () => {
       try {
         const space = await getMySpace();
         if (cancelled) return;
+        spaceRef.current = space;
         setSpaceId(space.id);
         await refreshPlans();
       } catch {
-        /* backend unreachable — addresses will not resolve; the app falls back to Home */
+        const cached = readIndex(userId);
+        if (cancelled || !cached) return; // nothing cached: addresses fall back to Home
+        spaceRef.current = cached.space;
+        setSpaceId(cached.space.id);
+        setPlans(cached.plans);
+        cached.plans.forEach((p) => knownPlanIds.current.add(p.id));
       } finally {
         if (!cancelled) setListLoaded(true);
       }
@@ -147,7 +199,7 @@ export const PlanSelectionProvider: React.FC<{ children: React.ReactNode }> = ({
     return () => {
       cancelled = true;
     };
-  }, [status, refreshPlans]);
+  }, [status, userId, refreshPlans]);
 
   // On logout, clear cached copies of synced plans but keep the anonymous plan (L1).
   const prevStatus = useRef(status);
@@ -299,10 +351,11 @@ export const PlanSelectionProvider: React.FC<{ children: React.ReactNode }> = ({
       commitDraft,
       commitError,
       refreshPlans,
+      notePlanName,
     }),
     [
       activePlanId, hasActivePlan, sync, isDraft, atHome, isResolving, requestedPlanId,
-      requestUnresolved, draftSeed, spaceId, plans, newDraft, commitDraft, commitError, refreshPlans,
+      requestUnresolved, draftSeed, spaceId, plans, newDraft, commitDraft, commitError, refreshPlans, notePlanName,
     ],
   );
 
@@ -325,6 +378,7 @@ const ANON_SELECTION: PlanSelectionValue = {
   commitDraft: async () => {},
   commitError: null,
   refreshPlans: async () => [],
+  notePlanName: () => {},
 };
 
 /**

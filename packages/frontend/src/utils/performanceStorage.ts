@@ -2,12 +2,6 @@ import type { Aircraft } from '../types/flightPlan';
 import { defaultAircraft, PERFORMANCE_FILE_VERSION } from '../types/flightPlan';
 
 export const PERFORMANCE_STORAGE_KEY = 'dcsplan.performance';
-export const DEFAULT_PROFILE_NAME = 'Default profile';
-
-export interface StoredProfile {
-  name: string;
-  aircraft: Aircraft;
-}
 
 export type AircraftParseResult =
   | { ok: true; aircraft: Aircraft }
@@ -136,40 +130,25 @@ export function parseAircraftBlock(ac: unknown): AircraftParseResult {
   return { ok: true, aircraft };
 }
 
-function deriveProfileName(aircraft: Aircraft): string {
-  return aircraft.model?.trim() || DEFAULT_PROFILE_NAME;
-}
-
-export function loadPerformance(): StoredProfile {
+/** The anonymous profile's aircraft, stored as `{ version, aircraft }`. A `name`
+ * left by earlier versions is ignored; a bare aircraft block (pre-1.5) is read
+ * as is. Anything unreadable yields the defaults. */
+export function loadPerformance(): Aircraft {
   try {
     const raw = localStorage.getItem(PERFORMANCE_STORAGE_KEY);
-    if (!raw) return { name: DEFAULT_PROFILE_NAME, aircraft: defaultAircraft() };
+    if (!raw) return defaultAircraft();
     const parsed = JSON.parse(raw);
-
-    if (parsed && typeof parsed === 'object' && 'aircraft' in parsed) {
-      const result = parseAircraftBlock(parsed.aircraft);
-      if (!result.ok) return { name: DEFAULT_PROFILE_NAME, aircraft: defaultAircraft() };
-      const name = typeof parsed.name === 'string' && parsed.name.trim()
-        ? parsed.name.trim()
-        : deriveProfileName(result.aircraft);
-      return { name, aircraft: result.aircraft };
-    }
-
-    const result = parseAircraftBlock(parsed);
-    if (!result.ok) return { name: DEFAULT_PROFILE_NAME, aircraft: defaultAircraft() };
-    return { name: deriveProfileName(result.aircraft), aircraft: result.aircraft };
+    const block = parsed && typeof parsed === 'object' && 'aircraft' in parsed ? parsed.aircraft : parsed;
+    const result = parseAircraftBlock(block);
+    return result.ok ? result.aircraft : defaultAircraft();
   } catch {
-    return { name: DEFAULT_PROFILE_NAME, aircraft: defaultAircraft() };
+    return defaultAircraft();
   }
 }
 
-export function savePerformance(profile: StoredProfile): void {
+export function savePerformance(aircraft: Aircraft): void {
   try {
-    const envelope = {
-      version: PERFORMANCE_FILE_VERSION,
-      name: profile.name,
-      aircraft: profile.aircraft,
-    };
+    const envelope = { version: PERFORMANCE_FILE_VERSION, aircraft };
     localStorage.setItem(PERFORMANCE_STORAGE_KEY, JSON.stringify(envelope));
   } catch (error) {
     if (error instanceof DOMException &&

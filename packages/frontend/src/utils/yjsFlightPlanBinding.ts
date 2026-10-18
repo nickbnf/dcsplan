@@ -204,6 +204,13 @@ export function applyFlightPlanToYDoc(
     }
   }
 
+  // The profile the plan flies (signed-in only, performance-profile): an
+  // optional scalar, absent from anonymous plans.
+  if (newPlan.profileId !== oldPlan.profileId) {
+    if (newPlan.profileId === undefined) yPlan.delete('profileId');
+    else yPlan.set('profileId', newPlan.profileId);
+  }
+
   // Points
   if (!yPlan.has('points')) {
     yPlan.set('points', new Y.Array<Y.Map<any>>());
@@ -259,6 +266,7 @@ export function snapshotFromYDoc(yDoc: Y.Doc): FlightPlan {
   const bankAngle = (yPlan.get('bankAngle') as number) ?? 45;
   const initTimeSec = (yPlan.get('initTimeSec') as number) ?? 0;
   const initFob = (yPlan.get('initFob') as number) ?? 0;
+  const profileId = yPlan.get('profileId') as string | undefined;
 
   // Points
   const yPoints = yPlan.get('points') as Y.Array<Y.Map<any>> | undefined;
@@ -310,6 +318,7 @@ export function snapshotFromYDoc(yDoc: Y.Doc): FlightPlan {
 
   const plan: FlightPlan = {
     theatre, name, declination, bankAngle, initTimeSec, initFob, points,
+    ...(profileId !== undefined ? { profileId } : {}),
     ...(libraryRefs ? { libraryRefs } : {}),
     ...(markers ? { markers } : {}),
     ...(attackPlanning ? { attackPlanning } : {}),

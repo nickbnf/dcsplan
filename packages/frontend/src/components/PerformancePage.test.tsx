@@ -25,8 +25,14 @@ let mockProfileName = 'Test Profile';
 
 vi.mock('../contexts/PerformanceContext', () => ({
   usePerformance: () => ({
+    tier: 'anonymous',
     performance: mockPerformance,
     profileName: mockProfileName,
+    editingAircraft: mockPerformance,
+    editingProfileName: mockProfileName,
+    flownProfileId: null,
+    profiles: [],
+    editingProfileId: null,
     setPerformance: mockSetPerformance,
     setProfileName: mockSetProfileName,
     updateAircraft: (patch: Partial<Aircraft>) => mockSetPerformance({ ...mockPerformance, ...patch }),
@@ -72,6 +78,40 @@ describe('PerformancePage', () => {
     mockSetPerformance.mockClear();
     mockFlightPlan = makePlan();
     mockPerformance = defaultAircraft();
+  });
+
+  describe('Profile area layout (task 11.3, anonymous tier)', () => {
+    it('shows aircraft identity, general performance, regimes, then the editor, in that order', () => {
+      mockPerformance = { ...defaultAircraft(), regimes: [makeRegime()] };
+      render(<PerformancePage />);
+      const order = ['Aircraft identity', 'General performance', 'Regimes']
+        .map(name => screen.getByRole('region', { name }));
+      for (let i = 1; i < order.length; i++) {
+        expect(order[i - 1].compareDocumentPosition(order[i]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      }
+      const general = screen.getByRole('region', { name: 'General performance' });
+      expect(within(general).getByLabelText('Taxi fuel')).toBeInTheDocument();
+      expect(within(general).getByText('Take-off')).toBeInTheDocument();
+    });
+
+    it('has no profile-name field and no profile list or plan chooser', () => {
+      render(<PerformancePage />);
+      expect(screen.queryByLabelText('Profile name')).toBeNull();
+      expect(screen.queryByRole('navigation', { name: 'Profiles' })).toBeNull();
+      expect(screen.queryByLabelText('This plan flies')).toBeNull();
+    });
+
+    it('shows regimes as chips; clicking one selects it and opens its editor', () => {
+      mockPerformance = { ...defaultAircraft(), regimes: [makeRegime(), makeRegime({ id: 'r2', name: 'Bravo' })] };
+      render(<PerformancePage />);
+      const regimes = screen.getByRole('region', { name: 'Regimes' });
+      const bravo = within(regimes).getByRole('button', { name: 'Bravo' });
+      expect(bravo).toHaveAttribute('aria-pressed', 'false');
+      fireEvent.click(bravo);
+      expect(bravo).toHaveAttribute('aria-pressed', 'true');
+      expect(screen.getByDisplayValue('Bravo')).toBeInTheDocument();   // the editor's name field
+      expect(within(regimes).getByRole('button', { name: '+ Add regime' })).toBeInTheDocument();
+    });
   });
 
   describe('Aircraft header', () => {

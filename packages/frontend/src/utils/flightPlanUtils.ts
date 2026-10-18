@@ -145,7 +145,10 @@ export const flightPlanUtils = {
     updateBankAngle: (flightPlan: FlightPlan, bankAngle: number): FlightPlan => {
         return { ...flightPlan, bankAngle }
     },
-    downloadFlightPlan: (flightPlan: FlightPlan, library?: LibraryObject[], performance?: Aircraft): void => {
+    downloadFlightPlan: (
+        flightPlan: FlightPlan, library?: LibraryObject[], performance?: Aircraft,
+        performanceProfile?: { id: string },
+    ): void => {
         // Embed snapshots of all referenced library entries so the file is standalone
         const referencedIds = new Set((flightPlan.libraryRefs ?? []).map(r => r.uuid));
         const snapshot = library?.filter(e => referencedIds.has(e.id)) ?? [];
@@ -154,6 +157,7 @@ export const flightPlanUtils = {
             flightPlan: flightPlan,
             ...(snapshot.length > 0 && { librarySnapshot: snapshot }),
             ...(performance && { performanceSnapshot: performance }),
+            ...(performance && performanceProfile && { performanceProfile }),
         };
 
         const jsonString = JSON.stringify(exportData, null, 2);
@@ -175,11 +179,10 @@ export const flightPlanUtils = {
         URL.revokeObjectURL(url);
     },
 
-    downloadAircraft: (aircraft: Aircraft, profileName?: string): void => {
+    downloadAircraft: (aircraft: Aircraft): void => {
         const aircraftCopy = JSON.parse(JSON.stringify(aircraft));
         const envelope: PerformanceFileV1 = {
             version: PERFORMANCE_FILE_VERSION,
-            name: profileName,
             aircraft: aircraftCopy,
         };
         const jsonString = JSON.stringify(envelope, null, 2);

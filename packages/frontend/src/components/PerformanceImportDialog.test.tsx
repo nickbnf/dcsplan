@@ -24,8 +24,11 @@ const mockSetProfileName = vi.fn();
 
 vi.mock('../contexts/PerformanceContext', () => ({
   usePerformance: () => ({
+    tier: 'anonymous',
     performance: mockPerformance,
     profileName: 'Test Profile',
+    editingAircraft: mockPerformance,
+    editingProfileName: 'Test Profile',
     setPerformance: mockSetPerformance,
     setProfileName: mockSetProfileName,
     updateAircraft: vi.fn(),

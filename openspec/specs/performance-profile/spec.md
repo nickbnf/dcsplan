@@ -8,35 +8,10 @@ A **performance profile** is a named container holding one aircraft's performanc
 
 ## Requirements
 
-### Requirement: Profile data model
-Each performance profile SHALL have a user-editable `name` (non-empty, trimmed) and SHALL own the aircraft data block (model, takeoffConfiguration, taxiFuel, takeoff) and the regime collection previously located on `flightPlan.aircraft`. The profile SHALL round-trip through JSON serialisation without modification.
-
-In the **signed-in** tier, each profile additionally has an immutable server-assigned `id`. Names SHALL be unique within the collection (case-insensitive).
-
-In the **anonymous** tier, the single profile has no `id` — it is identified by being the only one. An `id` is assigned server-side when the profile is adopted into a space at sign-in.
-
-#### Scenario: Anonymous profile has a name but no id
-- **WHEN** an anonymous user views or exports their profile
-- **THEN** the profile has a `name` and aircraft data but no `id` field
-
-#### Scenario: Signed-in profile has a server-assigned id and unique name
-- **WHEN** a signed-in user creates a new profile
-- **THEN** it has a server-assigned `id`, a default name unique within the collection, and empty/zero aircraft data with no regimes
-
-#### Scenario: Round-trip serialisation preserves profile data
-- **WHEN** a profile is exported and re-imported
-- **THEN** the profile's `name`, aircraft fields, and regimes are present with identical values
-
-#### Scenario: Profile name uniqueness is enforced (signed-in)
-- **WHEN** a signed-in user attempts to rename a profile to a name already used by another profile (case-insensitive)
-- **THEN** an inline validation error is shown and the rename is not saved
-
----
-
 ### Requirement: Profile storage
-In the **anonymous** tier, the single profile SHALL be stored under the localStorage key `dcsplan.performance` as a JSON object with the shape `{ version, name, aircraft }`. The key is written atomically.
+In the **anonymous** tier, the single profile SHALL be stored under the localStorage key `dcsplan.performance` as a JSON object with the shape `{ version, aircraft }`. The key is written atomically.
 
-In the **signed-in** tier, the profile collection SHALL be server-backed. The collection MAY be empty — a new user starts with no profiles, and all profiles may be deleted.
+In the **signed-in** tier, the profile collection SHALL be the active space's collection, persisted and synchronized as defined by `space-asset-sync`. The collection MAY be empty — a new user starts with no profiles, and all profiles may be deleted.
 
 #### Scenario: Anonymous profile persists across reloads
 - **WHEN** an anonymous user reloads the application
@@ -45,6 +20,10 @@ In the **signed-in** tier, the profile collection SHALL be server-backed. The co
 #### Scenario: Signed-in collection may be empty
 - **WHEN** a signed-in user has never created a profile, or has deleted all profiles
 - **THEN** the collection is empty and the plan resolves to the null profile
+
+#### Scenario: Signed-in collection is shared across devices
+- **WHEN** a signed-in user creates a profile on one device
+- **THEN** the profile is in the collection on their other devices
 
 ---
 
@@ -81,31 +60,10 @@ In the **signed-in** tier, `FlightPlan` SHALL include an optional `profileId` fi
 
 ---
 
-### Requirement: Profile CRUD on the Performance page (signed-in only)
-In the **signed-in** tier, the Performance page SHALL provide controls to create, rename, and delete profiles. The profile selector SHALL be distinct from the per-plan profile chooser: it controls which profile is displayed for editing, not which profile the plan flies (see *Profile selection split*).
-
-In the **anonymous** tier, the Performance page SHALL display the single profile for editing directly, with a name field but no create, delete, or profile-switching controls.
-
-#### Scenario: Signed-in user creates a new profile
-- **WHEN** a signed-in user creates a new profile from the Performance page
-- **THEN** a profile with a server-assigned id and default name is added to the collection and selected for editing
-
-#### Scenario: Signed-in user renames a profile
-- **WHEN** a signed-in user renames a profile to a unique, non-empty value
-- **THEN** the profile's `name` is updated; its `id` is unchanged; any plan referencing it by `profileId` is unaffected
-
-#### Scenario: Reject duplicate name on rename (signed-in)
-- **WHEN** a signed-in user attempts to rename a profile to a name already taken (case-insensitive)
-- **THEN** an inline validation error is shown and the rename is not saved
-
-#### Scenario: Anonymous user sees single-profile editing
-- **WHEN** an anonymous user navigates to the Performance page
-- **THEN** the single profile is shown for editing with a name field; no profile creation, deletion, or switching controls are visible
-
----
-
 ### Requirement: Profile deletion (signed-in only)
-In the **signed-in** tier, any profile MAY be deleted. When the plan's `profileId` references the profile being deleted AND at least one leg is bound to a regime, a confirmation dialog SHALL name the count of bound legs and state the consequence — the same wording as the profile-switching confirmation. On confirm, the profile is deleted, `profileId` is cleared, and the plan falls back to the null profile; all bound legs are cleared to Manual, retaining stored `tas` and `fuelFlow`. When no leg is bound, deletion proceeds without confirmation (or with a simpler "Delete this profile?" prompt). The collection MAY be empty after deletion.
+In the **signed-in** tier, any profile MAY be deleted. When the plan's `profileId` references the profile being deleted AND at least one leg is bound to a regime, a confirmation dialog SHALL name the count of bound legs and state the consequence — the same wording as the profile-switching confirmation. On confirm, the profile is deleted, `profileId` is cleared, and the plan falls back to the null profile; all bound legs are cleared to Manual, retaining stored `tas` and `fuelFlow`. When no leg is bound, deletion asks a simpler confirmation naming the profile by its label. The collection MAY be empty after deletion.
+
+Other plans in the space that reference the deleted profile SHALL NOT be modified by the deletion. They resolve to the null profile when opened, and their bound legs compute as Manual (see `performance-regime`).
 
 In the **anonymous** tier, deletion SHALL NOT be offered — there is exactly one profile.
 
@@ -125,6 +83,10 @@ In the **anonymous** tier, deletion SHALL NOT be offered — there is exactly on
 - **WHEN** a signed-in user deletes the only profile in the collection
 - **THEN** the collection is empty and the plan resolves to the null profile
 
+#### Scenario: Another plan flying the deleted profile falls back (signed-in)
+- **WHEN** a signed-in user deletes a profile, then opens a different plan whose `profileId` referenced it
+- **THEN** that plan resolves to the null profile and its bound legs compute as Manual, and its `profileId` and `regimeId` values are not changed by opening it
+
 #### Scenario: Anonymous user has no deletion control
 - **WHEN** an anonymous user views the Performance page
 - **THEN** no profile deletion control is visible
@@ -132,7 +94,7 @@ In the **anonymous** tier, deletion SHALL NOT be offered — there is exactly on
 ---
 
 ### Requirement: Profile switching resets legs to Manual (signed-in only)
-In the **signed-in** tier, switching the plan's `profileId` to a different profile SHALL clear `regimeId` on every waypoint that references a regime, retaining the waypoint's stored `tas` and `fuelFlow`. Before the switch, a confirmation dialog SHALL name the count of bound legs and state the consequence: legs will be set to Manual while their TAS and fuel flow are kept. When **no** leg is bound to a regime, the switch SHALL proceed without confirmation.
+In the **signed-in** tier, switching the plan's `profileId` to a different profile SHALL clear `regimeId` on every waypoint **bound** to a regime of the current profile, retaining the waypoint's stored `tas` and `fuelFlow`. A `regimeId` that does not resolve in the current profile (an orphan, see `performance-regime`) is not bound: the switch SHALL leave it unchanged, and it becomes bound if it resolves in the new profile. Before the switch, a confirmation dialog SHALL name the count of bound legs and state the consequence: legs will be set to Manual while their TAS and fuel flow are kept. When **no** leg is bound to a regime, the switch SHALL proceed without confirmation.
 
 The reset is one-way: switching *back* to the original profile does **not** restore any previously cleared `regimeId`. Recovery is available only through the planner's undo stack.
 
@@ -154,7 +116,9 @@ In the **anonymous** tier, there is one profile and no switching — this requir
 - **WHEN** a signed-in user switches from profile A to profile B, then back to profile A
 - **THEN** all legs remain Manual; no `regimeId` is restored from before the switch
 
----
+#### Scenario: Orphan bindings survive a switch and resolve in the new profile (signed-in)
+- **WHEN** a signed-in user's plan resolves to the null profile, its legs carry `regimeId`s from a profile no longer in the space, and the user selects a profile that contains regimes with those ids
+- **THEN** the switch happens with no confirmation, no `regimeId` is cleared, and the legs compute from the new profile's regimes
 
 ### Requirement: Profile selection split (signed-in only)
 In the **signed-in** tier, two distinct selections SHALL exist: (a) `plan.profileId` — which profile the plan flies, changed via the per-plan chooser with confirmation; and (b) `editingProfileId` — a UI-local selection on the Performance page controlling which profile is displayed for editing, changeable freely with no plan impact.
@@ -171,54 +135,25 @@ In the **anonymous** tier, there is one profile, so editing *is* flying — no s
 
 ---
 
-### Requirement: Migration from single-blob store
-On first load after upgrade, a synchronous pre-mount bootstrap SHALL migrate data in `dcsplan.performance`. The migration SHALL run **after** `bootstrapPerformanceFromLegacyPlan()` so a pre-1.5 user gets both migrations in a single boot.
-
-1. If `dcsplan.performance` already has a `name` field: no migration needed.
-2. Else if `dcsplan.performance` exists: add a `name` derived from `aircraft.model` (falling back to `"Default profile"`), write back.
-3. Else: write a default profile to `dcsplan.performance`.
-
-No `id` is assigned (D2 — server-assigned). No `profileId` is set on the plan (D3 — anonymous resolves implicitly).
-
-The migration SHALL be wrapped in try/catch: a failed migration starts the app on defaults rather than blocking boot.
-
-#### Scenario: Existing single-blob data gains a name
-- **WHEN** the app loads with `dcsplan.performance` present but no `name` field
-- **THEN** a `name` is derived from `aircraft.model` and written back to `dcsplan.performance`
-
-#### Scenario: Pre-1.5 user gets both migrations in one boot
-- **WHEN** a user with a pre-1.5 plan (aircraft block still on the flight plan) loads the app for the first time after upgrade
-- **THEN** `bootstrapPerformanceFromLegacyPlan()` runs first (extracting aircraft to `dcsplan.performance`), then the name migration runs, and the user ends up with a named profile
-
-#### Scenario: Fresh install starts with a default profile
-- **WHEN** the app loads with neither `dcsplan.performance` nor any prior data
-- **THEN** a default profile with name `"Default profile"` is written to `dcsplan.performance`
-
-#### Scenario: Failed migration falls back to defaults
-- **WHEN** the migration throws an error (corrupted localStorage, unexpected shape)
-- **THEN** the error is caught, a default profile is created, and the app starts normally
-
----
-
 ### Requirement: Performance import is tier-branched
-In the **anonymous** tier, importing a `.perf.json` file SHALL **replace** the single profile's aircraft data — the current behaviour. If the file carries a `name`, the profile's name SHALL be updated; otherwise a name SHALL be derived from `aircraft.model`.
+In the **anonymous** tier, importing a `.perf.json` file SHALL **replace** the single profile's aircraft data — the current behaviour. A `name` in the file SHALL be ignored.
 
-In the **signed-in** tier, importing a `.perf.json` file SHALL **add** a new profile to the collection with a fresh server-assigned id. It SHALL NOT replace any existing profile.
+In the **signed-in** tier, importing a `.perf.json` file SHALL **add** a new profile to the collection with a new id. It SHALL NOT replace any existing profile.
 
 #### Scenario: Anonymous import replaces
 - **WHEN** an anonymous user imports a `.perf.json` file
-- **THEN** the single profile's aircraft data is replaced with the imported data; the profile's name is updated from the file or derived from `aircraft.model`
+- **THEN** the single profile's aircraft data is replaced with the imported data
 
 #### Scenario: Signed-in import adds without replacing
 - **WHEN** a signed-in user imports a `.perf.json` file while two profiles already exist
 - **THEN** the collection grows from 2 to 3 profiles; the two existing profiles are unchanged
 
 #### Scenario: Signed-in plan import with embedded performance snapshot
-- **WHEN** a signed-in user imports a flight plan that carries a `performanceSnapshot` with a profile id not in the collection
+- **WHEN** a signed-in user imports a flight plan that carries a `performanceSnapshot` whose recorded profile id is absent or not in the collection
 - **THEN** the snapshot is added as a new profile and the plan's `profileId` points at it
 
 #### Scenario: Signed-in plan import with matching snapshot id reuses existing
-- **WHEN** a signed-in user imports a flight plan whose `performanceSnapshot.id` matches a profile already in the collection
+- **WHEN** a signed-in user imports a flight plan whose recorded profile id (`performanceProfile.id`) matches a profile already in the collection
 - **THEN** no profile is added; the plan's `profileId` is set to the existing profile's id
 
 ---
@@ -233,3 +168,109 @@ When an anonymous user signs in, the single local profile SHALL be adopted into 
 #### Scenario: Adoption into a space with existing profiles is additive
 - **WHEN** an anonymous user signs in to a space that already has profiles
 - **THEN** the adopted profile is added alongside the existing profiles; no existing profile is replaced
+
+### Requirement: Performance profile data model
+A performance profile SHALL own the aircraft data block (model, takeoffConfiguration, taxiFuel, takeoff) and the regime collection previously located on `flightPlan.aircraft`. It SHALL have no name of its own: it is shown by its **label**, "`model` · `takeoffConfiguration`", or whichever of the two is non-empty, or "Untitled profile" when both are empty. Labels need not be unique. The profile SHALL round-trip through JSON serialisation without modification.
+
+#### Scenario: Round-trip serialisation preserves profile data
+- **WHEN** a profile is exported and re-imported
+- **THEN** the profile's aircraft fields and regimes are present with identical values
+
+#### Scenario: Label from aircraft and take-off configuration
+- **WHEN** a profile has `model = "F-15E"` and `takeoffConfiguration = "MIL @ 60klb"`
+- **THEN** it is labelled "F-15E · MIL @ 60klb"
+
+#### Scenario: Label with missing fields
+- **WHEN** a profile has only `model = "A-10C"`, or neither field set
+- **THEN** it is labelled "A-10C", or "Untitled profile" respectively
+
+---
+
+### Requirement: Profile identity
+In the **signed-in** tier, each profile SHALL have an immutable `id`, generated on the device that creates it, so that a profile can be created while disconnected. Two profiles MAY carry the same label; they remain distinct by `id`.
+
+In the **anonymous** tier, the single profile has no `id` — it is identified by being the only one. An `id` is assigned when the profile is adopted into a space at sign-in.
+
+#### Scenario: Anonymous profile has no id
+- **WHEN** an anonymous user views or exports their profile
+- **THEN** the profile has aircraft data but no `id` field
+
+#### Scenario: Signed-in profile has an id generated on creation
+- **WHEN** a signed-in user creates a new profile, connected or not
+- **THEN** it has an `id` immediately and empty/zero aircraft data with no regimes, labelled "Untitled profile"
+
+#### Scenario: Profiles with the same label stay distinct (signed-in)
+- **WHEN** a signed-in user gives two profiles the same aircraft and take-off configuration
+- **THEN** both are kept, and both appear in the profile list
+
+---
+
+### Requirement: Profile list on the Performance page (signed-in only)
+In the **signed-in** tier, the Performance page SHALL list the space's profiles by label in a sidebar, with the edited profile in bold and the flown profile marked. Selecting one SHALL show it for editing without changing which profile the plan flies (*Profile selection split*). The list SHALL offer creating and importing; the edited profile's area SHALL offer exporting and deleting.
+
+#### Scenario: The list shows every profile by label (signed-in)
+- **WHEN** a signed-in user opens the Performance view of a space with three profiles
+- **THEN** the sidebar lists the three profiles by label, with the edited one in bold and the flown one marked
+
+#### Scenario: Selecting a profile shows it for editing (signed-in)
+- **WHEN** a signed-in user clicks another profile in the list
+- **THEN** that profile is shown for editing and in bold; the plan's profile is unchanged
+
+#### Scenario: Signed-in user creates a new profile
+- **WHEN** a signed-in user creates a new profile from the list
+- **THEN** an "Untitled profile" with a new id is added to the list and selected for editing
+
+#### Scenario: An empty space offers creation and import (signed-in)
+- **WHEN** a signed-in user's space has no profiles
+- **THEN** the page offers to create or import a profile, and shows no profile editor
+
+---
+
+### Requirement: Profile editing layout on the Performance page
+The edited profile SHALL be laid out top to bottom as: the aircraft identity (model, take-off configuration), then a **general performance** line (taxi fuel, take-off block), then the **regimes** as a wrapping row of selectable chips with an add control, then the selected regime's editor at full width. This layout applies in both tiers; the **anonymous** tier shows it for its single profile with no profile list and no plan chooser.
+
+#### Scenario: Sections in order (both tiers)
+- **WHEN** a user opens the Performance view
+- **THEN** the aircraft identity, the general performance line, the regime chips and the regime editor appear in that order
+
+#### Scenario: Selecting a regime chip opens its editor
+- **WHEN** the user clicks a regime chip
+- **THEN** that chip is highlighted and its regime is shown in the editor below
+
+#### Scenario: Anonymous user sees single-profile editing
+- **WHEN** an anonymous user navigates to the Performance page
+- **THEN** the single profile is shown for editing; no profile list, plan chooser, creation or deletion controls are visible
+
+---
+
+### Requirement: Per-plan profile chooser in the Performance page header (signed-in only)
+In the **signed-in** tier, the per-plan chooser SHALL be the only control in a header band at the top of the Performance page, labelled as the profile the active plan flies and listing profiles by label plus a "no profile" choice. It SHALL be visually separated from the profile list and the edited profile. In the **anonymous** tier no chooser is shown.
+
+#### Scenario: Chooser shown in the header (signed-in)
+- **WHEN** a signed-in user opens a plan's Performance view
+- **THEN** the header band shows which profile the plan flies, with a control to change it, and nothing else
+
+#### Scenario: No chooser for anonymous users
+- **WHEN** an anonymous user opens the Performance view
+- **THEN** no per-plan profile chooser is shown
+
+---
+
+### Requirement: Anonymous profile bootstrap
+On load, a synchronous pre-mount bootstrap SHALL ensure `dcsplan.performance` holds a profile, running **after** `bootstrapPerformanceFromLegacyPlan()` so a pre-1.5 user gets both in a single boot. If the key is absent, a default (empty) profile SHALL be written. A `name` left by earlier versions SHALL be ignored. A failed bootstrap SHALL start the app on defaults rather than block boot. No `id` is assigned and no `profileId` is set on the plan.
+
+#### Scenario: Pre-1.5 user gets both migrations in one boot
+- **WHEN** a user with a pre-1.5 plan (aircraft block still on the flight plan) loads the app for the first time after upgrade
+- **THEN** `bootstrapPerformanceFromLegacyPlan()` runs first, and the user ends up with that aircraft as their profile
+
+#### Scenario: Fresh install starts with a default profile
+- **WHEN** the app loads with neither `dcsplan.performance` nor any prior data
+- **THEN** a default empty profile is written to `dcsplan.performance`
+
+#### Scenario: A stored name is ignored
+- **WHEN** `dcsplan.performance` carries a `name` from an earlier version
+- **THEN** the profile loads with its aircraft data and the name plays no part in it
+
+#### Scenario: Failed bootstrap falls back to defaults
+- **WHEN** the bootstrap throws an error (corrupted localStorage, unexpected shape)
+- **THEN** the error is caught, a default profile is used, and the app starts normally

@@ -66,6 +66,10 @@ COPY backend/plans.py .
 COPY backend/space_routes.py .
 COPY backend/sync.py .
 
+# Library + profile sync (add-library-profile-sync)
+COPY backend/assets.py .
+COPY backend/asset_routes.py .
+
 # Runtime data directory (SQLite DB) — mounted as a persistent volume in prod
 RUN mkdir -p /app/data
 

@@ -72,4 +72,85 @@ describe('AuthContext', () => {
     expect(localStorage.getItem('dcsplan-flightplan')).toBe('PLAN');
     expect(localStorage.getItem('dcsplan.performance')).toBe('PERF');
   });
+
+  describe('offline start (user-identity: signed-in state survives starting offline)', () => {
+    const FALCON = { id: 'u1', discord_id: 'd1', display_name: 'Falcon', avatar: null };
+    const signedIn = () => Promise.resolve({ ok: true, status: 200, json: async () => ({ authenticated: true, user: FALCON }) });
+
+    async function rememberFalcon() {
+      global.fetch = vi.fn(signedIn) as unknown as typeof fetch;
+      const { result, unmount } = renderHook(() => useAuth(), { wrapper });
+      await waitFor(() => expect(result.current.status).toBe('authenticated'));
+      unmount();
+    }
+
+    it('starts signed in and disconnected when the server is unreachable and a user is remembered', async () => {
+      await rememberFalcon();
+      global.fetch = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'));
+      const { result } = renderHook(() => useAuth(), { wrapper });
+      await waitFor(() => expect(result.current.status).toBe('authenticated'));
+      expect(result.current.connectivity).toBe('offline');
+      expect(result.current.user?.display_name).toBe('Falcon');
+    });
+
+    it('treats a 5xx like an unreachable server', async () => {
+      await rememberFalcon();
+      global.fetch = vi.fn().mockResolvedValue({ ok: false, status: 502, json: async () => ({}) });
+      const { result } = renderHook(() => useAuth(), { wrapper });
+      await waitFor(() => expect(result.current.connectivity).toBe('offline'));
+      expect(result.current.status).toBe('authenticated');
+    });
+
+    it('starts anonymous offline when nobody was signed in on the device', async () => {
+      global.fetch = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'));
+      const { result } = renderHook(() => useAuth(), { wrapper });
+      await waitFor(() => expect(result.current.status).toBe('anonymous'));
+    });
+
+    it('clears the disconnected state once the server confirms the session', async () => {
+      await rememberFalcon();
+      global.fetch = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'));
+      const { result } = renderHook(() => useAuth(), { wrapper });
+      await waitFor(() => expect(result.current.connectivity).toBe('offline'));
+
+      global.fetch = vi.fn(signedIn) as unknown as typeof fetch;
+      act(() => {
+        window.dispatchEvent(new Event('online'));
+      });
+      await waitFor(() => expect(result.current.connectivity).toBe('online'));
+      expect(result.current.status).toBe('authenticated');
+    });
+
+    it('ends the signed-in state when the server reports the session invalid on reconnect', async () => {
+      await rememberFalcon();
+      global.fetch = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'));
+      const { result } = renderHook(() => useAuth(), { wrapper });
+      await waitFor(() => expect(result.current.connectivity).toBe('offline'));
+
+      global.fetch = vi.fn().mockResolvedValue({ ok: false, status: 401, json: async () => ({}) });
+      act(() => {
+        window.dispatchEvent(new Event('online'));
+      });
+      // Flagged first, so unsent changes can be warned about; then ended.
+      await waitFor(() => expect(result.current.sessionExpired).toBe(true));
+      expect(result.current.status).toBe('authenticated');
+      act(() => result.current.endSession());
+      expect(result.current.status).toBe('anonymous');
+      expect(localStorage.getItem('dcsplan.lastUser')).toBeNull();
+    });
+
+    it('logout forgets the remembered user, so a later offline start is anonymous', async () => {
+      global.fetch = vi.fn(signedIn) as unknown as typeof fetch;
+      const { result, unmount } = renderHook(() => useAuth(), { wrapper });
+      await waitFor(() => expect(result.current.status).toBe('authenticated'));
+      await act(async () => {
+        await result.current.logout();
+      });
+      unmount();
+
+      global.fetch = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'));
+      const second = renderHook(() => useAuth(), { wrapper });
+      await waitFor(() => expect(second.result.current.status).toBe('anonymous'));
+    });
+  });
 });

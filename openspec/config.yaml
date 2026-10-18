@@ -15,7 +15,7 @@ context: |
 
   In-flight programme — "centralized flight plans": moving from a front-end-only,
   single-plan, localStorage app to a centralized, account-backed service.
-  Cross-capability decisions are recorded as AD-1…AD-11 in
+  Cross-capability decisions are recorded as AD-1…AD-17 in
   docs/architecture/centralized-flightplans.md. Cite them; do not restate them.
 
   Vocabulary for that programme:

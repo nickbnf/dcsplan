@@ -104,31 +104,21 @@ describe('validatePerformancePackage', () => {
       expect(result.ok).toBe(true);
     });
 
-    it('accepts package with name and returns it', () => {
+    it('accepts a package with a name from an earlier version, and ignores it', () => {
       const pkg = { version: '1.0', name: 'My F-15E', aircraft: validAircraft };
       const result = validatePerformancePackage(pkg);
       expect(result.ok).toBe(true);
-      if (result.ok) expect(result.name).toBe('My F-15E');
+      if (result.ok) expect('name' in result).toBe(false);
     });
 
-    it('accepts package without name (legacy)', () => {
-      const result = validatePerformancePackage(validPackage);
-      expect(result.ok).toBe(true);
-      if (result.ok) expect(result.name).toBeUndefined();
+    it('accepts a package without name', () => {
+      expect(validatePerformancePackage(validPackage).ok).toBe(true);
     });
 
-    it('ignores empty-string name', () => {
-      const pkg = { version: '1.0', name: '', aircraft: validAircraft };
-      const result = validatePerformancePackage(pkg);
+    it.each(['', 123])('accepts and ignores a name of %j', (name) => {
+      const result = validatePerformancePackage({ version: '1.0', name, aircraft: validAircraft });
       expect(result.ok).toBe(true);
-      if (result.ok) expect(result.name).toBeUndefined();
-    });
-
-    it('ignores non-string name', () => {
-      const pkg = { version: '1.0', name: 123, aircraft: validAircraft };
-      const result = validatePerformancePackage(pkg);
-      expect(result.ok).toBe(true);
-      if (result.ok) expect(result.name).toBeUndefined();
+      if (result.ok) expect('name' in result).toBe(false);
     });
   });
 

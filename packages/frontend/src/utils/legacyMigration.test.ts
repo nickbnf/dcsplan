@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { bootstrapPerformanceFromLegacyPlan, migratePerformanceProfile } from './legacyMigration';
-import { PERFORMANCE_STORAGE_KEY, DEFAULT_PROFILE_NAME } from './performanceStorage';
+import { PERFORMANCE_STORAGE_KEY } from './performanceStorage';
+import { defaultAircraft } from '../types/flightPlan';
 
 const FLIGHT_PLAN_KEY = 'dcsplan-flightplan';
 
@@ -39,7 +40,7 @@ describe('bootstrapPerformanceFromLegacyPlan', () => {
     bootstrapPerformanceFromLegacyPlan();
 
     const stored = JSON.parse(localStorage.getItem(PERFORMANCE_STORAGE_KEY)!);
-    expect(stored.name).toBe('F-15E');
+    expect('name' in stored).toBe(false);
     expect(stored.aircraft.model).toBe('F-15E');
     expect(stored.aircraft.regimes).toHaveLength(1);
     expect(stored.aircraft.regimes[0].id).toBe('r1');
@@ -116,108 +117,50 @@ describe('bootstrapPerformanceFromLegacyPlan', () => {
   });
 });
 
-describe('migratePerformanceProfile', () => {
+describe('migratePerformanceProfile (Anonymous profile bootstrap)', () => {
   beforeEach(() => {
     localStorage.clear();
   });
 
-  it('writes default profile when no performance data exists', () => {
+  const stored = () => JSON.parse(localStorage.getItem(PERFORMANCE_STORAGE_KEY)!);
+
+  it('writes a default profile when no performance data exists', () => {
     migratePerformanceProfile();
-    const stored = JSON.parse(localStorage.getItem(PERFORMANCE_STORAGE_KEY)!);
-    expect(stored.name).toBe(DEFAULT_PROFILE_NAME);
-    expect(stored.version).toBe('1.0');
-    expect(stored.aircraft).toBeDefined();
+    expect(stored()).toEqual({ version: '1.0', aircraft: defaultAircraft() });
   });
 
-  it('adds name to existing old-format data (plain Aircraft block)', () => {
-    localStorage.setItem(PERFORMANCE_STORAGE_KEY, JSON.stringify({
-      model: 'F-15E',
-      takeoffConfiguration: 'MIL',
-      taxiFuel: 400,
-      takeoff: { timeSec: 0, fuel: 0, distance: 0 },
-      regimes: [],
-    }));
-
+  it('wraps an old-format plain Aircraft block in the envelope', () => {
+    const aircraft = { ...defaultAircraft(), model: 'F-15E', takeoffConfiguration: 'MIL', taxiFuel: 400 };
+    localStorage.setItem(PERFORMANCE_STORAGE_KEY, JSON.stringify(aircraft));
     migratePerformanceProfile();
-
-    const stored = JSON.parse(localStorage.getItem(PERFORMANCE_STORAGE_KEY)!);
-    expect(stored.name).toBe('F-15E');
-    expect(stored.aircraft.model).toBe('F-15E');
+    expect(stored()).toEqual({ version: '1.0', aircraft });
   });
 
-  it('adds name to existing envelope without name', () => {
-    localStorage.setItem(PERFORMANCE_STORAGE_KEY, JSON.stringify({
-      version: '1.0',
-      aircraft: {
-        model: 'A-10C', takeoffConfiguration: '', taxiFuel: 0,
-        takeoff: { timeSec: 0, fuel: 0, distance: 0 }, regimes: [],
-      },
-    }));
-
-    migratePerformanceProfile();
-
-    const stored = JSON.parse(localStorage.getItem(PERFORMANCE_STORAGE_KEY)!);
-    expect(stored.name).toBe('A-10C');
-    expect(stored.aircraft.model).toBe('A-10C');
-  });
-
-  it('no-op when name already exists', () => {
-    const data = {
-      version: '1.0', name: 'Custom Name',
-      aircraft: {
-        model: 'F-16C', takeoffConfiguration: '', taxiFuel: 0,
-        takeoff: { timeSec: 0, fuel: 0, distance: 0 }, regimes: [],
-      },
-    };
+  it('leaves an existing envelope alone, including a name from an earlier version', () => {
+    const data = { version: '1.0', name: 'Custom Name', aircraft: { ...defaultAircraft(), model: 'F-16C' } };
     localStorage.setItem(PERFORMANCE_STORAGE_KEY, JSON.stringify(data));
-
     migratePerformanceProfile();
-
-    const stored = JSON.parse(localStorage.getItem(PERFORMANCE_STORAGE_KEY)!);
-    expect(stored.name).toBe('Custom Name');
-  });
-
-  it('falls back to default when old-format has empty model', () => {
-    localStorage.setItem(PERFORMANCE_STORAGE_KEY, JSON.stringify({
-      model: '', takeoffConfiguration: '', taxiFuel: 0,
-      takeoff: { timeSec: 0, fuel: 0, distance: 0 }, regimes: [],
-    }));
-
-    migratePerformanceProfile();
-
-    const stored = JSON.parse(localStorage.getItem(PERFORMANCE_STORAGE_KEY)!);
-    expect(stored.name).toBe(DEFAULT_PROFILE_NAME);
+    expect(stored()).toEqual(data);
   });
 
   it('falls back to defaults on corrupted data', () => {
     localStorage.setItem(PERFORMANCE_STORAGE_KEY, 'not json');
-
     migratePerformanceProfile();
-
-    const stored = JSON.parse(localStorage.getItem(PERFORMANCE_STORAGE_KEY)!);
-    expect(stored.name).toBe(DEFAULT_PROFILE_NAME);
-    expect(stored.version).toBe('1.0');
+    expect(stored()).toEqual({ version: '1.0', aircraft: defaultAircraft() });
   });
 
   it('pre-1.5 user gets both migrations in one boot', () => {
-    const plan = {
-      version: '1.4',
-      flightPlan: {
-        theatre: 'syria', points: [],
-        aircraft: {
-          model: 'F-18C', takeoffConfiguration: 'AB', taxiFuel: 200,
-          takeoff: { timeSec: 0, fuel: 0, distance: 0 }, regimes: [],
-        },
-      },
+    const aircraft = {
+      model: 'F-18C', takeoffConfiguration: 'AB', taxiFuel: 200,
+      takeoff: { timeSec: 0, fuel: 0, distance: 0 }, regimes: [],
     };
-    localStorage.setItem('dcsplan-flightplan', JSON.stringify(plan));
+    localStorage.setItem('dcsplan-flightplan', JSON.stringify({
+      version: '1.4', flightPlan: { theatre: 'syria', points: [], aircraft },
+    }));
 
     bootstrapPerformanceFromLegacyPlan();
     migratePerformanceProfile();
 
-    const stored = JSON.parse(localStorage.getItem(PERFORMANCE_STORAGE_KEY)!);
-    expect(stored.name).toBe('F-18C');
-    expect(stored.aircraft.model).toBe('F-18C');
-    expect(stored.version).toBe('1.0');
+    expect(stored()).toEqual({ version: '1.0', aircraft });
   });
 });

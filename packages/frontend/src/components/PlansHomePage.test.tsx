@@ -31,6 +31,7 @@ beforeEach(() => {
   Object.assign(sel, {
     plans: [plan('AAAAAAAAAAA1', 'Ingress Alpha'), plan('AAAAAAAAAAA2', 'Strike Batumi', 'nevada')],
     newDraft: vi.fn(() => 'AAAAAAAAAAA9'),
+    refreshPlans: vi.fn(async () => []),
   });
 });
 
@@ -68,5 +69,21 @@ describe('PlansHomePage', () => {
     fireEvent.change(screen.getByPlaceholderText('Flight plan name'), { target: { value: 'Ingress Alpha' } });
     expect(screen.queryByText('Name must be unique.')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Create' })).toBeEnabled();
+  });
+});
+
+describe('PlansHomePage — freshness', () => {
+  it('re-fetches the plan list each time the home is shown (renames from elsewhere)', () => {
+    const { unmount } = render(<PlansHomePage />);
+    expect(sel.refreshPlans).toHaveBeenCalledTimes(1);
+    unmount();
+    render(<PlansHomePage />);
+    expect(sel.refreshPlans).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps showing the list it has if the re-fetch fails (offline)', async () => {
+    sel.refreshPlans = vi.fn(async () => { throw new TypeError('Failed to fetch'); });
+    render(<PlansHomePage />);
+    expect(await screen.findByText('Ingress Alpha')).toBeInTheDocument();
   });
 });

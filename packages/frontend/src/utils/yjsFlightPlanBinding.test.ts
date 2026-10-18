@@ -426,3 +426,38 @@ describe('comprehensive round-trip', () => {
     expect(snap).toEqual(plan2);
   });
 });
+
+describe('profileId (add-library-profile-sync, task 8.1)', () => {
+  it('round-trips the plan profile and is absent when unset', () => {
+    const doc = new Y.Doc();
+    seedYDoc(doc, emptyPlan());
+    expect('profileId' in snapshotFromYDoc(doc)).toBe(false);
+
+    applyFlightPlanToYDoc(doc, emptyPlan(), emptyPlan({ profileId: 'p-1' }));
+    expect(snapshotFromYDoc(doc).profileId).toBe('p-1');
+  });
+
+  it('switching and clearing the profile are single-key changes', () => {
+    const doc = new Y.Doc();
+    seedYDoc(doc, emptyPlan({ profileId: 'p-1' }));
+    applyFlightPlanToYDoc(doc, emptyPlan({ profileId: 'p-1' }), emptyPlan({ profileId: 'p-2' }));
+    expect(snapshotFromYDoc(doc).profileId).toBe('p-2');
+    applyFlightPlanToYDoc(doc, emptyPlan({ profileId: 'p-2' }), emptyPlan());
+    expect('profileId' in snapshotFromYDoc(doc)).toBe(false);
+  });
+
+  it('a profile switch and leg resets land in one update', () => {
+    const doc = new Y.Doc();
+    const before = emptyPlan({ profileId: 'p-1', points: [wp('a', { regimeId: 'r1' })] });
+    seedYDoc(doc, before);
+    let updates = 0;
+    doc.on('update', () => { updates++; });
+    doc.transact(() => {
+      applyFlightPlanToYDoc(doc, before, { ...before, profileId: 'p-2', points: [wp('a')] });
+    });
+    expect(updates).toBe(1);
+    const snap = snapshotFromYDoc(doc);
+    expect(snap.profileId).toBe('p-2');
+    expect(snap.points[0].regimeId).toBeUndefined();
+  });
+});

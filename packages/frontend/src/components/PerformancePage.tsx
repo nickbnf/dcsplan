@@ -6,6 +6,7 @@ import { generateRegimeId, flightPlanUtils } from '../utils/flightPlanUtils';
 import { clearRegimeFromAllWaypoints } from '../utils/regimeUtils';
 import type { Regime, Aircraft } from '../types/flightPlan';
 import PerformanceImportDialog from './PerformanceImportDialog';
+import { DeleteProfileButton, PlanProfileHeader, ProfileSidebar } from './performance/ProfileControls';
 
 // --- Editor form types ---
 
@@ -270,9 +271,14 @@ function formatMinSec(totalSec: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
-const PerformancePage: React.FC = () => {
+/** Editor for one profile's aircraft data and regimes. Signed in, this is the
+ * profile selected for editing, not necessarily the one the plan flies. */
+const ProfileEditor: React.FC = () => {
   const { flightPlan, onFlightPlanUpdate } = useFlightPlan();
-  const { performance, profileName, setPerformance, setProfileName } = usePerformance();
+  const { tier, editingAircraft: performance, setPerformance, editingProfileId, flownProfileId } = usePerformance();
+  const signedIn = tier === 'signed-in';
+  // Deleting a regime unbinds legs only when the plan flies this profile.
+  const editsFlownProfile = !signedIn || editingProfileId === flownProfileId;
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [newlyAddedId, setNewlyAddedId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Regime | null>(null);
@@ -302,7 +308,7 @@ const PerformancePage: React.FC = () => {
 
   const handleDeleteConfirm = () => {
     if (!deleteTarget) return;
-    onFlightPlanUpdate(clearRegimeFromAllWaypoints(flightPlan, deleteTarget.id));
+    if (editsFlownProfile) onFlightPlanUpdate(clearRegimeFromAllWaypoints(flightPlan, deleteTarget.id));
     setPerformance({ ...performance, regimes: regimes.filter(r => r.id !== deleteTarget.id) });
     if (selectedId === deleteTarget.id) setSelectedId(null);
     setDeleteTarget(null);
@@ -328,28 +334,13 @@ const PerformancePage: React.FC = () => {
 
   return (
     <div className="flex flex-col flex-1 w-full overflow-hidden">
-      {/* Aircraft header */}
-      <div className="bg-white border-b border-gray-300 px-6 py-3 space-y-2 shrink-0">
-        {/* Profile name */}
-        <div className="flex items-center gap-2">
-          <label className="text-xs font-aero-label text-gray-500 whitespace-nowrap">Profile</label>
-          <input
-            type="text"
-            value={profileName}
-            onChange={e => setProfileName(e.target.value)}
-            onBlur={e => {
-              const trimmed = e.target.value.trim();
-              if (!trimmed) setProfileName('Default profile');
-            }}
-            placeholder="Profile name"
-            className="text-sm font-aero-mono font-semibold border border-gray-300 rounded px-2 py-0.5 focus:outline-none focus:border-gray-500 w-56"
-          />
-        </div>
-        {/* Row 1: Aircraft name · T/O Config · export/import links */}
+      {/* Aircraft identity: what this profile is (also its label) */}
+      <section aria-label="Aircraft identity" className="bg-white border-b border-gray-200 px-6 py-3 shrink-0">
         <div className="flex items-center gap-4 flex-wrap">
           <div className="flex items-center gap-2">
-            <label className="text-xs font-aero-label text-gray-500 whitespace-nowrap">Aircraft</label>
+            <label htmlFor="perf-model" className="text-xs font-aero-label text-gray-500 whitespace-nowrap">Aircraft</label>
             <input
+              id="perf-model"
               type="text"
               value={performance.model}
               onChange={e => updateAircraft({ model: e.target.value })}
@@ -358,8 +349,9 @@ const PerformancePage: React.FC = () => {
             />
           </div>
           <div className="flex items-center gap-2">
-            <label className="text-xs font-aero-label text-gray-500 whitespace-nowrap">T/O Config</label>
+            <label htmlFor="perf-toconfig" className="text-xs font-aero-label text-gray-500 whitespace-nowrap">T/O Config</label>
             <input
+              id="perf-toconfig"
               type="text"
               value={performance.takeoffConfiguration}
               onChange={e => updateAircraft({ takeoffConfiguration: e.target.value })}
@@ -369,36 +361,43 @@ const PerformancePage: React.FC = () => {
           </div>
           <div className="flex items-center gap-3 ml-auto">
             <button
-              onClick={() => flightPlanUtils.downloadAircraft(performance, profileName)}
+              onClick={() => flightPlanUtils.downloadAircraft(performance)}
               className="text-xs font-aero-label text-gray-400 hover:text-gray-600 transition-colors"
             >
               ⬇ Export
             </button>
-            <button
-              onClick={() => setShowImportDialog(true)}
-              className="text-xs font-aero-label text-gray-400 hover:text-gray-600 transition-colors"
-            >
-              ⬆ Import
-            </button>
+            {signedIn ? (
+              <DeleteProfileButton />
+            ) : (
+              <button
+                onClick={() => setShowImportDialog(true)}
+                className="text-xs font-aero-label text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                ⬆ Import
+              </button>
+            )}
           </div>
         </div>
+      </section>
 
-        {/* Row 2: Taxi fuel */}
-        <div className="flex items-center gap-2">
-          <label className="text-xs font-aero-label text-gray-500 whitespace-nowrap">Taxi fuel</label>
-          <input
-            type="number"
-            value={performance.taxiFuel}
-            min={0}
-            onChange={e => updateAircraft({ taxiFuel: Math.max(0, Number(e.target.value)) })}
-            className="text-sm font-aero-mono border border-gray-300 rounded px-2 py-0.5 focus:outline-none focus:border-gray-500 w-20 text-right"
-          />
-          <span className="text-xs font-aero-label text-gray-400">lbs</span>
-        </div>
-
-        {/* Row 3: T/O performance */}
-        <div className="flex items-start gap-2 flex-wrap">
-          <label className="text-xs font-aero-label text-gray-500 whitespace-nowrap mt-0.5">T/O perf</label>
+      {/* General performance: aircraft-wide values, expected to grow */}
+      <section aria-label="General performance" className="bg-white border-b border-gray-200 px-6 py-3 shrink-0">
+        <h3 className="text-xs font-aero-label uppercase tracking-wide text-gray-500 mb-2">General performance</h3>
+        <div className="flex items-start gap-x-8 gap-y-2 flex-wrap">
+          <div className="flex items-center gap-2">
+            <label htmlFor="perf-taxi" className="text-xs font-aero-label text-gray-500 whitespace-nowrap">Taxi fuel</label>
+            <input
+              id="perf-taxi"
+              type="number"
+              value={performance.taxiFuel}
+              min={0}
+              onChange={e => updateAircraft({ taxiFuel: Math.max(0, Number(e.target.value)) })}
+              className="text-sm font-aero-mono border border-gray-300 rounded px-2 py-0.5 focus:outline-none focus:border-gray-500 w-20 text-right"
+            />
+            <span className="text-xs font-aero-label text-gray-400">lbs</span>
+          </div>
+          <div className="flex items-start gap-2 flex-wrap">
+            <label className="text-xs font-aero-label text-gray-500 whitespace-nowrap mt-0.5">Take-off</label>
           <div className="flex items-center gap-1">
             <input
               type="text"
@@ -453,82 +452,76 @@ const PerformancePage: React.FC = () => {
             aria-label="Take-off performance info"
           >ⓘ</span>
           {toTimeError && <p className="text-xs text-red-500 w-full mt-0.5">{toTimeError}</p>}
+          </div>
         </div>
-      </div>
+      </section>
 
-      {/* Body: regime list + editor */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* Left sidebar */}
-        <div className="w-[400px] shrink-0 h-full bg-gray-50 border-r border-gray-300 flex flex-col">
-          <div className="p-3">
+      {/* Regimes: chips, so the page never shows two side-by-side lists (D10a) */}
+      <section aria-label="Regimes" className="bg-white border-b border-gray-200 px-6 py-3 shrink-0">
+        <h3 className="text-xs font-aero-label uppercase tracking-wide text-gray-500 mb-2">Regimes</h3>
+        <div className="flex flex-wrap gap-2">
+          {regimes.map(regime => (
             <button
-              onClick={handleAddRegime}
-              className="w-full text-left px-3 py-2 text-sm font-aero-label text-gray-700 border border-dashed border-gray-300 rounded hover:bg-gray-100 hover:border-gray-400 transition-colors"
+              key={regime.id}
+              aria-pressed={selectedId === regime.id}
+              onClick={() => { setSelectedId(regime.id); setNewlyAddedId(null); }}
+              className={`px-3 py-1 rounded-full border text-sm font-aero-label transition-colors flex items-center gap-1 ${
+                selectedId === regime.id
+                  ? 'bg-amber-50 border-amber-400 text-gray-900 font-semibold'
+                  : 'bg-white border-gray-300 text-gray-800 hover:bg-gray-50'
+              }`}
             >
-              + Add regime
+              {regime.name}
+              {regime.climb && <span className="text-xs text-gray-500">↑</span>}
+              {regime.descent && <span className="text-xs text-gray-500">↓</span>}
             </button>
-          </div>
-          <div className="flex-1 overflow-y-auto px-3 pb-3 space-y-1">
-            {regimes.map(regime => (
-              <button
-                key={regime.id}
-                onClick={() => { setSelectedId(regime.id); setNewlyAddedId(null); }}
-                className={`w-full text-left px-3 py-2 rounded text-sm transition-colors flex items-center justify-between ${
-                  selectedId === regime.id ? 'bg-gray-200 text-gray-900 border border-gray-400' : 'hover:bg-gray-200 text-gray-900'
-                }`}
-              >
-                <span className="font-aero-label">{regime.name}</span>
-                <span className="flex gap-1">
-                  {regime.climb && (
-                    <span className={`text-xs px-1.5 py-0.5 rounded ${selectedId === regime.id ? 'bg-gray-300 text-gray-700' : 'bg-gray-200 text-gray-600'}`}>↑</span>
-                  )}
-                  {regime.descent && (
-                    <span className={`text-xs px-1.5 py-0.5 rounded ${selectedId === regime.id ? 'bg-gray-300 text-gray-700' : 'bg-gray-200 text-gray-600'}`}>↓</span>
-                  )}
-                </span>
-              </button>
-            ))}
-          </div>
+          ))}
+          <button
+            onClick={handleAddRegime}
+            className="px-3 py-1 rounded-full border border-dashed border-gray-300 text-sm font-aero-label text-gray-600 hover:bg-gray-50 hover:border-gray-400"
+          >
+            + Add regime
+          </button>
         </div>
+      </section>
 
-        {/* Right pane */}
-        <div className="flex-1 h-full overflow-y-auto bg-gray-100">
-          {selectedRegime ? (
-            <RegimeEditor
-              key={selectedRegime.id}
-              regime={selectedRegime}
-              allRegimes={regimes}
-              onChange={handleRegimeChange}
-              onDeleteRequest={() => setDeleteTarget(selectedRegime)}
-              autoFocusName={newlyAddedId === selectedRegime.id}
-            />
-          ) : (
-            <div className="flex items-center justify-center h-full">
-              {regimes.length === 0 ? (
-                <div className="max-w-sm text-center space-y-3 px-6">
-                  <p className="font-aero-label text-gray-700 text-sm font-semibold">No performance regimes defined</p>
-                  <p className="font-aero-label text-gray-500 text-xs leading-relaxed">
-                    A <strong>regime</strong> captures your aircraft&apos;s performance for a given configuration and power setting — cruise speed, fuel flow, and optionally climb and descent parameters.
-                  </p>
-                  <p className="font-aero-label text-gray-500 text-xs leading-relaxed">
-                    Once you define regimes, you can assign them to individual legs on your route. DCS Plan will then compute fuel burn, time en route, and transition segments automatically.
-                  </p>
-                  <p className="font-aero-label text-gray-400 text-xs">
-                    Click <span className="text-gray-600">&ldquo;+ Add regime&rdquo;</span> on the left to get started.
-                  </p>
-                </div>
-              ) : (
-                <p className="font-aero-label text-gray-500 text-sm">Select a regime to edit.</p>
-              )}
-            </div>
-          )}
-        </div>
+    {/* Regime editor, full width */}
+      <div className="flex-1 overflow-y-auto bg-gray-100">
+        {selectedRegime ? (
+          <RegimeEditor
+            key={selectedRegime.id}
+            regime={selectedRegime}
+            allRegimes={regimes}
+            onChange={handleRegimeChange}
+            onDeleteRequest={() => setDeleteTarget(selectedRegime)}
+            autoFocusName={newlyAddedId === selectedRegime.id}
+          />
+        ) : (
+          <div className="flex items-center justify-center h-full">
+            {regimes.length === 0 ? (
+              <div className="max-w-sm text-center space-y-3 px-6">
+                <p className="font-aero-label text-gray-700 text-sm font-semibold">No performance regimes defined</p>
+                <p className="font-aero-label text-gray-500 text-xs leading-relaxed">
+                  A <strong>regime</strong> captures your aircraft&apos;s performance for a given configuration and power setting — cruise speed, fuel flow, and optionally climb and descent parameters.
+                </p>
+                <p className="font-aero-label text-gray-500 text-xs leading-relaxed">
+                  Once you define regimes, you can assign them to individual legs on your route. DCS Plan will then compute fuel burn, time en route, and transition segments automatically.
+                </p>
+                <p className="font-aero-label text-gray-400 text-xs">
+                  Click <span className="text-gray-600">&ldquo;+ Add regime&rdquo;</span> above to get started.
+                </p>
+              </div>
+            ) : (
+              <p className="font-aero-label text-gray-500 text-sm">Select a regime to edit.</p>
+            )}
+          </div>
+        )}
       </div>
 
       {deleteTarget && (
         <DeleteRegimeDialog
           regime={deleteTarget}
-          refCount={flightPlan.points.filter(p => p.regimeId === deleteTarget.id).length}
+          refCount={editsFlownProfile ? flightPlan.points.filter(p => p.regimeId === deleteTarget.id).length : 0}
           onConfirm={handleDeleteConfirm}
           onCancel={() => setDeleteTarget(null)}
         />
@@ -539,6 +532,35 @@ const PerformancePage: React.FC = () => {
           onClose={() => setShowImportDialog(false)}
         />
       )}
+    </div>
+  );
+};
+
+/** The Performance view of the active plan (`/p/:id/:slug/perf`). Signed in:
+ * the plan's own profile choice in a header band, then the space's profiles as
+ * a sidebar beside the edited profile (design D10a). Anonymous: the single
+ * profile, edited directly. */
+const PerformancePage: React.FC = () => {
+  const { tier, editingProfileId } = usePerformance();
+  if (tier === 'anonymous') return <ProfileEditor />;
+  return (
+    <div className="flex flex-col flex-1 w-full overflow-hidden">
+      <PlanProfileHeader />
+      <div className="flex flex-1 overflow-hidden">
+        <ProfileSidebar />
+        {editingProfileId ? (
+          <ProfileEditor key={editingProfileId} />
+        ) : (
+          <div className="flex-1 flex items-center justify-center p-8 bg-gray-50">
+            <div className="text-center space-y-2 max-w-sm">
+              <p className="font-aero-label text-gray-700 text-sm font-semibold">No performance profiles yet</p>
+              <p className="font-aero-label text-gray-500 text-sm">
+                Use <strong>+ New</strong> or <strong>⬆ Import</strong> in the list to add one.
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 };

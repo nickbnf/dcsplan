@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as Dialog from '@radix-ui/react-dialog';
 import { usePlanSelection } from '../contexts/PlanSelectionContext';
@@ -126,7 +126,12 @@ const PlanRow: React.FC<{
 );
 
 const PlansHomePage: React.FC = () => {
-  const { plans, newDraft } = usePlanSelection();
+  const { plans, newDraft, refreshPlans } = usePlanSelection();
+  // Re-fetch whenever Home is shown, so renames made on other devices appear.
+  // Offline, the list already held (or cached) is kept.
+  useEffect(() => {
+    refreshPlans().catch(() => {});
+  }, [refreshPlans]);
   const { theatres } = useTheatres();
   const navigate = useNavigate();
 

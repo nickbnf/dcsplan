@@ -59,7 +59,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const { library, setLibrary } = useLibrary();
   const { requestFitToFlightPlan } = useFlightPlan();
   const { status } = useAuth();
-  const { performance, setPerformance } = usePerformance();
+  const { performance, setPerformance, tier, addProfile, flownProfileId } = usePerformance();
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   return (
@@ -92,11 +92,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
               const result = mergeLibraryEntries(library, snapshot);
               setLibrary(result.merged);
             }}
-            onPerformanceSnapshot={(snapshot) => setPerformance(snapshot)}
+            onPerformanceSnapshot={(snapshot, profile) => {
+              if (tier === 'anonymous') {
+                setPerformance(snapshot);
+                return;
+              }
+              // Signed in: add the file's profile to the space (or reuse it, if
+              // it came from this space) and have the imported plan fly it.
+              return addProfile({ id: profile?.id, aircraft: snapshot });
+            }}
             currentLibrary={library}
           />
         }
-        onExport={() => flightPlanUtils.downloadFlightPlan(flightPlan, library, performance)}
+        onExport={() => flightPlanUtils.downloadFlightPlan(
+          flightPlan, library, performance,
+          flownProfileId ? { id: flownProfileId } : undefined,
+        )}
       />
 
       {/* Tab switcher */}

@@ -113,3 +113,38 @@ export function mergeLibraryEntries(
 export function replaceLibraryEntries(incoming: LibraryObject[]): MergeResult {
   return { merged: incoming, added: incoming.length, kept: 0 };
 }
+
+// The fields a library entry owns (as opposed to a plan's per-ref comment).
+const LIBRARY_OWNED_FIELDS = ['type', 'lat', 'lon', 'name', 'defaultComment', 'range'] as const;
+
+/** Whether two entries with the same id differ in any library-owned field. */
+export function libraryEntryDiffers(a: LibraryObject, b: LibraryObject): boolean {
+  return LIBRARY_OWNED_FIELDS.some(f => (a[f] ?? null) !== (b[f] ?? null));
+}
+
+export interface SnapshotMergeSummary {
+  /** Entries not in the library: they will be added. */
+  added: number;
+  /** Entries already in the library: the library's copy is kept. */
+  kept: number;
+  /** Of the kept entries, those whose library copy differs from the file. */
+  differs: number;
+}
+
+/** Preview of merging a plan file's library snapshot (map-objects: library
+ * snapshot merge on plan import). Existing entries are never changed. */
+export function summarizeSnapshotMerge(
+  current: LibraryObject[],
+  incoming: LibraryObject[],
+): SnapshotMergeSummary {
+  const byId = new Map(current.map(e => [e.id, e]));
+  let added = 0;
+  let differs = 0;
+  for (const entry of incoming) {
+    const existing = byId.get(entry.id);
+    if (!existing) added++;
+    else if (libraryEntryDiffers(existing, entry)) differs++;
+  }
+  return { added, kept: incoming.length - added, differs };
+}
+

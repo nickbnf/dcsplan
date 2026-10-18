@@ -36,13 +36,13 @@ For backend kneeboard generation, the frontend SHALL continue to marshal the res
 ---
 
 ### Requirement: Perf page header section
-The Performance page (route `/performance`) SHALL render a header section above the existing regime list/editor, displaying and editing the aircraft fields: `model` (text input), `takeoffConfiguration` (text input), `taxiFuel` (number, lbs), and the take-off block (`timeSec` displayed as `mm:ss` editor, `fuel` in lbs, `distance` in NM). An information icon next to the take-off row SHALL display the tooltip: *"Time, fuel, and distance covered from brake release through acceleration to climb speed. Use values from your aircraft's performance charts for your T/O configuration. Or obtain by flight testing the difference between a cruise climb and the same climb from brake release."*
+The Performance page (route `/performance`) SHALL render, above the regimes, the profile's aircraft identity — `model` (text input) and `takeoffConfiguration` (text input) — and below it, on its own line under a **General performance** heading, `taxiFuel` (number, lbs) and the take-off block (`timeSec` displayed as `mm:ss` editor, `fuel` in lbs, `distance` in NM). There is no separate profile name field: the profile is labelled from `model` and `takeoffConfiguration` (`performance-profile`). An information icon next to the take-off row SHALL display the tooltip: *"Time, fuel, and distance covered from brake release through acceleration to climb speed. Use values from your aircraft's performance charts for your T/O configuration. Or obtain by flight testing the difference between a cruise climb and the same climb from brake release."*
 
-The header SHALL also expose two buttons: `⬇ Export performance` and `⬆ Import performance`, both wired to the performance-package file flow described below.
+The page SHALL also expose `⬇ Export performance` and `⬆ Import performance`, both wired to the performance-package file flow described below (signed in: export beside the aircraft identity, import with the profile list).
 
 #### Scenario: Header is always visible on the Perf page
 - **WHEN** the user navigates to `/performance`
-- **THEN** the aircraft fields and Export/Import buttons are rendered above the regime list, regardless of whether any regimes are defined
+- **THEN** the aircraft identity, the general performance line, and the Export/Import controls are rendered above the regimes, regardless of whether any regimes are defined
 
 #### Scenario: Tooltip wording for the T/O perf block
 - **WHEN** the user hovers the information icon next to the take-off row
@@ -147,19 +147,19 @@ The leg-calculation chain SHALL deduct `aircraft.taxiFuel` from the cumulative E
 ### Requirement: Performance package export
 The Perf page SHALL provide an `⬇ Export performance` button that writes the profile to a JSON file. The `aircraft` field SHALL be a deep copy of the profile's aircraft data (no shared references). The download filename SHALL be `<slug>.perf.json`, where `<slug>` is `aircraft.model` slugified (per the existing `slugifyPlanName` helper); when `aircraft.model` is empty, the filename SHALL be `performance.json`. The button SHALL always be enabled.
 
-The envelope SHALL be `{ "version": "1.0", "name": <profileName>, "aircraft": <aircraft> }`, where `version` is the constant `PERFORMANCE_FILE_VERSION = "1.0"`. No profile `id` is included — the file is a portable performance package for cross-squadron exchange; identity is not portable and is assigned by the recipient's server on import. This format is tier-independent.
+The envelope SHALL be `{ "version": "1.0", "aircraft": <aircraft> }`, where `version` is the constant `PERFORMANCE_FILE_VERSION = "1.0"`. No profile `id` is included — the file is a portable performance package for cross-squadron exchange; identity is not portable and is assigned by the recipient's server on import. This format is tier-independent.
 
 #### Scenario: Export with non-empty aircraft model
-- **WHEN** the user clicks Export for a profile named "F-15E" with `aircraft.model = "F-15E Strike Eagle"`
-- **THEN** the browser downloads a file named `f-15e-strike-eagle.perf.json` whose content includes `name: "F-15E"` and the full aircraft block
+- **WHEN** the user clicks Export for a profile with `aircraft.model = "F-15E Strike Eagle"`
+- **THEN** the browser downloads a file named `f-15e-strike-eagle.perf.json` whose content is the version and the full aircraft block, with no `name`
 
 #### Scenario: Export with empty aircraft model
 - **WHEN** the user clicks Export for a profile with `aircraft.model = ""`
-- **THEN** the browser downloads a file named `performance.json` whose envelope contains the profile's name and aircraft data
+- **THEN** the browser downloads a file named `performance.json` whose envelope contains the aircraft data
 
 #### Scenario: Export of an empty aircraft is allowed
 - **WHEN** the profile has zero T/O, empty strings, and no regimes
-- **THEN** the export still succeeds; the resulting file contains the profile's name and default-zero aircraft data
+- **THEN** the export still succeeds; the resulting file contains default-zero aircraft data
 
 #### Scenario: Export does not mutate the plan
 - **WHEN** the user clicks Export and then continues editing
@@ -171,7 +171,7 @@ The envelope SHALL be `{ "version": "1.0", "name": <profileName>, "aircraft": <a
 The Perf page SHALL provide an `⬆ Import performance` button that opens a file picker filtered to `.json` files. On file selection, the application SHALL parse the file as JSON and validate it before showing any apply prompt. Validation SHALL be performed entirely on the frontend and SHALL apply these rules:
 
 1. The top-level object MUST have `version === "1.0"`. Any other value SHALL be rejected as an unsupported version.
-2. `name` (string) is optional; when absent, a name SHALL be derived from `aircraft.model` at apply time.
+2. `name` (written by earlier versions) is optional and SHALL be ignored.
 3. `aircraft` MUST be an object containing `model` (string), `takeoffConfiguration` (string), `taxiFuel` (number ≥ 0), `takeoff` (object with `timeSec`, `fuel`, `distance`, all numbers ≥ 0; either all zero or all strictly positive), and `regimes` (array, may be empty).
 4. Each entry of `regimes` MUST satisfy the existing regime validation: non-empty `id`, non-empty `name`, `cruise.tas > 0`, `cruise.ff > 0`; `climb` (if present) MUST have all of `tas > 0`, `ff > 0`, `roc > 0`; `descent` (if present) MUST have all of `tas > 0`, `ff > 0`, `rod > 0`. Regime names MUST be unique within the imported set.
 5. Unknown keys at any level SHALL be ignored, not rejected.
@@ -179,12 +179,12 @@ The Perf page SHALL provide an `⬆ Import performance` button that opens a file
 If validation fails, the application SHALL surface a clear error message identifying the failing field(s) and SHALL NOT apply the import.
 
 #### Scenario: Accept v1.0 file with name
-- **WHEN** the imported file has `version: "1.0"` with valid aircraft data and a `name`
-- **THEN** validation passes
+- **WHEN** the imported file has `version: "1.0"` with valid aircraft data and a `name` from an earlier version
+- **THEN** validation passes and the `name` is ignored
 
 #### Scenario: Accept v1.0 file without name (legacy)
 - **WHEN** the imported file has `version: "1.0"` with valid aircraft data but no `name`
-- **THEN** validation passes; a name will be derived from `aircraft.model` at apply time
+- **THEN** validation passes
 
 #### Scenario: Reject unsupported version
 - **WHEN** the imported file has `version: "2.0"`
@@ -205,50 +205,6 @@ If validation fails, the application SHALL surface a clear error message identif
 #### Scenario: Ignore unknown keys
 - **WHEN** the imported file has `aircraft.unknownExtra = "whatever"`
 - **THEN** validation passes and `unknownExtra` is silently dropped
-
----
-
-### Requirement: Performance package import — confirmation and apply
-After successful validation, the application SHALL display a confirmation dialog showing: the file name and a preview of the imported data (model, takeoff configuration, regime count).
-
-Import behaviour is **tier-branched** (per `performance-profile`):
-
-**Anonymous tier:** the dialog SHALL provide `Cancel` and `Replace` buttons (`Replace` styled as destructive). On `Replace`:
-1. The single profile's `aircraft` block SHALL be replaced by a deep copy of the imported aircraft data.
-2. If the file carries a `name`, the profile's name SHALL be updated; otherwise a name SHALL be derived from `aircraft.model`.
-3. Every waypoint whose `regimeId` does not match the `id` of any regime in the imported set SHALL have its `regimeId` cleared (the waypoint becomes Manual; existing stored `tas`/`fuelFlow` are retained).
-
-**Signed-in tier:** the dialog SHALL provide `Cancel` and `Add profile` buttons. On `Add profile`:
-1. A new profile SHALL be added to the collection with a fresh server-assigned id (additive, never replaces).
-2. The profile's name SHALL be taken from the file's `name` (auto-suffixed if it collides with an existing name), or derived from `aircraft.model` (falling back to the filename stem, then `"Imported profile"`) when `name` is absent.
-3. All other profiles in the collection SHALL be preserved unchanged.
-4. The dialog SHALL NOT mention plan `profileId` or "legs reverting to Manual" — the import adds a profile; it does not switch the plan to it.
-
-#### Scenario: Cancel leaves the plan untouched
-- **WHEN** the user picks a valid file and clicks `Cancel`
-- **THEN** the profile and plan are unchanged and the dialog closes
-
-#### Scenario: Replace overwrites aircraft block
-- **WHEN** an anonymous user picks a valid file and clicks `Replace`
-- **THEN** the single profile's aircraft data is replaced with the imported data; if the file carries a `name`, the profile's name is updated
-
-#### Scenario: Imported regimes with new IDs orphan existing bindings
-- **WHEN** an anonymous user replaces with a file whose regime IDs do not match the plan's existing bindings
-- **THEN** every waypoint whose `regimeId` does not match an imported regime has its `regimeId` cleared; stored `tas` and `fuelFlow` are retained
-
-#### Scenario: Imported regimes with matching IDs preserve bindings
-- **WHEN** an anonymous user replaces with a file containing a regime whose `id` matches one already referenced by a waypoint
-- **THEN** the waypoint's `regimeId` is preserved and now points to the imported regime
-
-#### Scenario: Signed-in import adds without replacing
-- **WHEN** a signed-in user picks a valid file and clicks `Add profile`
-- **THEN** a new profile is added to the collection with a fresh server-assigned id; existing profiles are unchanged; no waypoint bindings are affected
-
-#### Scenario: Signed-in import with duplicate name auto-suffixes
-- **WHEN** a signed-in user imports a file whose `name` matches an existing profile's name
-- **THEN** a new profile is added with the name auto-suffixed to maintain uniqueness
-
----
 
 ### Requirement: Backwards compatibility with v1.2 plans
 Plans saved with `FLIGHT_PLAN_VERSION === "1.2"` SHALL load without user intervention. On load, the `performance-profile` migration (if not already run) SHALL have ensured a named profile exists in `dcsplan.performance`. The plan resolves to that profile implicitly (anonymous) or via `profileId` fallback (signed-in). Any legacy top-level `regimes` on the plan SHALL be ignored in favour of the regimes in the resolved profile. The in-memory version SHALL be set to the current version so the next save writes the new shape.
@@ -308,3 +264,26 @@ The waypoint page (front of the kneeboard) SHALL display a header line containin
 #### Scenario: Kneeboard does not leak other aircraft fields
 - **WHEN** the kneeboard is generated for any plan
 - **THEN** no regime name, regime id, profile name, `taxiFuel` value, or `takeoff` block value appears on any kneeboard page
+
+### Requirement: Performance package import — apply by tier
+After validation, a confirmation dialog SHALL show the file name and a preview (model, take-off configuration, regime count). **Anonymous:** `Cancel` and a destructive `Replace`, which replaces the single profile's aircraft block and clears every `regimeId` that matches no imported regime, keeping stored `tas`/`fuelFlow`. **Signed in:** `Cancel` and `Add profile`, which adds a new profile and selects it for editing, leaving other profiles and leg bindings unchanged.
+
+#### Scenario: Cancel leaves the plan untouched
+- **WHEN** the user picks a valid file and clicks `Cancel`
+- **THEN** the profile and plan are unchanged and the dialog closes
+
+#### Scenario: Replace overwrites aircraft block (anonymous)
+- **WHEN** an anonymous user picks a valid file and clicks `Replace`
+- **THEN** the single profile's aircraft data is replaced with the imported data
+
+#### Scenario: Imported regimes with new IDs orphan existing bindings (anonymous)
+- **WHEN** an anonymous user replaces with a file whose regime IDs do not match the plan's existing bindings
+- **THEN** every waypoint whose `regimeId` does not match an imported regime has its `regimeId` cleared; stored `tas` and `fuelFlow` are retained
+
+#### Scenario: Imported regimes with matching IDs preserve bindings (anonymous)
+- **WHEN** an anonymous user replaces with a file containing a regime whose `id` matches one already referenced by a waypoint
+- **THEN** the waypoint's `regimeId` is preserved and now points to the imported regime
+
+#### Scenario: Signed-in import adds a profile
+- **WHEN** a signed-in user picks a valid file and clicks `Add profile`
+- **THEN** a new profile appears in the list, labelled from the file's aircraft, and is selected for editing; existing profiles and leg bindings are unchanged

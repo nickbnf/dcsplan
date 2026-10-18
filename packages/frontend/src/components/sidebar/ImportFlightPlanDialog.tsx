@@ -4,12 +4,16 @@ import type { FlightPlan, Aircraft, LibraryObject } from '../../types/flightPlan
 import { defaultAircraft } from '../../types/flightPlan';
 import { getApiUrl } from '../../config/api';
 import { parseAircraftBlock } from '../../utils/performanceStorage';
+import { summarizeSnapshotMerge } from '../../utils/libraryStorage';
+import { buildImportRequest } from '../../utils/wireFormat';
 import { usePerformance } from '../../contexts/PerformanceContext';
 
 interface ImportFlightPlanDialogProps {
   onImport: (flightPlan: FlightPlan) => void;
   onLibrarySnapshot?: (snapshot: LibraryObject[]) => void;
-  onPerformanceSnapshot?: (snapshot: Aircraft) => void;
+  /** Apply the file's performance. May return the id of the space profile the
+   * imported plan should fly (signed-in); the plan is imported with it. */
+  onPerformanceSnapshot?: (snapshot: Aircraft, profile?: { id?: string }) => string | void;
   currentLibrary?: LibraryObject[];
 }
 
@@ -32,7 +36,7 @@ export const ImportFlightPlanDialog: React.FC<ImportFlightPlanDialogProps> = ({
   onPerformanceSnapshot,
   currentLibrary = [],
 }) => {
-  const { performance: currentPerformance } = usePerformance();
+  const { performance: currentPerformance, tier } = usePerformance();
   const hasExistingProfile = currentPerformance.model !== '' || currentPerformance.regimes.length > 0;
 
   const [isOpen, setIsOpen] = useState(false);
@@ -41,6 +45,7 @@ export const ImportFlightPlanDialog: React.FC<ImportFlightPlanDialogProps> = ({
   const [validatedPlan, setValidatedPlan] = useState<FlightPlan | null>(null);
   const [snapshotEntries, setSnapshotEntries] = useState<LibraryObject[]>([]);
   const [validatedPerformance, setValidatedPerformance] = useState<Aircraft | null>(null);
+  const [performanceProfile, setPerformanceProfile] = useState<{ id?: string } | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -77,6 +82,10 @@ export const ImportFlightPlanDialog: React.FC<ImportFlightPlanDialogProps> = ({
         if (perfResult.ok) extractedPerformance = perfResult.aircraft;
       }
       setValidatedPerformance(extractedPerformance);
+      const meta = jsonData.performanceProfile;
+      setPerformanceProfile(meta && typeof meta === 'object'
+        ? { id: typeof meta.id === 'string' ? meta.id : undefined }
+        : null);
 
       // Extract library snapshot before sending to backend (backend doesn't know about it)
       const snapshot: LibraryObject[] = Array.isArray(jsonData.librarySnapshot)
@@ -84,15 +93,8 @@ export const ImportFlightPlanDialog: React.FC<ImportFlightPlanDialogProps> = ({
         : [];
       setSnapshotEntries(snapshot);
 
-      // Wire-format marshaling: backend expects aircraft inside flightPlan
-      const wireBody = {
-        ...jsonData,
-        flightPlan: {
-          ...jsonData.flightPlan,
-          aircraft: extractedPerformance ?? defaultAircraft(),
-        },
-      };
-      delete wireBody.performanceSnapshot;
+      // { version, flightPlan, aircraft }: the aircraft is a sibling (AD-2)
+      const wireBody = buildImportRequest(jsonData, extractedPerformance ?? defaultAircraft());
 
       const response = await fetch(getApiUrl('flightplan/import'), {
         method: 'POST',
@@ -121,12 +123,15 @@ export const ImportFlightPlanDialog: React.FC<ImportFlightPlanDialogProps> = ({
 
   const handleReplace = () => {
     if (!validatedPlan) return;
-    onImport(validatedPlan);
+    // A profileId only means something inside the space it came from: drop the
+    // file's, and use the one the performance handler resolves (if any).
+    const { profileId: _fromFile, ...plan } = validatedPlan;
+    const resolvedProfileId = onPerformanceSnapshot && validatedPerformance
+      ? onPerformanceSnapshot(validatedPerformance, performanceProfile ?? undefined)
+      : undefined;
+    onImport(typeof resolvedProfileId === 'string' ? { ...plan, profileId: resolvedProfileId } : plan);
     if (onLibrarySnapshot && snapshotEntries.length > 0) {
       onLibrarySnapshot(snapshotEntries);
-    }
-    if (onPerformanceSnapshot && validatedPerformance) {
-      onPerformanceSnapshot(validatedPerformance);
     }
     handleClose();
   };
@@ -143,9 +148,7 @@ export const ImportFlightPlanDialog: React.FC<ImportFlightPlanDialogProps> = ({
   };
 
   // Compute merge preview
-  const existingIds = new Set(currentLibrary.map(e => e.id));
-  const toAdd = snapshotEntries.filter(e => !existingIds.has(e.id)).length;
-  const kept = snapshotEntries.length - toAdd;
+  const { added: toAdd, kept, differs } = summarizeSnapshotMerge(currentLibrary, snapshotEntries);
 
   return (
     <>
@@ -193,7 +196,9 @@ export const ImportFlightPlanDialog: React.FC<ImportFlightPlanDialogProps> = ({
                         <div className="font-medium text-amber-800 mb-1">Performance profile in file:</div>
                         <div className="text-amber-700">
                           {validatedPerformance.model || '—'} · {validatedPerformance.regimes.length} regime{validatedPerformance.regimes.length !== 1 ? 's' : ''}
-                          {hasExistingProfile && ' — your current profile will be replaced'}
+                          {tier === 'signed-in'
+                            ? ' — will be added to your profiles, and the plan will fly it'
+                            : hasExistingProfile && ' — your current profile will be replaced'}
                         </div>
                       </div>
                     )}
@@ -202,6 +207,11 @@ export const ImportFlightPlanDialog: React.FC<ImportFlightPlanDialogProps> = ({
                         <div className="font-medium text-blue-800 mb-1">Library objects in file:</div>
                         {toAdd > 0 && <div className="text-green-700">+ {toAdd} new {toAdd === 1 ? 'entry' : 'entries'} will be added to your library</div>}
                         {kept > 0 && <div className="text-gray-500">= {kept} {kept === 1 ? 'entry' : 'entries'} already present (kept unchanged)</div>}
+                        {differs > 0 && (
+                          <div className="text-amber-700" data-testid="snapshot-differs">
+                            ≠ {differs} of these {differs === 1 ? 'differs' : 'differ'} from the file; the plan will show your library's version
+                          </div>
+                        )}
                       </div>
                     )}
                   </>

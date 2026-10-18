@@ -9,6 +9,7 @@ import {
   serializeLibraryFile,
   mergeLibraryEntries,
   replaceLibraryEntries,
+  summarizeSnapshotMerge,
 } from './libraryStorage';
 
 const makeEntry = (overrides: Partial<LibraryObject> = {}): LibraryObject => ({
@@ -189,5 +190,34 @@ describe('FlightPlan legacy compatibility', () => {
     expect(restored.libraryRefs![0].uuid).toBe('lib-1');
     expect(restored.markers).toHaveLength(1);
     expect(restored.markers![0].type).toBe('bridge');
+  });
+});
+
+describe('summarizeSnapshotMerge (map-objects: kept entries that differ)', () => {
+  const base = { type: 'sam_site' as const, lat: 42, lon: 41 };
+  const lib = [
+    { id: 'a', ...base, name: 'SA-10' },
+    { id: 'b', ...base },
+    { id: 'c', ...base, range: 25 },
+  ];
+
+  it('counts added, kept, and kept entries that differ from the file', () => {
+    const incoming = [
+      { id: 'a', ...base, name: 'SA-10' },        // identical
+      { id: 'b', ...base, lat: 43 },              // moved
+      { id: 'c', ...base, range: 30 },            // range changed
+      { id: 'd', ...base },                       // new
+    ];
+    expect(summarizeSnapshotMerge(lib, incoming)).toEqual({ added: 1, kept: 3, differs: 2 });
+  });
+
+  it('treats an absent optional field like an undefined one', () => {
+    expect(summarizeSnapshotMerge(lib, [{ id: 'b', ...base, name: undefined }])).toEqual({
+      added: 0, kept: 1, differs: 0,
+    });
+  });
+
+  it('reports no differing entries when every kept entry matches', () => {
+    expect(summarizeSnapshotMerge(lib, lib).differs).toBe(0);
   });
 });

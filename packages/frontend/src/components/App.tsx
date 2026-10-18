@@ -14,6 +14,7 @@ import { LibraryProvider } from '../contexts/LibraryContext';
 import { PerformanceProvider } from '../contexts/PerformanceContext';
 import { AuthProvider } from '../contexts/AuthContext';
 import { PlanSelectionProvider } from '../contexts/PlanSelectionContext';
+import { SpaceAssetsProvider } from '../contexts/SpaceAssetsContext';
 
 /**
  * The route table (unify-plan-name D4). Plan-scoped views live under a plan's
@@ -22,7 +23,7 @@ import { PlanSelectionProvider } from '../contexts/PlanSelectionContext';
  */
 export const AppRoutes: React.FC = () => (
   <Routes>
-    <Route element={<PlanSelectionProvider><PerformanceProvider><FlightPlanProvider><LibraryProvider><Layout /></LibraryProvider></FlightPlanProvider></PerformanceProvider></PlanSelectionProvider>}>
+    <Route element={<SpaceAssetsProvider><PlanSelectionProvider><FlightPlanProvider><PerformanceProvider><LibraryProvider><Layout /></LibraryProvider></PerformanceProvider></FlightPlanProvider></PlanSelectionProvider></SpaceAssetsProvider>}>
       <Route path="/" element={<PlanRedirect />} />
       <Route path="/performance" element={<PlanRedirect tab="perf" />} />
       <Route path="/attack" element={<PlanRedirect tab="attack" />} />

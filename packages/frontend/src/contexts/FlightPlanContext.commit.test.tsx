@@ -27,7 +27,7 @@ beforeEach(() => {
   commitDraft = vi.fn(async () => {});
   // Signed in, on Home: the previously loaded plan has waypoints.
   hookResult = { yDoc: new Y.Doc(), flightPlan: planWith(2), loadedPlanId: 'local', isReady: true, isSyncing: false };
-  sel = { activePlanId: 'local', sync: false, isDraft: false, draftSeed: null, commitDraft };
+  sel = { activePlanId: 'local', sync: false, isDraft: false, draftSeed: null, commitDraft, notePlanName: vi.fn() };
 });
 
 /** Switch to a loaded, empty draft whose document is `doc`. */
@@ -82,5 +82,36 @@ describe('defer-commit: a draft commits on its first user edit (D8)', () => {
     act(() => api.onFlightPlanUpdate({ ...api.flightPlan, bankAngle: 30 }));
     act(() => api.onFlightPlanUpdate({ ...api.flightPlan, bankAngle: 35 }));
     expect(commitDraft).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('the plan list follows the open plan\'s name (plan-sync)', () => {
+  const P = 'PLANAAAAAAA1';
+  const open = (name: string, loadedPlanId = P) => {
+    sel = { ...sel, activePlanId: P, sync: true, isDraft: false };
+    hookResult = { ...hookResult, flightPlan: { ...planWith(1), name }, loadedPlanId };
+  };
+
+  it('reports the committed plan\'s name, and again when it changes', () => {
+    open('Alpha');
+    const { rerender } = render(tree());
+    expect(sel.notePlanName).toHaveBeenLastCalledWith(P, 'Alpha');
+    open('Bravo');
+    rerender(tree());
+    expect(sel.notePlanName).toHaveBeenLastCalledWith(P, 'Bravo');
+  });
+
+  it('does not report a stale document still loaded from another plan', () => {
+    open('Old plan', 'OTHERAAAAAA1');
+    render(tree());
+    expect(sel.notePlanName).not.toHaveBeenCalled();
+  });
+
+  it('does not report for the anonymous plan or a draft', () => {
+    render(tree());                                    // anonymous: sync false
+    sel = { ...sel, activePlanId: P, isDraft: true, sync: false };
+    hookResult = { ...hookResult, loadedPlanId: P };
+    render(tree());
+    expect(sel.notePlanName).not.toHaveBeenCalled();
   });
 });

@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
-import type { FlightPlan, LibraryObject, Aircraft } from '../../types/flightPlan';
+import type { FlightPlan, LibraryObject } from '../../types/flightPlan';
 import { slugifyPlanName } from '../../utils/flightPlanUtils';
 import { getApiUrl } from '../../config/api';
+import { buildKneeboardRequest } from '../../utils/wireFormat';
 import { trackEvent } from '../../utils/plausible';
 import { usePerformance } from '../../contexts/PerformanceContext';
 
@@ -196,23 +197,15 @@ export const GenerateDialog: React.FC<GenerateDialogProps> = ({ flightPlan, libr
         params.append('details', detailsList.join(','));
       }
 
-      // Embed library snapshot so the backend can resolve libraryRefs
-      const referencedIds = new Set((flightPlan?.libraryRefs ?? []).map(r => r.uuid));
-      const snapshotFromLibrary = (library ?? []).filter((e: LibraryObject) => referencedIds.has(e.id));
-      const snapshot = snapshotFromLibrary;
-      // Embed aircraft so the backend honours regimes and takeoff in its calculations
-      const planToSend: FlightPlan & { librarySnapshot?: LibraryObject[]; aircraft: Aircraft } = {
-        ...flightPlan,
-        aircraft: performance,
-        ...(snapshot.length > 0 && { librarySnapshot: snapshot }),
-      };
+      // { flightPlan (with a snapshot of its resolved library refs), aircraft } (AD-2)
+      const body = buildKneeboardRequest(flightPlan, performance, library ?? []);
 
       const response = await fetch(`${getApiUrl('kneeboard')}?${params.toString()}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(planToSend),
+        body: JSON.stringify(body),
       });
 
       if (!response.ok) {

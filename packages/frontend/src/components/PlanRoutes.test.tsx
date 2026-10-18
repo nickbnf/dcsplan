@@ -17,6 +17,7 @@ vi.mock('../contexts/FlightPlanContext', () => ({
 vi.mock('../contexts/PerformanceContext', () => ({ PerformanceProvider: ({ children }: any) => <>{children}</> }));
 vi.mock('../contexts/LibraryContext', () => ({ LibraryProvider: ({ children }: any) => <>{children}</> }));
 vi.mock('../contexts/AuthContext', () => ({ AuthProvider: ({ children }: any) => <>{children}</> }));
+vi.mock('../contexts/SpaceAssetsContext', () => ({ SpaceAssetsProvider: ({ children }: any) => <>{children}</> }));
 vi.mock('./Layout', async () => {
   const { Outlet } = await vi.importActual<typeof import('react-router-dom')>('react-router-dom');
   return { default: () => <Outlet /> };

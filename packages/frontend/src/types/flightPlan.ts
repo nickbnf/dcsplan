@@ -25,6 +25,21 @@ export type Aircraft = {
   regimes: Regime[];
 }
 
+// A signed-in performance profile: an aircraft block with an id generated on
+// the device that creates it (performance-profile, Profile identity). It has no
+// name; it is shown by `profileLabel(aircraft)`.
+export type PerformanceProfile = {
+  id: string;
+  aircraft: Aircraft;
+}
+
+/** How a profile is shown: "model · take-off configuration", either one alone,
+ * or "Untitled profile" (performance-profile, Performance profile data model). */
+export function profileLabel(aircraft: Pick<Aircraft, 'model' | 'takeoffConfiguration'>): string {
+  const parts = [aircraft.model?.trim(), aircraft.takeoffConfiguration?.trim()].filter(Boolean);
+  return parts.length > 0 ? parts.join(' · ') : 'Untitled profile';
+}
+
 export function defaultAircraft(): Aircraft {
   return {
     model: '',
@@ -206,6 +221,7 @@ export type FlightPlan = {
   name: string; // Name of the flight plan
   libraryRefs?: PlanLibraryRef[];
   markers?: PlanMarker[];
+  profileId?: string;       // signed-in only: the space profile this plan flies (performance-profile)
   attackPlanning?: {        // optional; params are user-supplied, results are computed on Calculate
     params: AttackPlanningParams;
     results?: AttackPlanningResults;
@@ -221,11 +237,14 @@ export interface VersionedFlightPlan {
   flightPlan: FlightPlan;
   librarySnapshot?: LibraryObject[];    // embedded on export for standalone files
   performanceSnapshot?: Aircraft;       // embedded on export for standalone files
+  // Signed-in exports: which space profile the snapshot came from, so a
+  // re-import into the same space reuses it instead of adding a copy.
+  performanceProfile?: { id: string };
 }
 
+// A `name` written by earlier versions may be present; it is ignored.
 export interface PerformanceFileV1 {
   version: string;
-  name?: string;
   aircraft: Aircraft;
 }
 

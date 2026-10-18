@@ -6,7 +6,7 @@ import { MemoryRouter, useNavigate } from 'react-router-dom';
 // --- mocks -----------------------------------------------------------------
 let authStatus: 'loading' | 'anonymous' | 'authenticated' = 'authenticated';
 vi.mock('./AuthContext', () => ({
-  useAuth: () => ({ status: authStatus }),
+  useAuth: () => ({ status: authStatus, user: authStatus === 'authenticated' ? { id: 'u1' } : null }),
 }));
 
 vi.mock('../hooks/useYjsFlightPlan', () => ({
@@ -279,5 +279,49 @@ describe('logout cache (L1)', () => {
     });
     expect(clearPlanStore).not.toHaveBeenCalledWith('local');
     expect(result.current.sel.activePlanId).toBe('local');
+  });
+});
+
+describe('offline start (user-identity; design D9)', () => {
+  it('opens a previously listed plan from the cached index when the server is unreachable', async () => {
+    // First, online: the index is cached.
+    const first = renderAt(`/p/${P1}/ingress-alpha`);
+    await waitFor(() => expect(first.result.current.sel.isResolving).toBe(false));
+    first.unmount();
+
+    (planApi.getMySpace as any).mockRejectedValue(new TypeError('Failed to fetch'));
+    const { result } = renderAt(`/p/${P1}/ingress-alpha`);
+    await waitFor(() => expect(result.current.sel.isResolving).toBe(false));
+    expect(result.current.sel.activePlanId).toBe(P1);
+    expect(result.current.sel.requestUnresolved).toBe(false);
+    expect(result.current.sel.spaceId).toBe('space-1');
+    expect(result.current.sel.plans.map(p => p.id)).toEqual([P1]);
+  });
+
+  it('falls back to Home when nothing is cached', async () => {
+    (planApi.getMySpace as any).mockRejectedValue(new TypeError('Failed to fetch'));
+    const { result } = renderAt(`/p/${P1}/ingress-alpha`);
+    await waitFor(() => expect(result.current.sel.isResolving).toBe(false));
+    expect(result.current.sel.requestUnresolved).toBe(true);
+  });
+});
+
+describe('list names follow renames (plan-sync: the list follows the plan\'s own name)', () => {
+  it('a rename of the open plan updates its list entry at once, without a refetch', async () => {
+    const { result } = renderAt(`/p/${P1}/ingress-alpha`);
+    await waitFor(() => expect(result.current.sel.isResolving).toBe(false));
+    const calls = (planApi.listPlans as any).mock.calls.length;
+    act(() => result.current.sel.notePlanName(P1, 'Ingress Bravo'));
+    expect(result.current.sel.plans.find(p => p.id === P1)?.name).toBe('Ingress Bravo');
+    expect((planApi.listPlans as any).mock.calls.length).toBe(calls);
+  });
+
+  it('ignores plans not in the list and unchanged names', async () => {
+    const { result } = renderAt(`/p/${P1}/ingress-alpha`);
+    await waitFor(() => expect(result.current.sel.isResolving).toBe(false));
+    const before = result.current.sel.plans;
+    act(() => result.current.sel.notePlanName('ZZZZZZZZZZZZ', 'Nope'));
+    act(() => result.current.sel.notePlanName(P1, 'Ingress Alpha'));
+    expect(result.current.sel.plans).toBe(before);
   });
 });

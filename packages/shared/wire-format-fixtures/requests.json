@@ -1,0 +1,64 @@
+{
+  "description": "Request bodies the frontend sends to the plan endpoints. The frontend builders must produce exactly these; the backend request models must accept them (AD-2 wire format).",
+  "kneeboard": {
+    "input": {
+      "flightPlan": {
+        "theatre": "caucasus", "points": [], "declination": 6, "bankAngle": 45,
+        "initTimeSec": 43200, "initFob": 12000, "name": "Contract",
+        "libraryRefs": [{ "uuid": "sam" }, { "uuid": "gone", "comment": "deleted" }],
+        "profileId": "p-1"
+      },
+      "aircraft": {
+        "model": "F-15E", "takeoffConfiguration": "MIL", "taxiFuel": 500,
+        "takeoff": { "timeSec": 60, "fuel": 400, "distance": 2 },
+        "regimes": [{ "id": "r1", "name": "Cruise", "cruise": { "tas": 450, "ff": 9000 } }]
+      },
+      "library": [
+        { "id": "sam", "type": "sam_site", "lat": 42, "lon": 41, "name": "SA-10", "range": 25 },
+        { "id": "other", "type": "aaa", "lat": 43, "lon": 40 }
+      ]
+    },
+    "body": {
+      "flightPlan": {
+        "theatre": "caucasus", "points": [], "declination": 6, "bankAngle": 45,
+        "initTimeSec": 43200, "initFob": 12000, "name": "Contract",
+        "libraryRefs": [{ "uuid": "sam" }, { "uuid": "gone", "comment": "deleted" }],
+        "profileId": "p-1",
+        "librarySnapshot": [{ "id": "sam", "type": "sam_site", "lat": 42, "lon": 41, "name": "SA-10", "range": 25 }]
+      },
+      "aircraft": {
+        "model": "F-15E", "takeoffConfiguration": "MIL", "taxiFuel": 500,
+        "takeoff": { "timeSec": 60, "fuel": 400, "distance": 2 },
+        "regimes": [{ "id": "r1", "name": "Cruise", "cruise": { "tas": 450, "ff": 9000 } }]
+      }
+    }
+  },
+  "import": {
+    "input": {
+      "file": {
+        "version": "1.6",
+        "flightPlan": {
+          "theatre": "syria", "points": [], "declination": 4, "bankAngle": 30,
+          "initTimeSec": 0, "initFob": 10000, "name": "Imported",
+          "aircraft": { "model": "legacy nested", "takeoffConfiguration": "", "taxiFuel": 0,
+                        "takeoff": { "timeSec": 0, "fuel": 0, "distance": 0 }, "regimes": [] }
+        }
+      },
+      "aircraft": {
+        "model": "A-10C", "takeoffConfiguration": "", "taxiFuel": 0,
+        "takeoff": { "timeSec": 0, "fuel": 0, "distance": 0 }, "regimes": []
+      }
+    },
+    "body": {
+      "version": "1.6",
+      "flightPlan": {
+        "theatre": "syria", "points": [], "declination": 4, "bankAngle": 30,
+        "initTimeSec": 0, "initFob": 10000, "name": "Imported"
+      },
+      "aircraft": {
+        "model": "A-10C", "takeoffConfiguration": "", "taxiFuel": 0,
+        "takeoff": { "timeSec": 0, "fuel": 0, "distance": 0 }, "regimes": []
+      }
+    }
+  }
+}
