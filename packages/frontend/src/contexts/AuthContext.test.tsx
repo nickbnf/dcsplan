@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, waitFor, act } from '@testing-library/react';
-import { AuthProvider, useAuth } from './AuthContext';
+import { AuthProvider, useAuth, SIGNING_IN_KEY } from './AuthContext';
 
 function wrapper({ children }: { children: React.ReactNode }) {
   return <AuthProvider>{children}</AuthProvider>;
@@ -36,6 +36,23 @@ describe('AuthContext', () => {
     const { result } = renderHook(() => useAuth(), { wrapper });
     await waitFor(() => expect(result.current.status).toBe('authenticated'));
     expect(result.current.user?.display_name).toBe('Falcon');
+  });
+
+  it('login marks a fresh sign-in for this tab before redirecting (local-data-migration)', async () => {
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ authenticated: false }) });
+    const original = window.location;
+    Object.defineProperty(window, 'location', { configurable: true, value: { ...original, href: '' } });
+    try {
+      sessionStorage.clear();
+      const { result } = renderHook(() => useAuth(), { wrapper });
+      await waitFor(() => expect(result.current.status).toBe('anonymous'));
+      act(() => result.current.login());
+      expect(sessionStorage.getItem(SIGNING_IN_KEY)).toBe('1');
+      expect(window.location.href).toContain('auth/discord/login');
+    } finally {
+      Object.defineProperty(window, 'location', { configurable: true, value: original });
+      sessionStorage.clear();
+    }
   });
 
   it('logout returns to anonymous and leaves local data untouched', async () => {

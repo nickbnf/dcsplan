@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import type { Aircraft, PerformanceProfile, Regime } from '../types/flightPlan';
 import { defaultAircraft } from '../types/flightPlan';
 import { loadPerformance, savePerformance, clearPerformance } from '../utils/performanceStorage';
@@ -56,8 +56,22 @@ export const PerformanceProvider: React.FC<{ children: React.ReactNode }> = ({ c
   // --- Anonymous: the single device-local profile ---------------------------
   const [local, setLocal] = useState<Aircraft>(() => loadPerformance());
 
+  // Leaving the signed-in tier, storage holds the anonymous profile as an
+  // import may have left it (moved to the account, reset to the default); the
+  // copy read when the page loaded is stale and must not be written back
+  // (local-data-migration, *Import moves local data off the device*).
+  const wasSignedIn = useRef(Boolean(sync));
   useEffect(() => {
-    if (!sync) savePerformance(local);
+    if (sync) {
+      wasSignedIn.current = true;
+      return;
+    }
+    if (wasSignedIn.current) {
+      wasSignedIn.current = false;
+      setLocal(loadPerformance());
+      return;
+    }
+    savePerformance(local);
   }, [sync, local]);
 
   // --- Signed-in: the space's collection --------------------------------------

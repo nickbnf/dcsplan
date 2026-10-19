@@ -138,3 +138,62 @@ def test_rename_route_is_gone(ctx):
     client.get("/spaces/me")
     client.post("/plans", json={"id": P1, "name": "Alpha", "theatre": "caucasus"})
     assert client.patch(f"/plans/{P1}", json={"name": "Bravo"}).status_code in (404, 405)
+
+
+# --- POST /plans with initialState (add-local-data-import D1) ---------------
+
+def _initial_state() -> str:
+    import base64
+    from pycrdt import Doc, Map
+    doc = Doc()
+    doc["flightPlan"] = fp = Map()
+    fp["name"] = "Imported"
+    return base64.b64encode(doc.get_update()).decode()
+
+
+def test_create_plan_with_initial_state(ctx):
+    import plans
+    app, client, login_as = ctx
+    login_as("d-1")
+    client.get("/spaces/me")
+    resp = client.post("/plans", json={"id": P1, "name": "Imported", "theatre": "caucasus", "initialState": _initial_state()})
+    assert resp.status_code == 201
+    assert asyncio.run(plans.count_updates(P1)) == 1
+
+
+def test_create_plan_without_initial_state_stores_no_content(ctx):
+    import plans
+    app, client, login_as = ctx
+    login_as("d-1")
+    client.get("/spaces/me")
+    assert client.post("/plans", json={"id": P1, "name": "Alpha", "theatre": "caucasus"}).status_code == 201
+    assert asyncio.run(plans.count_updates(P1)) == 0
+
+
+@pytest.mark.parametrize("bad", ["not base64!", "Z2FyYmFnZQ=="])  # the second is base64 of b"garbage"
+def test_invalid_initial_state_is_422(ctx, bad):
+    import plans
+    app, client, login_as = ctx
+    login_as("d-1")
+    client.get("/spaces/me")
+    resp = client.post("/plans", json={"id": P1, "name": "Alpha", "theatre": "caucasus", "initialState": bad})
+    assert resp.status_code == 422
+    assert all(p["id"] != P1 for p in client.get("/plans").json())
+
+
+def test_oversized_create_plan_body_is_413(ctx):
+    app, client, login_as = ctx
+    login_as("d-1")
+    client.get("/spaces/me")
+    huge = "A" * (space_routes.MAX_CREATE_PLAN_BODY_BYTES + 1)
+    resp = client.post("/plans", json={"id": P1, "name": "Alpha", "theatre": "caucasus", "initialState": huge})
+    assert resp.status_code == 413
+
+
+def test_duplicate_id_with_initial_state_is_409(ctx):
+    app, client, login_as = ctx
+    login_as("d-1")
+    client.get("/spaces/me")
+    body = {"id": P1, "name": "Imported", "theatre": "caucasus", "initialState": _initial_state()}
+    assert client.post("/plans", json=body).status_code == 201
+    assert client.post("/plans", json=body).status_code == 409

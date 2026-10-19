@@ -47,6 +47,18 @@ describe('planApi', () => {
     });
   });
 
+  it('createPlan sends initialState as base64 when given', async () => {
+    const f = mockFetch(201, { id: 'p1', name: 'Alpha', theatre: 'caucasus', updatedAt: 't', lastEditor: null });
+    await api.createPlan({ id: 'p1', name: 'Alpha', theatre: 'caucasus', initialState: new Uint8Array([0, 1, 255]) });
+    const body = JSON.parse((f.mock.calls[0][1] as RequestInit).body as string);
+    expect(body).toEqual({ id: 'p1', name: 'Alpha', theatre: 'caucasus', initialState: 'AAH/' });
+  });
+
+  it('createPlan carries the HTTP status on failure', async () => {
+    mockFetch(409, {});
+    await expect(api.createPlan({ id: 'p2', name: 'Alpha', theatre: 'caucasus' })).rejects.toMatchObject({ status: 409 });
+  });
+
   it('createPlan surfaces a failed registration as an error', async () => {
     mockFetch(409, {});
     await expect(api.createPlan({ id: 'p2', name: 'Alpha', theatre: 'caucasus' })).rejects.toThrow(

@@ -44,14 +44,35 @@ export async function listPlans(): Promise<PlanSummary[]> {
   return resp.json();
 }
 
-/** Register a plan in the caller's space (the defer-commit step). */
+/** A failed plan-index request, carrying the HTTP status (e.g. 409 for a
+ *  duplicate id, which an import retry treats as landed). */
+export class PlanRequestError extends Error {
+  readonly status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
+}
+
+function toBase64(bytes: Uint8Array): string {
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary);
+}
+
+/** Register a plan in the caller's space: the defer-commit step, or an import
+ *  that sends the plan's content along as its first Yjs update
+ *  (`initialState`, add-local-data-import D1). */
 export async function createPlan(plan: {
   id: string;
   name: string;
   theatre: string;
+  initialState?: Uint8Array;
 }): Promise<PlanSummary> {
-  const resp = await request('plans', { method: 'POST', body: JSON.stringify(plan) });
-  if (!resp.ok) throw new Error(`Failed to create plan (${resp.status})`);
+  const { initialState, ...index } = plan;
+  const body = initialState ? { ...index, initialState: toBase64(initialState) } : index;
+  const resp = await request('plans', { method: 'POST', body: JSON.stringify(body) });
+  if (!resp.ok) throw new PlanRequestError(`Failed to create plan (${resp.status})`, resp.status);
   return resp.json();
 }
 

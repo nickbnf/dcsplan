@@ -41,9 +41,19 @@ def _now() -> str:
 
 # --- Plan index -----------------------------------------------------------
 
-async def create_plan(plan_id: str, space_id: str, name: str, theatre: str) -> dict:
+async def create_plan(
+    plan_id: str,
+    space_id: str,
+    name: str,
+    theatre: str,
+    initial_update: Optional[bytes] = None,
+) -> dict:
     """Register a plan in a space (the defer-commit step). Raises
-    DuplicatePlanId if the id is already taken."""
+    DuplicatePlanId if the id is already taken.
+
+    `initial_update`, when given, becomes the plan's first Yjs update in the
+    same transaction, so the plan is never listed without its content
+    (add-local-data-import D1)."""
     plan = {
         "id": plan_id,
         "space_id": space_id,
@@ -61,6 +71,12 @@ async def create_plan(plan_id: str, space_id: str, name: str, theatre: str) -> d
                 "VALUES (:id, :space_id, :name, :theatre, :created_at, :updated_at, :deleted_at)",
                 plan,
             )
+            if initial_update is not None:
+                await db.execute(
+                    "INSERT INTO plan_updates (plan_id, update_blob, created_at) "
+                    "VALUES (?, ?, ?)",
+                    (plan_id, initial_update, plan["created_at"]),
+                )
     except aiosqlite.IntegrityError as exc:
         raise DuplicatePlanId(plan_id) from exc
     return plan

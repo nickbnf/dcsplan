@@ -33,6 +33,7 @@ vi.mock('./PerformancePage', () => ({ default: () => <div>PERF VIEW</div> }));
 vi.mock('./AttackPlanningPage', () => ({ default: () => <div>ATTACK VIEW</div> }));
 vi.mock('./TheatreLibraryPage', () => ({ TheatreLibraryPage: () => <div>LIBRARY VIEW</div> }));
 vi.mock('./PlansHomePage', () => ({ default: () => <div>HOME VIEW</div> }));
+vi.mock('./import/LocalDataMigration', () => ({ LocalDataMigration: () => null }));
 vi.mock('./About', () => ({ About: () => <div>ABOUT</div> }));
 
 import { AppRoutes } from './App';

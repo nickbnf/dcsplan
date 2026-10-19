@@ -166,6 +166,19 @@ export function clearPerformance(): void {
   }
 }
 
+/** Whether an aircraft is still the default (empty) profile. A profile that is
+ *  not default is local work worth importing (local-data-migration). */
+export function isDefaultAircraft(aircraft: Aircraft): boolean {
+  const d = defaultAircraft();
+  return aircraft.model === d.model
+    && aircraft.takeoffConfiguration === d.takeoffConfiguration
+    && aircraft.taxiFuel === d.taxiFuel
+    && aircraft.takeoff.timeSec === d.takeoff.timeSec
+    && aircraft.takeoff.fuel === d.takeoff.fuel
+    && aircraft.takeoff.distance === d.takeoff.distance
+    && aircraft.regimes.length === 0;
+}
+
 export function hasStoredPerformance(): boolean {
   try {
     return localStorage.getItem(PERFORMANCE_STORAGE_KEY) !== null;

@@ -24,6 +24,15 @@ vi.mock('../contexts/SpaceAssetsContext', async (importOriginal) => {
   };
 });
 
+import * as Y from 'yjs';
+import { IndexeddbPersistence } from 'y-indexeddb';
+import { defaultAircraft } from '../types/flightPlan';
+import { flightPlanUtils, isFreshPlan } from '../utils/flightPlanUtils';
+import { seedYDoc } from '../utils/yjsFlightPlanBinding';
+import { loadLibrary, saveLibrary } from '../utils/libraryStorage';
+import { loadPerformance, savePerformance } from '../utils/performanceStorage';
+import { readAnonymousPlan } from '../hooks/useYjsFlightPlan';
+import { moveOffDevice, readLocalData } from '../import/localSource';
 import { AuthMenu } from './AuthMenu';
 import { SessionExpiredDialog } from './SessionExpiredDialog';
 import { SpaceAssetsProvider } from '../contexts/SpaceAssetsContext';
@@ -115,5 +124,56 @@ describe('SpaceAssetsProvider — clearing the device on leaving the signed-in t
     const { unmount } = render(<SpaceAssetsProvider><div /></SpaceAssetsProvider>);
     unmount();
     expect(userKeys().length).toBeGreaterThan(0);
+  });
+});
+
+describe('Logout after importing local data (user-identity, plan-sync; local-data-migration)', () => {
+  async function seedAnonymousPlan(name: string) {
+    const doc = new Y.Doc();
+    const idb = new IndexeddbPersistence('dcsplan-flightplan-ydoc', doc);
+    await idb.whenSynced;
+    doc.transact(() => {
+      doc.getMap('flightPlan').clear();
+      seedYDoc(doc, { ...flightPlanUtils.newFlightPlan('caucasus'), name });
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    await idb.destroy();
+  }
+
+  function logOut(rerender: (ui: React.ReactElement) => void) {
+    auth = { ...auth, status: 'anonymous', user: null };
+    rerender(<SpaceAssetsProvider><div /></SpaceAssetsProvider>);
+  }
+
+  it('leaves a fresh anonymous plan once the plan was imported, and keeps what was not imported', async () => {
+    realProvider.useReal = true;
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('offline'));
+    await seedAnonymousPlan('Strike North');
+    saveLibrary('caucasus', [{ id: 'e1', type: 'sam_site', lat: 42, lon: 41 }]);
+    savePerformance({ ...defaultAircraft(), model: 'F-16C' });
+
+    const { rerender } = render(<SpaceAssetsProvider><div /></SpaceAssetsProvider>);
+    const source = (await readLocalData())!;
+    // The plan and profile were accepted by the server; the library was not imported.
+    await moveOffDevice(source, { plan: 'done', entries: 'skipped', profile: 'done' });
+    logOut(rerender);
+
+    const plan = await readAnonymousPlan();
+    expect(plan && isFreshPlan(plan)).toBe(true);
+    expect(loadPerformance()).toEqual(defaultAircraft());
+    expect(loadLibrary('caucasus').map(e => e.id)).toEqual(['e1']);
+  });
+
+  it('keeps all the anonymous data when nothing was imported (Not now)', async () => {
+    realProvider.useReal = true;
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('offline'));
+    await seedAnonymousPlan('Kept Local');
+    saveLibrary('syria', [{ id: 'e2', type: 'aaa', lat: 35, lon: 36 }]);
+
+    const { rerender } = render(<SpaceAssetsProvider><div /></SpaceAssetsProvider>);
+    logOut(rerender);
+
+    expect((await readAnonymousPlan())?.name).toBe('Kept Local');
+    expect(loadLibrary('syria').map(e => e.id)).toEqual(['e2']);
   });
 });

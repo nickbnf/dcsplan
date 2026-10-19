@@ -197,24 +197,28 @@ The theatre library and performance profiles remain **plain React state + localS
 
 ---
 
-## AD-8 — Migration of local work is additive and never overwrites
+## AD-8 — Migration of local work is additive, never overwrites, and moves the work
 
 **Context.** Anonymous users accumulate real work on-device. Signing in must never destroy it — or destroy what's already in the account.
 
-**Decision.** Local state is one working set: **one plan (with embedded plan-local markers) + one performance profile**. On sign-in it is merged **additively** into the Personal space — plan appended to the list, profile added as an additional named profile. Never overwritten, in either direction.
+**Decision.** Local state is one working set of up to three items: **the plan (with its plan-local markers), the per-theatre library, and the performance profile**. An item counts only if it differs from a fresh install. On sign-in the set is merged **additively** into the Personal space: the plan is appended under a new id, library entries merge by UUID (the space's copy wins), and the profile is added as a new profile. Nothing is overwritten, in either direction.
 
-- **New / empty account** → migrated **silently**.
-- **Existing account with data** → **prompt** first ("You have local work on this device. Import it into your account?"). Declining leaves local work local; nothing is lost either way.
-- **A second device with its own local work** → same as an existing-account sign-in: prompt, additive, **no content-level dedup**.
+- **New / empty account** → imported **silently**, and the imported plan opens, so the user carries on with the plan they had. If the account's contents cannot be read, it is treated as not empty.
+- **Existing account with data** → a **chooser** lists the items, each with a checkbox (all ticked), plus *Not now*. Declining leaves local work local; it stays offered from the plan list until imported.
+- **A second device with its own local work** → same as an existing-account sign-in: chooser, additive, **no content-level dedup**.
+- **Import moves, it does not copy.** Once the server has acknowledged an item, it leaves the device: the anonymous plan becomes a fresh one, imported entries leave the local library, and the profile resets to the default. Items not imported stay.
+- *(Amended by `add-local-data-import`; originally a yes/no prompt for the whole set, and logout cleared the device.)*
 
-**Why.** Every path is an append or a UUID merge, so there is no destructive conflict at sign-in *by construction*. The only real product decision left is prompt vs. silent, and only an empty account can be safely silent.
+**Why.** Every path is an append or a UUID merge, so there is no destructive conflict at sign-in *by construction*. Only an empty account can be safely silent. Moving instead of copying means the device never holds a stale twin of account data, so logout has nothing to wipe: what remains on the device is, by definition, the only copy.
 
 **Consequences.**
 - Duplicates are possible (the same plan imported from two devices) and are accepted — visible and deletable beats a wrong automatic merge.
-- **Logout clears the device** back to blank anonymous, warning first if un-synced edits exist. Safer on shared simulator PCs.
-- Optional convenience on first login: offer to promote the plan's markers into the new reusable library.
+- **Logout does not wipe the device.** It clears the signed-in caches; the anonymous data that remains (whatever was not imported) is kept. A shared simulator PC keeps no account data after logout.
+- A local library entry whose UUID the space already holds with different content is dropped when the library moves; the chooser states the count beforehand.
+- Retries must be idempotent: an import that half failed is re-run on what remains, reusing the ids of the first attempt.
+- Optional convenience on first login, not built: offer to promote the plan's markers into the reusable library.
 
-**Spans:** `user-identity`, `plan-sync`, `theatre-library`
+**Spans:** `local-data-migration`, `user-identity`, `plan-sync`, `theatre-library`
 
 ---
 
@@ -222,13 +226,13 @@ The theatre library and performance profiles remain **plain React state + localS
 
 **Context.** dcsplan should stay free and instantly usable for the community; an account wall at the front door would kill adoption.
 
-**Decision.** Anonymous / local-only is a supported tier, not a trial: **one plan** (with embedded plan-local markers) + **one performance profile**, on-device. An account unlocks the reusable object library, multiple plans, sync, versioning, multiple profiles, and sharing.
+**Decision.** Anonymous / local-only is a supported tier, not a trial: **one plan** (with embedded plan-local markers), **one performance profile**, and a **device-local library per theatre**, all on-device. An account unlocks multiple plans, sync, versioning, multiple profiles, sharing, and a library shared across the user's devices.
 
-**Why the library is login-gated.** The reusable per-theatre library's entire value is *reuse across plans*, and the anonymous tier is single-plan — so it would be a feature with no payoff. Plan-local markers cover the one-off threat/landmark need without an account.
+**The library stays in the anonymous tier** *(amended by `add-local-data-import`)*. The original decision gated the reusable library behind an account, reasoning that its value is reuse across plans and the anonymous tier is single-plan. In practice anonymous users already had a library, the library outlives any one plan (it carries over to the next plan on the same theatre), and gating it would have taken a working feature away. Instead the library moves into an account on sign-in (AD-8).
 
 **Consequences.**
 - Anonymous recipients of a share link can **view and copy into the local-only app** without signing up. Signing in later migrates that copy via AD-8.
-- The `map-objects` capability splits along this line: plan-local markers stay anonymous-accessible, library refs require an account.
+- `map-objects` keeps both kinds in both tiers: plan-local markers, and library refs that resolve against the device-local library (anonymous) or the space's library (signed in).
 - Every server-backed feature must degrade cleanly to a local-only path, permanently — this is not a temporary state to be removed later.
 - **Every spec states both tiers.** Because the anonymous path is permanent rather than transitional, a spec that describes only the signed-in behaviour is incomplete, not merely terse. Each capability spec must say what happens with an account *and* without one, or state explicitly that it is tier-independent. Enforced as a spec-authoring rule in `openspec/config.yaml`.
 - **The tier axis is not the connectivity axis.** Anonymous (no account) and *signed-in but disconnected* are different states: the second has a space, plans, and history that simply cannot reach the server right now (AD-5, AD-6). Conflating them produces specs that quietly treat a network blip as a downgrade to the free tier. Only capabilities that touch sync need the connectivity axis at all.
@@ -443,8 +447,8 @@ Neither touches entry ids, entry routes, or any stored plan. Uniqueness per spac
 | AD-5 | Autosave ≠ version | `plan-sync`, `version-history` | `add-yjs-flightplan` (plan persistence), then `add-cloud-sync` |
 | AD-6 | Yjs CRDT for flight plans; LWW for library/profiles | `plan-sync`, `edit-undo` | `add-yjs-flightplan` (client prep), then `add-cloud-sync` |
 | AD-7 | Soft delete + integrity at delete time | `soft-delete`, `space` | `add-trash-and-soft-delete` |
-| AD-8 | Additive migration | `user-identity`, `plan-sync` | `add-local-data-import` |
-| AD-9 | Anonymous tier is permanent | `user-identity`, `map-objects` | `add-user-accounts` |
+| AD-8 | Additive migration that moves local work; per-item chooser | `local-data-migration`, `user-identity`, `plan-sync` | `add-local-data-import` |
+| AD-9 | Anonymous tier is permanent (library included) | `user-identity`, `map-objects`, `theatre-library` | `add-user-accounts`, amended by `add-local-data-import` |
 | AD-10 | Link-based sharing only | `plan-sharing` | `add-plan-sharing` |
 | AD-11 | Discord OAuth only | `user-identity` | `add-user-accounts` |
 | AD-12 | Action undo ≠ version restore | `edit-undo` | `add-edit-undo` (ships first) |

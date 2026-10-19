@@ -1,6 +1,6 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import type { LibraryObject, PictogramType } from '../types/flightPlan';
-import { loadLibrary, saveLibrary } from '../utils/libraryStorage';
+import { loadLibrary, mergeLibraryEntries, saveLibrary } from '../utils/libraryStorage';
 import { useFlightPlan } from './FlightPlanContext';
 import { useSpaceAssets } from './SpaceAssetsContext';
 import { entriesFor } from '../sync/assetCache';
@@ -12,6 +12,9 @@ interface LibraryContextValue {
   updateEntry: (id: string, updates: Partial<LibraryObject>) => void;
   deleteEntry: (id: string) => void;
   setLibrary: (entries: LibraryObject[]) => void;
+  /** Merge entries into a theatre's library, which need not be the active
+   *  plan's: ids already held are kept unchanged (plan import). */
+  mergeEntries: (theatre: string, entries: LibraryObject[]) => void;
   /** Whether a library ref's entry is here, known deleted, or may still arrive
    * (map-objects placeholder). Anonymous: present or deleted only. */
   entryStatus: (id: string) => EntryStatus;
@@ -48,8 +51,22 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setState({ theatre, entries: loadLibrary(theatre) });
   }, [theatre]);
 
+  // Leaving the signed-in tier, storage holds the device-local library as an
+  // import may have left it (entries moved to the account); the copy read when
+  // the page loaded is stale and must not be written back (theatre-library,
+  // *Imported entries leave the device*).
+  const wasSignedIn = useRef(Boolean(sync));
   useEffect(() => {
-    if (!sync && state.theatre === theatre) {
+    if (sync) {
+      wasSignedIn.current = true;
+      return;
+    }
+    if (wasSignedIn.current) {
+      wasSignedIn.current = false;
+      setState({ theatre, entries: loadLibrary(theatre) });
+      return;
+    }
+    if (state.theatre === theatre) {
       saveLibrary(state.theatre, state.entries);
     }
   }, [sync, state.theatre, state.entries, theatre]);
@@ -100,6 +117,23 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     });
   }, [sync, theatre]);
 
+  const mergeEntries = useCallback((target: string, entries: LibraryObject[]) => {
+    if (sync) {
+      const held = sync.getState().entries;
+      entries.forEach(e => { if (!held[e.id]) sync.putEntry(target, e); });
+      return;
+    }
+    if (target === state.theatre) {
+      setState(prev => prev.theatre === target
+        ? { ...prev, entries: mergeLibraryEntries(prev.entries, entries).merged }
+        : prev);
+    } else {
+      // Another theatre's library: it is loaded from storage when that theatre
+      // becomes active (e.g. the imported plan replacing the current one).
+      saveLibrary(target, mergeLibraryEntries(loadLibrary(target), entries).merged);
+    }
+  }, [sync, state.theatre]);
+
   const entryStatus = useCallback((id: string): EntryStatus => {
     if (sync) return sync.entryStatus(id);
     return state.entries.some(e => e.id === id) ? 'present' : 'deleted';
@@ -109,7 +143,7 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ child
   }, [sync, synced, syncStatus, state.entries]);
 
   return (
-    <LibraryContext.Provider value={{ library, addEntry, updateEntry, deleteEntry, setLibrary, entryStatus }}>
+    <LibraryContext.Provider value={{ library, addEntry, updateEntry, deleteEntry, setLibrary, mergeEntries, entryStatus }}>
       {children}
     </LibraryContext.Provider>
   );

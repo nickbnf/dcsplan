@@ -8,7 +8,12 @@ are renamed only inside their document; the server keeps `plans.name` in step.
 
 Reached at /api/* through Caddy (the /api prefix is stripped, D6).
 """
+import base64
+import binascii
+from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException, Request
+from pycrdt import Doc
 from pydantic import BaseModel, Field
 
 import plans
@@ -16,6 +21,10 @@ import spaces
 from auth_routes import get_current_user
 
 router = APIRouter(tags=["spaces"])
+
+# A plan created with its content carries it as base64 (add-local-data-import
+# D1). Plans are small; this bounds a pathological upload, not a real plan.
+MAX_CREATE_PLAN_BODY_BYTES = 512 * 1024
 
 
 async def require_user(request: Request) -> dict:
@@ -32,6 +41,27 @@ class CreatePlanRequest(BaseModel):
     id: str = Field(pattern=plans.PLAN_ID_PATTERN)
     name: str
     theatre: str
+    # The plan's content as a base64-encoded Yjs update, stored as its first
+    # update so the plan is created with its content (add-local-data-import D1).
+    initialState: Optional[str] = None
+
+
+async def limit_create_plan_body(request: Request) -> None:
+    """Reject plan-creation bodies over MAX_CREATE_PLAN_BODY_BYTES."""
+    length = request.headers.get("content-length")
+    if length is not None and int(length) > MAX_CREATE_PLAN_BODY_BYTES:
+        raise HTTPException(status_code=413, detail="Request body too large")
+
+
+def _decode_initial_state(value: str) -> bytes:
+    """The decoded Yjs update, or 422 if it is not base64 or not a Yjs update.
+    An undecodable update would break every later sync of the plan."""
+    try:
+        update = base64.b64decode(value, validate=True)
+        Doc().apply_update(update)
+    except (binascii.Error, ValueError):
+        raise HTTPException(status_code=422, detail="initialState is not a valid Yjs update")
+    return update
 
 
 def _public_plan(plan: dict) -> dict:
@@ -60,12 +90,18 @@ async def list_my_plans(user: dict = Depends(require_user)):
     return [_public_plan(p) for p in rows]
 
 
-@router.post("/plans", status_code=201)
+@router.post("/plans", status_code=201, dependencies=[Depends(limit_create_plan_body)])
 async def create_plan(body: CreatePlanRequest, user: dict = Depends(require_user)):
-    """Register a plan in the caller's space (the defer-commit step, AD-15)."""
+    """Register a plan in the caller's space: the defer-commit step (AD-15), or
+    an import that brings the plan's content along (add-local-data-import D1)."""
+    initial_update = (
+        _decode_initial_state(body.initialState) if body.initialState is not None else None
+    )
     space = await spaces.get_or_create_personal_space(user["id"])
     try:
-        plan = await plans.create_plan(body.id, space["id"], body.name, body.theatre)
+        plan = await plans.create_plan(
+            body.id, space["id"], body.name, body.theatre, initial_update=initial_update
+        )
     except plans.DuplicatePlanId:
         raise HTTPException(status_code=409, detail="A plan with that id already exists")
     return _public_plan(plan)

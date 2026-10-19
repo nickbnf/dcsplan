@@ -12,7 +12,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { usePerformance } from '../contexts/PerformanceContext';
 import { flightPlanUtils } from '../utils/flightPlanUtils';
 import { useLibrary } from '../contexts/LibraryContext';
-import { mergeLibraryEntries } from '../utils/libraryStorage';
+import { anonymousHeld, importAnonymously } from '../import/anonymousDestination';
 
 interface SidebarProps {
   flightPlan: FlightPlan;
@@ -56,10 +56,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onAddTypeChange,
 }) => {
   const { theatres, isLoading: isLoadingTheatres } = useTheatres();
-  const { library, setLibrary } = useLibrary();
+  const { library, mergeEntries } = useLibrary();
   const { requestFitToFlightPlan } = useFlightPlan();
   const { status } = useAuth();
-  const { performance, setPerformance, tier, addProfile, flownProfileId } = usePerformance();
+  const { performance, setPerformance, flownProfileId } = usePerformance();
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   return (
@@ -82,28 +82,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
         isSettingsOpen={isSettingsOpen}
         onSettingsToggle={() => setIsSettingsOpen(o => !o)}
         showNewButton={status !== 'authenticated'}
-        importTrigger={
+        fileActionsInMenu={status === 'authenticated'}
+        importTrigger={status === 'authenticated' ? null : (
+          // Signed in, plans are imported from /plans (plan-import).
           <ImportFlightPlanDialog
-            onImport={(importedFlightPlan) => {
-              onFlightPlanReplace(importedFlightPlan);
-              requestFitToFlightPlan();
-            }}
-            onLibrarySnapshot={(snapshot) => {
-              const result = mergeLibraryEntries(library, snapshot);
-              setLibrary(result.merged);
-            }}
-            onPerformanceSnapshot={(snapshot, profile) => {
-              if (tier === 'anonymous') {
-                setPerformance(snapshot);
-                return;
-              }
-              // Signed in: add the file's profile to the space (or reuse it, if
-              // it came from this space) and have the imported plan fly it.
-              return addProfile({ id: profile?.id, aircraft: snapshot });
-            }}
-            currentLibrary={library}
+            tier="anonymous"
+            held={anonymousHeld}
+            execute={(source, selection) => importAnonymously(source, selection, {
+              mergeEntries,
+              setProfile: setPerformance,
+              replacePlan: (plan) => {
+                onFlightPlanReplace(plan);
+                requestFitToFlightPlan();
+              },
+            })}
           />
-        }
+        )}
         onExport={() => flightPlanUtils.downloadFlightPlan(
           flightPlan, library, performance,
           flownProfileId ? { id: flownProfileId } : undefined,

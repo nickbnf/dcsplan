@@ -3,6 +3,7 @@ import {
   loadPerformance,
   savePerformance,
   PERFORMANCE_STORAGE_KEY,
+  isDefaultAircraft,
 } from './performanceStorage';
 import { defaultAircraft } from '../types/flightPlan';
 
@@ -54,5 +55,22 @@ describe('savePerformance / round-trip', () => {
     expect(raw.version).toBe('1.0');
     expect(raw.aircraft).toBeDefined();
     expect('name' in raw).toBe(false);
+  });
+});
+
+describe('isDefaultAircraft', () => {
+  it('recognises the default profile', () => {
+    expect(isDefaultAircraft(defaultAircraft())).toBe(true);
+  });
+
+  it('is not default once anything was set', () => {
+    const d = defaultAircraft();
+    expect(isDefaultAircraft({ ...d, model: 'F-16C' })).toBe(false);
+    expect(isDefaultAircraft({ ...d, taxiFuel: 300 })).toBe(false);
+    expect(isDefaultAircraft({ ...d, takeoff: { ...d.takeoff, fuel: 400 } })).toBe(false);
+    expect(isDefaultAircraft({
+      ...d,
+      regimes: [{ id: 'r1', name: 'Cruise', cruise: { tas: 420, ff: 5000 } } as never],
+    })).toBe(false);
   });
 });

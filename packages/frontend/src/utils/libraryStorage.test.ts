@@ -10,6 +10,8 @@ import {
   mergeLibraryEntries,
   replaceLibraryEntries,
   summarizeSnapshotMerge,
+  listLocalLibraries,
+  removeLocalEntries,
 } from './libraryStorage';
 
 const makeEntry = (overrides: Partial<LibraryObject> = {}): LibraryObject => ({
@@ -219,5 +221,42 @@ describe('summarizeSnapshotMerge (map-objects: kept entries that differ)', () =>
 
   it('reports no differing entries when every kept entry matches', () => {
     expect(summarizeSnapshotMerge(lib, lib).differs).toBe(0);
+  });
+});
+
+describe('listLocalLibraries', () => {
+  beforeEach(() => localStorage.clear());
+
+  it('returns the non-empty libraries by theatre and ignores other keys', () => {
+    const a = makeEntry();
+    const b = makeEntry();
+    saveLibrary('caucasus', [a]);
+    saveLibrary('syria', [b]);
+    saveLibrary('nevada', []);
+    localStorage.setItem('dcsplan.performance', '{}');
+    localStorage.setItem('dcsplan.u.42.library', '[]');
+    expect(listLocalLibraries()).toEqual({ caucasus: [a], syria: [b] });
+  });
+
+  it('is empty on a fresh device', () => {
+    expect(listLocalLibraries()).toEqual({});
+  });
+});
+
+describe('removeLocalEntries', () => {
+  beforeEach(() => localStorage.clear());
+
+  it('removes only the given entries', () => {
+    const [a, b, c] = [makeEntry(), makeEntry(), makeEntry()];
+    saveLibrary('caucasus', [a, b, c]);
+    removeLocalEntries('caucasus', [a.id, c.id]);
+    expect(loadLibrary('caucasus')).toEqual([b]);
+  });
+
+  it('removes the library key once it is empty', () => {
+    const a = makeEntry();
+    saveLibrary('caucasus', [a]);
+    removeLocalEntries('caucasus', [a.id]);
+    expect(localStorage.getItem('dcsplan.library.caucasus')).toBeNull();
   });
 });

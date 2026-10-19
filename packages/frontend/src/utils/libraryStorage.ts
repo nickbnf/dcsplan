@@ -34,6 +34,36 @@ export function clearLibrary(theatreId: string): void {
   }
 }
 
+const LIBRARY_KEY_PREFIX = 'dcsplan.library.';
+
+/** Every non-empty device-local library, by theatre (local-data-migration). */
+export function listLocalLibraries(): Record<string, LibraryObject[]> {
+  const result: Record<string, LibraryObject[]> = {};
+  try {
+    const theatres: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key?.startsWith(LIBRARY_KEY_PREFIX)) theatres.push(key.slice(LIBRARY_KEY_PREFIX.length));
+    }
+    for (const theatre of theatres) {
+      const entries = loadLibrary(theatre);
+      if (entries.length > 0) result[theatre] = entries;
+    }
+  } catch {
+    // storage unavailable: no local libraries
+  }
+  return result;
+}
+
+/** Remove the given entries from a theatre's device-local library, and the
+ *  library itself once it is empty (an import moved them to the account). */
+export function removeLocalEntries(theatreId: string, uuids: Iterable<string>): void {
+  const gone = new Set(uuids);
+  const remaining = loadLibrary(theatreId).filter(e => !gone.has(e.id));
+  if (remaining.length === 0) clearLibrary(theatreId);
+  else saveLibrary(theatreId, remaining);
+}
+
 // ── File format ──────────────────────────────────────────────────────────────
 
 function isValidLibraryObject(obj: unknown): obj is LibraryObject {

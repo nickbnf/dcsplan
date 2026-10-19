@@ -79,6 +79,9 @@ export interface PlanSelectionValue {
   /** The open plan's own name changed (in its document): show it in the list
    * at once, without waiting for the server's copy (plan-sync). */
   notePlanName: (planId: string, name: string) => void;
+  /** A plan was added to the space outside the draft flow (an import): list
+   *  it at once, so opening its address resolves before the next refresh. */
+  notePlanCreated: (plan: PlanSummary) => void;
 }
 
 const PlanSelectionContext = createContext<PlanSelectionValue | null>(null);
@@ -162,6 +165,11 @@ export const PlanSelectionProvider: React.FC<{ children: React.ReactNode }> = ({
       next[i] = { ...prev[i], name };
       return next;
     });
+  }, []);
+
+  const notePlanCreated = useCallback((plan: PlanSummary) => {
+    knownPlanIds.current.add(plan.id);
+    setPlans((prev) => [plan, ...prev.filter((p) => p.id !== plan.id)]);
   }, []);
 
   const refreshPlans = useCallback(async () => {
@@ -352,10 +360,12 @@ export const PlanSelectionProvider: React.FC<{ children: React.ReactNode }> = ({
       commitError,
       refreshPlans,
       notePlanName,
+      notePlanCreated,
     }),
     [
       activePlanId, hasActivePlan, sync, isDraft, atHome, isResolving, requestedPlanId,
       requestUnresolved, draftSeed, spaceId, plans, newDraft, commitDraft, commitError, refreshPlans, notePlanName,
+      notePlanCreated,
     ],
   );
 
@@ -379,6 +389,7 @@ const ANON_SELECTION: PlanSelectionValue = {
   commitError: null,
   refreshPlans: async () => [],
   notePlanName: () => {},
+  notePlanCreated: () => {},
 };
 
 /**

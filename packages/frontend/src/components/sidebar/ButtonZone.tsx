@@ -1,4 +1,5 @@
 import React from 'react';
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import type { FlightPlan } from '../../types/flightPlan';
 import { flightPlanUtils } from '../../utils/flightPlanUtils';
 import type { TheatreMetadata } from '../../hooks/useTheatres';
@@ -18,6 +19,10 @@ interface ButtonZoneProps {
   onSettingsToggle: () => void;
   importTrigger: React.ReactNode;
   onExport: () => void;
+  /** Signed in: files are a secondary path (plans sync and are imported from
+   *  /plans), so Export moves into a "⋯" menu and no import is offered here
+   *  (plan-import, *Plan export is a secondary control in the signed-in tier*). */
+  fileActionsInMenu?: boolean;
   /** Show the in-sidebar New-plan button. Hidden when signed in, where new plans
    *  are created from the Flight Plans home screen instead. Defaults to true. */
   showNewButton?: boolean;
@@ -42,6 +47,7 @@ export const ButtonZone: React.FC<ButtonZoneProps> = ({
   onSettingsToggle,
   importTrigger,
   onExport,
+  fileActionsInMenu = false,
   showNewButton = true,
 }) => {
   const declination = flightPlan.declination;
@@ -128,10 +134,36 @@ export const ButtonZone: React.FC<ButtonZoneProps> = ({
             Redo
           </button>
           <div className="w-px h-5 bg-gray-200 mx-1" aria-hidden />
-          {importTrigger}
-          <button onClick={onExport} className={actionButtonClass}>
-            <span aria-hidden>⬇</span> Export
-          </button>
+          {fileActionsInMenu ? (
+            <DropdownMenu.Root>
+              <DropdownMenu.Trigger asChild>
+                <button aria-label="More actions" title="More actions" className={actionButtonClass}>
+                  ⋯
+                </button>
+              </DropdownMenu.Trigger>
+              <DropdownMenu.Portal>
+                <DropdownMenu.Content
+                  className="bg-white rounded-md p-1 shadow-lg border border-gray-200 min-w-[160px] z-50"
+                  sideOffset={5}
+                  align="start"
+                >
+                  <DropdownMenu.Item
+                    onSelect={onExport}
+                    className="flex items-center gap-2 px-3 py-2 text-sm font-aero-label outline-none cursor-pointer rounded text-gray-700 hover:bg-gray-100 data-[highlighted]:bg-gray-100"
+                  >
+                    <span aria-hidden>⬇</span> Export to file
+                  </DropdownMenu.Item>
+                </DropdownMenu.Content>
+              </DropdownMenu.Portal>
+            </DropdownMenu.Root>
+          ) : (
+            <>
+              {importTrigger}
+              <button onClick={onExport} className={actionButtonClass}>
+                <span aria-hidden>⬇</span> Export
+              </button>
+            </>
+          )}
         </div>
         {showNewButton && (
           <NewFlightPlanDialog

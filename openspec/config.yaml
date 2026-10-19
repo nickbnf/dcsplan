@@ -35,9 +35,9 @@ context: |
     `Rev N · date · editor` (e.g. `Rev 14 · 2026-07-23 14:32 · Falcon`).
     Autosave persists the working copy but creates no version (AD-5).
   - Anonymous tier — a permanent, supported tier: one plan with plan-local
-    markers plus one performance profile, on-device. The reusable object
-    library, multiple plans, sync, versioning and sharing require an account
-    (AD-9).
+    markers, one performance profile and a per-theatre library, on-device.
+    Multiple plans, sync, versioning and sharing require an account (AD-9).
+    On sign-in, local work moves into the account (AD-8).
 
 rules:
   proposal:

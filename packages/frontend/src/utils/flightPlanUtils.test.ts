@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { slugifyPlanName, flightPlanUtils } from './flightPlanUtils';
+import { slugifyPlanName, flightPlanUtils, isFreshPlan } from './flightPlanUtils';
 import type { Aircraft } from '../types/flightPlan';
 import { defaultAircraft } from '../types/flightPlan';
 
@@ -201,5 +201,32 @@ describe('flightPlanUtils.insertTurnPointAtMidpoint — inherits from destinatio
 
     plan = flightPlanUtils.insertTurnPointAtMidpoint(plan, 0);
     expect(plan.points[1].regimeId).toBe('r-dest');
+  });
+});
+
+describe('isFreshPlan', () => {
+  const fresh = () => flightPlanUtils.newFlightPlan('caucasus');
+
+  it('treats a new plan on any theatre as fresh', () => {
+    expect(isFreshPlan(fresh())).toBe(true);
+    expect(isFreshPlan(flightPlanUtils.newFlightPlan('syria'))).toBe(true);
+  });
+
+  it('treats empty ref and marker arrays as fresh', () => {
+    expect(isFreshPlan({ ...fresh(), libraryRefs: [], markers: [] })).toBe(true);
+  });
+
+  it('is not fresh once anything was changed', () => {
+    const changed = [
+      flightPlanUtils.addTurnPoint(fresh(), 42, 41),
+      { ...fresh(), markers: [{ id: 'm1', type: 'sam', lat: 1, lon: 2 }] },
+      { ...fresh(), libraryRefs: [{ uuid: 'u1' }] },
+      { ...fresh(), name: 'Strike North' },
+      { ...fresh(), initFob: 9000 },
+      { ...fresh(), bankAngle: 30 },
+      { ...fresh(), declination: 6 },
+      { ...fresh(), initTimeSec: 0 },
+    ];
+    for (const plan of changed) expect(isFreshPlan(plan as never)).toBe(false);
   });
 });

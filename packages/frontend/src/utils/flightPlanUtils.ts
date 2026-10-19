@@ -11,6 +11,24 @@ export const slugifyPlanName = (name: string): string =>
 
 export const generateRegimeId = (): string => crypto.randomUUID().slice(0, 8);
 
+/** Whether a plan is still identical to a freshly created one, whatever its
+ *  theatre: no waypoints, refs, markers or attack planning, and the default
+ *  parameters and name. A plan that is not fresh is local work worth importing
+ *  (local-data-migration, *Local data is defined per item*). */
+export const isFreshPlan = (plan: FlightPlan): boolean => {
+    const fresh = flightPlanUtils.newFlightPlan(plan.theatre);
+    return plan.points.length === 0
+        && (plan.libraryRefs?.length ?? 0) === 0
+        && (plan.markers?.length ?? 0) === 0
+        && plan.attackPlanning === undefined
+        && plan.profileId === undefined
+        && plan.declination === fresh.declination
+        && plan.bankAngle === fresh.bankAngle
+        && plan.initTimeSec === fresh.initTimeSec
+        && plan.initFob === fresh.initFob
+        && plan.name === fresh.name;
+};
+
 const defaultTas = 400;
 const defaultAlt = 3000;
 const defaultFuelFlow = 6000;

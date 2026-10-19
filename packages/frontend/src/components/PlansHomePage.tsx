@@ -1,10 +1,18 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as Dialog from '@radix-ui/react-dialog';
 import { usePlanSelection } from '../contexts/PlanSelectionContext';
+import { useSpaceAssets } from '../contexts/SpaceAssetsContext';
+import { useAuth } from '../contexts/AuthContext';
 import { useTheatres } from '../hooks/useTheatres';
-import type { PlanSummary } from '../api/planApi';
+import { createPlan, type PlanSummary } from '../api/planApi';
 import { planPath } from '../utils/planAddress';
+import { ImportFlightPlanDialog } from './sidebar/ImportFlightPlanDialog';
+import { LocalDataImportDialog } from './import/LocalDataImportDialog';
+import { useOpenImportedPlan } from './import/useOpenImportedPlan';
+import { importIntoSpace, spaceHeld } from '../import/spaceDestination';
+import { readLocalData } from '../import/localSource';
+import type { ImportSource } from '../import/types';
 
 /**
  * Home screen (AD-15): the signed-in landing where plans are chosen, kept off the
@@ -127,6 +135,8 @@ const PlanRow: React.FC<{
 
 const PlansHomePage: React.FC = () => {
   const { plans, newDraft, refreshPlans } = usePlanSelection();
+  const { sync, state: assets, status: assetStatus } = useSpaceAssets();
+  const { connectivity } = useAuth();
   // Re-fetch whenever Home is shown, so renames made on other devices appear.
   // Offline, the list already held (or cached) is kept.
   useEffect(() => {
@@ -142,6 +152,24 @@ const PlansHomePage: React.FC = () => {
     navigate(planPath(id, name));
   };
 
+  // Plan-file import (plan-import): adds a new plan to the space and opens it.
+  // `assets` is read so the preview follows the space's library as it syncs.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const held = useMemo(() => (sync ? spaceHeld(sync) : null), [sync, assets]);
+  const offline = connectivity === 'offline' || assetStatus?.connectivity === 'offline';
+  const openImported = useOpenImportedPlan();
+
+  // Local data left on this device (declined at sign-in, or from before this
+  // feature): offered until none remains (local-data-migration).
+  const [localData, setLocalData] = useState<ImportSource | null>(null);
+  const [localDialogOpen, setLocalDialogOpen] = useState(false);
+  const recheckLocalData = useCallback(() => {
+    readLocalData().then(setLocalData).catch(() => setLocalData(null));
+  }, []);
+  useEffect(() => {
+    if (sync) recheckLocalData();
+  }, [sync, recheckLocalData]);
+
   return (
     <div className="flex-1 overflow-auto bg-gray-50">
       <div className="max-w-3xl mx-auto px-4 py-6">
@@ -150,8 +178,47 @@ const PlansHomePage: React.FC = () => {
           <h1 className="text-sm font-aero-label uppercase tracking-wide text-gray-600">
             Your plans · Personal
           </h1>
-          <NewPlanDialog theatres={theatres} onCreate={handleCreate} />
+          <div className="flex items-center gap-2">
+            {sync && held && (
+              <ImportFlightPlanDialog
+                tier="signed-in"
+                held={held}
+                execute={(source, selection) => importIntoSpace(source, selection, {
+                  sync,
+                  createPlan,
+                  listPlanIds: async () => (await refreshPlans()).map((p) => p.id),
+                })}
+                onDone={openImported}
+                triggerClassName="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-aero-label rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                disabledReason={offline ? 'Importing a plan needs a connection' : undefined}
+              />
+            )}
+            <NewPlanDialog theatres={theatres} onCreate={handleCreate} />
+          </div>
         </div>
+
+        {localData && (
+          <div
+            role="region"
+            aria-label="Local data on this device"
+            className="flex items-center justify-between gap-3 mb-4 px-4 py-3 rounded-lg border border-amber-200 bg-amber-50 text-sm text-amber-900"
+          >
+            <span>This device holds work from before you signed in.</span>
+            <button
+              onClick={() => setLocalDialogOpen(true)}
+              className="shrink-0 px-3 py-1.5 text-sm font-aero-label rounded border border-amber-300 bg-white text-amber-900 hover:bg-amber-100"
+            >
+              Import local data from this device
+            </button>
+          </div>
+        )}
+        {localData && localDialogOpen && (
+          <LocalDataImportDialog
+            source={localData}
+            onClose={() => { setLocalDialogOpen(false); recheckLocalData(); }}
+            onAttempted={recheckLocalData}
+          />
+        )}
 
         <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
           {plans.length === 0 ? (

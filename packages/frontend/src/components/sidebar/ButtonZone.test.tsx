@@ -90,3 +90,23 @@ describe('ButtonZone undo/redo controls', () => {
     expect(onUndo).not.toHaveBeenCalled();
   });
 });
+
+describe('ButtonZone file actions by tier (plan-import)', () => {
+  it('anonymous: Import and Export are primary buttons', () => {
+    renderZone();
+    expect(screen.getByRole('button', { name: 'Import' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /export/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'More actions' })).not.toBeInTheDocument();
+  });
+
+  it('signed in: no import, and Export is reached through the More actions menu', () => {
+    const onExport = vi.fn();
+    renderZone({ fileActionsInMenu: true, onExport });
+    expect(screen.queryByRole('button', { name: 'Import' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /export/i })).not.toBeInTheDocument();
+    const more = screen.getByRole('button', { name: 'More actions' });
+    fireEvent.keyDown(more, { key: 'Enter' });
+    fireEvent.click(screen.getByRole('menuitem', { name: /export to file/i }));
+    expect(onExport).toHaveBeenCalled();
+  });
+});

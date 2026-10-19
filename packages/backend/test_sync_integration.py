@@ -160,3 +160,27 @@ def test_reconnect_after_offline_edit_converges():
                 return dict(a2.get("fp", type=Map))
 
     assert asyncio.run(scenario()) == {"a": 1, "b": 2}
+
+
+def test_plan_created_with_initial_state_syncs_its_content():
+    """add-local-data-import D1: content stored at creation reaches a client."""
+    import plans
+    from db import connect
+
+    async def scenario():
+        async with connect() as c:
+            await c.execute(
+                "INSERT INTO spaces (id, kind, name, created_at) VALUES ('s1', 'personal', NULL, 't')"
+            )
+        seeded = Doc()
+        seeded["flightPlan"] = fp = Map()
+        fp["name"] = "Imported"
+        fp["initFob"] = 9000
+        await plans.create_plan(
+            "AAAAAAAAAAA1", "s1", "Imported", "caucasus", initial_update=seeded.get_update()
+        )
+        async with serving() as base:
+            async with client(base, "AAAAAAAAAAA1") as a:
+                return dict(a.get("flightPlan", type=Map))
+
+    assert asyncio.run(scenario()) == {"name": "Imported", "initFob": 9000}

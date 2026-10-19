@@ -113,3 +113,34 @@ def test_squash_reduces_rows_preserving_state(db_path):
     replay.apply_update(asyncio.run(plans.load_updates("p1"))[0])
     rm = replay.get("data", type=Map)
     assert rm["a"] == 1 and rm["b"] == 2
+
+
+# --- Plan created with its content (add-local-data-import D1) ---------------
+
+def _seeded_update(name: str = "Imported") -> bytes:
+    doc = Doc()
+    doc["flightPlan"] = fp = Map()
+    fp["name"] = name
+    return doc.get_update()
+
+
+def test_create_with_initial_update_stores_one_row(db_path):
+    sid = _seed_space()
+    update = _seeded_update()
+    asyncio.run(plans.create_plan("p1", sid, "Imported", "caucasus", initial_update=update))
+    assert asyncio.run(plans.load_updates("p1")) == [update]
+
+
+def test_create_without_initial_update_stores_none(db_path):
+    sid = _seed_space()
+    asyncio.run(plans.create_plan("p1", sid, "Alpha", "caucasus"))
+    assert asyncio.run(plans.count_updates("p1")) == 0
+
+
+def test_duplicate_id_with_initial_update_adds_no_row(db_path):
+    sid = _seed_space()
+    first = _seeded_update("First")
+    asyncio.run(plans.create_plan("p1", sid, "First", "caucasus", initial_update=first))
+    with pytest.raises(DuplicatePlanId):
+        asyncio.run(plans.create_plan("p1", sid, "Second", "caucasus", initial_update=_seeded_update("Second")))
+    assert asyncio.run(plans.load_updates("p1")) == [first]

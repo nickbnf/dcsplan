@@ -15,6 +15,7 @@ import { PerformanceProvider } from '../contexts/PerformanceContext';
 import { AuthProvider } from '../contexts/AuthContext';
 import { PlanSelectionProvider } from '../contexts/PlanSelectionContext';
 import { SpaceAssetsProvider } from '../contexts/SpaceAssetsContext';
+import { LocalDataMigration } from './import/LocalDataMigration';
 
 /**
  * The route table (unify-plan-name D4). Plan-scoped views live under a plan's
@@ -23,7 +24,7 @@ import { SpaceAssetsProvider } from '../contexts/SpaceAssetsContext';
  */
 export const AppRoutes: React.FC = () => (
   <Routes>
-    <Route element={<SpaceAssetsProvider><PlanSelectionProvider><FlightPlanProvider><PerformanceProvider><LibraryProvider><Layout /></LibraryProvider></PerformanceProvider></FlightPlanProvider></PlanSelectionProvider></SpaceAssetsProvider>}>
+    <Route element={<SpaceAssetsProvider><PlanSelectionProvider><FlightPlanProvider><PerformanceProvider><LibraryProvider><LocalDataMigration /><Layout /></LibraryProvider></PerformanceProvider></FlightPlanProvider></PlanSelectionProvider></SpaceAssetsProvider>}>
       <Route path="/" element={<PlanRedirect />} />
       <Route path="/performance" element={<PlanRedirect tab="perf" />} />
       <Route path="/attack" element={<PlanRedirect tab="attack" />} />

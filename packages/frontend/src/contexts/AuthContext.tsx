@@ -2,6 +2,9 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { getApiUrl } from '../config/api';
 import { userPrefix } from '../sync/assetCache';
 
+/** sessionStorage flag set by `login()`, consumed once after sign-in. */
+export const SIGNING_IN_KEY = 'dcsplan.signingIn';
+
 export interface AuthUser {
   id: string;
   discord_id: string;
@@ -152,6 +155,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [refresh]);
 
   const login = useCallback(() => {
+    // Mark a fresh sign-in for this tab: after the OAuth round trip it looks
+    // exactly like a reload, and only a fresh sign-in may import local data
+    // (local-data-migration, add-local-data-import D7).
+    try { sessionStorage.setItem(SIGNING_IN_KEY, '1'); } catch { /* ignore */ }
     // Full-page navigation to the backend, which redirects to Discord.
     window.location.href = getApiUrl('auth/discord/login');
   }, []);

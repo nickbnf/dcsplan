@@ -1,250 +1,152 @@
-import React, { useState, useRef } from 'react';
-import * as Dialog from '@radix-ui/react-dialog';
-import type { FlightPlan, Aircraft, LibraryObject } from '../../types/flightPlan';
-import { defaultAircraft } from '../../types/flightPlan';
-import { getApiUrl } from '../../config/api';
-import { parseAircraftBlock } from '../../utils/performanceStorage';
-import { summarizeSnapshotMerge } from '../../utils/libraryStorage';
-import { buildImportRequest } from '../../utils/wireFormat';
-import { usePerformance } from '../../contexts/PerformanceContext';
+/**
+ * Import a flight-plan file (capability: plan-import): pick a file, validate
+ * it, choose what to bring in, then hand the selection to a destination.
+ *
+ * Anonymous (plan sidebar): the import replaces the single plan. Signed in
+ * (`/plans`): it adds a new plan to the space. The destination is supplied by
+ * the host, so this component knows neither tier's stores.
+ */
+import React, { useMemo, useRef, useState } from 'react';
+import { ImportDialog } from '../import/ImportDialog';
+import { computePreview } from '../../import/preview';
+import { ImportFileError, readPlanFile } from '../../import/fileSource';
+import { SELECT_ALL, type HeldAssets, type ImportOutcome, type ImportSelection, type ImportSource } from '../../import/types';
+import { generatePlanId } from '../../utils/planId';
 
 interface ImportFlightPlanDialogProps {
-  onImport: (flightPlan: FlightPlan) => void;
-  onLibrarySnapshot?: (snapshot: LibraryObject[]) => void;
-  /** Apply the file's performance. May return the id of the space profile the
-   * imported plan should fly (signed-in); the plan is imported with it. */
-  onPerformanceSnapshot?: (snapshot: Aircraft, profile?: { id?: string }) => string | void;
-  currentLibrary?: LibraryObject[];
+  tier: 'anonymous' | 'signed-in';
+  /** What the destination already holds, for the preview. */
+  held: HeldAssets;
+  /** Run the import against the destination. */
+  execute: (source: ImportSource, selection: ImportSelection) => ImportOutcome | Promise<ImportOutcome>;
+  /** Called after an import whose plan was imported. */
+  onDone?: (outcome: ImportOutcome) => void;
+  triggerLabel?: string;
+  triggerClassName?: string;
+  /** Disable the trigger, with a hint (signed in while offline, D9). */
+  disabledReason?: string;
 }
 
-function parseValidationError(error: any): string {
-  if (typeof error === 'string') return error;
-  if (error.detail) {
-    if (Array.isArray(error.detail)) {
-      return error.detail
-        .map((err: any) => `${err.loc ? err.loc.join('.') : 'field'}: ${err.msg || 'Invalid value'}`)
-        .join('\n');
-    }
-    if (typeof error.detail === 'string') return error.detail;
-  }
-  return error.message ?? 'An unknown error occurred while importing the flight plan.';
-}
+const DEFAULT_TRIGGER_CLASS =
+  'px-2.5 py-1.5 text-xs font-aero-label rounded border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed';
 
 export const ImportFlightPlanDialog: React.FC<ImportFlightPlanDialogProps> = ({
-  onImport,
-  onLibrarySnapshot,
-  onPerformanceSnapshot,
-  currentLibrary = [],
+  tier,
+  held,
+  execute,
+  onDone,
+  triggerLabel = 'Import',
+  triggerClassName = DEFAULT_TRIGGER_CLASS,
+  disabledReason,
 }) => {
-  const { performance: currentPerformance, tier } = usePerformance();
-  const hasExistingProfile = currentPerformance.model !== '' || currentPerformance.regimes.length > 0;
-
   const [isOpen, setIsOpen] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [fileName, setFileName] = useState<string | null>(null);
-  const [validatedPlan, setValidatedPlan] = useState<FlightPlan | null>(null);
-  const [snapshotEntries, setSnapshotEntries] = useState<LibraryObject[]>([]);
-  const [validatedPerformance, setValidatedPerformance] = useState<Aircraft | null>(null);
-  const [performanceProfile, setPerformanceProfile] = useState<{ id?: string } | null>(null);
+  const [source, setSource] = useState<ImportSource | null>(null);
+  const [selection, setSelection] = useState<ImportSelection>(SELECT_ALL);
   const [errors, setErrors] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const preview = useMemo(() => (source ? computePreview(source, held) : undefined), [source, held]);
 
   const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
-
     setFileName(file.name);
-    setValidatedPlan(null);
-    setSnapshotEntries([]);
-    setValidatedPerformance(null);
+    setSource(null);
+    setSelection(SELECT_ALL);
     setErrors([]);
     setIsValidating(true);
-
     try {
-      let jsonData: any;
-      try {
-        jsonData = JSON.parse(await file.text());
-      } catch {
-        setErrors(['Invalid JSON: unable to parse file.']);
-        return;
-      }
-
-      if (!jsonData.version || !jsonData.flightPlan) {
-        setErrors(['Invalid flight plan format: missing version or flightPlan field.']);
-        return;
-      }
-
-      // Extract performance snapshot (v1.5: top-level; v1.4: inside flightPlan.aircraft)
-      const rawPerformance = jsonData.performanceSnapshot ?? jsonData.flightPlan?.aircraft;
-      let extractedPerformance: Aircraft | null = null;
-      if (rawPerformance) {
-        const perfResult = parseAircraftBlock(rawPerformance);
-        if (perfResult.ok) extractedPerformance = perfResult.aircraft;
-      }
-      setValidatedPerformance(extractedPerformance);
-      const meta = jsonData.performanceProfile;
-      setPerformanceProfile(meta && typeof meta === 'object'
-        ? { id: typeof meta.id === 'string' ? meta.id : undefined }
-        : null);
-
-      // Extract library snapshot before sending to backend (backend doesn't know about it)
-      const snapshot: LibraryObject[] = Array.isArray(jsonData.librarySnapshot)
-        ? jsonData.librarySnapshot
-        : [];
-      setSnapshotEntries(snapshot);
-
-      // { version, flightPlan, aircraft }: the aircraft is a sibling (AD-2)
-      const wireBody = buildImportRequest(jsonData, extractedPerformance ?? defaultAircraft());
-
-      const response = await fetch(getApiUrl('flightplan/import'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(wireBody),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }));
-        setErrors([parseValidationError(errorData)]);
-        return;
-      }
-
-      const data = await response.json();
-      // Strip aircraft back off: FlightPlan type no longer carries it
-      const { aircraft: _aircraft, ...planWithoutAircraft } = data.flightPlan;
-      const importedPlan = planWithoutAircraft as FlightPlan;
-      importedPlan.points = importedPlan.points.map(p => p.id ? p : { ...p, id: crypto.randomUUID() });
-      setValidatedPlan(importedPlan);
+      setSource(await readPlanFile(await file.text()));
     } catch (err) {
-      setErrors([err instanceof Error ? err.message : 'Failed to validate flight plan.']);
+      setErrors([err instanceof ImportFileError || err instanceof Error ? err.message : 'Failed to validate flight plan.']);
     } finally {
       setIsValidating(false);
     }
   };
 
-  const handleReplace = () => {
-    if (!validatedPlan) return;
-    // A profileId only means something inside the space it came from: drop the
-    // file's, and use the one the performance handler resolves (if any).
-    const { profileId: _fromFile, ...plan } = validatedPlan;
-    const resolvedProfileId = onPerformanceSnapshot && validatedPerformance
-      ? onPerformanceSnapshot(validatedPerformance, performanceProfile ?? undefined)
-      : undefined;
-    onImport(typeof resolvedProfileId === 'string' ? { ...plan, profileId: resolvedProfileId } : plan);
-    if (onLibrarySnapshot && snapshotEntries.length > 0) {
-      onLibrarySnapshot(snapshotEntries);
-    }
-    handleClose();
-  };
-
   const handleClose = () => {
     setIsOpen(false);
     setFileName(null);
-    setValidatedPlan(null);
-    setSnapshotEntries([]);
-    setValidatedPerformance(null);
+    setSource(null);
+    setSelection(SELECT_ALL);
     setErrors([]);
     setIsValidating(false);
+    setBusy(false);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  // Compute merge preview
-  const { added: toAdd, kept, differs } = summarizeSnapshotMerge(currentLibrary, snapshotEntries);
+  const handleConfirm = async () => {
+    if (!source) return;
+    // The plan id lives as long as the dialog, so a retry reuses it (D4).
+    const attempt = source.planId ? source : { ...source, planId: generatePlanId() };
+    setSource(attempt);
+    setBusy(true);
+    setErrors([]);
+    try {
+      const outcome = await execute(attempt, { ...selection, plan: true });
+      if (outcome.plan === 'failed') {
+        setErrors([outcome.error ?? 'The plan could not be imported. Try again.']);
+        setBusy(false);
+        return;
+      }
+      handleClose();
+      onDone?.(outcome);
+    } catch (err) {
+      setErrors([err instanceof Error ? err.message : 'The plan could not be imported.']);
+      setBusy(false);
+    }
+  };
+
+  const anonymous = tier === 'anonymous';
 
   return (
     <>
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept=".json"
-        onChange={handleFileSelect}
-        className="hidden"
-      />
+      <input ref={fileInputRef} type="file" accept=".json" onChange={handleFileSelect} className="hidden" />
       <button
         onClick={() => setIsOpen(true)}
-        className="px-2.5 py-1.5 text-xs font-aero-label rounded border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 transition-colors"
+        disabled={Boolean(disabledReason)}
+        title={disabledReason}
+        className={triggerClassName}
       >
-        <span aria-hidden>⬆</span> Import
+        <span aria-hidden>⬆</span> {triggerLabel}
       </button>
 
-      <Dialog.Root open={isOpen} onOpenChange={open => !open && handleClose()}>
-        <Dialog.Portal>
-          <Dialog.Overlay className="fixed inset-0 bg-black/50" />
-          <Dialog.Content
-            aria-describedby="fp-import-desc"
-            className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-lg shadow-lg p-6 w-[420px] max-w-[90vw]"
-          >
-            <Dialog.Title className="text-base font-semibold mb-4">Replace flight plan?</Dialog.Title>
-
-            {!fileName ? (
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="w-full border border-dashed border-gray-300 rounded px-4 py-3 text-sm text-gray-500 hover:bg-gray-50 mb-4"
-              >
-                Select a .json file
-              </button>
-            ) : (
-              <div id="fp-import-desc" className="mb-4 space-y-2 text-sm text-gray-700">
-                {isValidating ? (
-                  <p className="text-gray-500">Validating {fileName}…</p>
-                ) : validatedPlan ? (
-                  <>
-                    <div><span className="text-gray-500">File:</span> {fileName}</div>
-                    <div><span className="text-gray-500">Plan:</span> {validatedPlan.name || '—'}</div>
-                    <div><span className="text-gray-500">Waypoints:</span> {validatedPlan.points.length}</div>
-                    {validatedPerformance && (
-                      <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded text-xs">
-                        <div className="font-medium text-amber-800 mb-1">Performance profile in file:</div>
-                        <div className="text-amber-700">
-                          {validatedPerformance.model || '—'} · {validatedPerformance.regimes.length} regime{validatedPerformance.regimes.length !== 1 ? 's' : ''}
-                          {tier === 'signed-in'
-                            ? ' — will be added to your profiles, and the plan will fly it'
-                            : hasExistingProfile && ' — your current profile will be replaced'}
-                        </div>
-                      </div>
-                    )}
-                    {snapshotEntries.length > 0 && (
-                      <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-xs">
-                        <div className="font-medium text-blue-800 mb-1">Library objects in file:</div>
-                        {toAdd > 0 && <div className="text-green-700">+ {toAdd} new {toAdd === 1 ? 'entry' : 'entries'} will be added to your library</div>}
-                        {kept > 0 && <div className="text-gray-500">= {kept} {kept === 1 ? 'entry' : 'entries'} already present (kept unchanged)</div>}
-                        {differs > 0 && (
-                          <div className="text-amber-700" data-testid="snapshot-differs">
-                            ≠ {differs} of these {differs === 1 ? 'differs' : 'differ'} from the file; the plan will show your library's version
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <div><span className="text-gray-500">File:</span> {fileName}</div>
-                )}
-              </div>
-            )}
-
-            {errors.length > 0 && (
-              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded text-xs text-red-700 space-y-1">
-                {errors.map((e, i) => <div key={i}>{e}</div>)}
-              </div>
-            )}
-
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={handleClose}
-                className="px-4 py-2 text-sm border border-gray-300 rounded hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleReplace}
-                disabled={!validatedPlan}
-                className="px-4 py-2 text-sm bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                Replace
-              </button>
-            </div>
-          </Dialog.Content>
-        </Dialog.Portal>
-      </Dialog.Root>
+      <ImportDialog
+        open={isOpen}
+        title={anonymous ? 'Replace flight plan?' : 'Import flight plan'}
+        intro={fileName && (
+          <>
+            <div><span className="text-gray-500">File:</span> {fileName}</div>
+            {anonymous && source && <div className="text-amber-700">Your current flight plan will be replaced.</div>}
+          </>
+        )}
+        placeholder={
+          !fileName ? (
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="w-full border border-dashed border-gray-300 rounded px-4 py-3 text-sm text-gray-500 hover:bg-gray-50"
+            >
+              Select a .json file
+            </button>
+          ) : isValidating ? (
+            <p className="text-sm text-gray-500">Validating {fileName}…</p>
+          ) : null
+        }
+        preview={preview}
+        selection={selection}
+        onChange={setSelection}
+        tier={tier}
+        planLocked
+        errors={errors}
+        busy={busy}
+        confirmLabel={anonymous ? 'Replace' : 'Import'}
+        destructive={anonymous}
+        onConfirm={handleConfirm}
+        onCancel={handleClose}
+      />
     </>
   );
 };

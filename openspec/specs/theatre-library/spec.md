@@ -4,7 +4,7 @@
 
 The Theatre Library is a per-theatre persistent store of named map objects (library entries). Each entry has a stable UUID, a pictogram type, a position, and optional metadata (name, default comment, range). The library is separate from the flight plan and is managed on a dedicated Library page. Entries can be referenced by flight plans (library refs) and can be imported/exported as standalone JSON files.
 
-**Tier position — available in both tiers; gating still open.** The library is available with or without an account. Signed-in users get their space's library, synced across devices (`space-asset-sync`). Anonymous users get a device-local library per theatre in local storage. AD-9 states an intention to gate the reusable library behind an account, because its value is reuse across plans and the anonymous tier holds a single plan; anonymous users would then keep plan-local markers instead, which belong to `map-objects` rather than here. That gating has not been carried out. It is left to `add-local-data-import`, which decides whether a local library is imported at sign-in. Until then, the requirements below apply in both tiers unless they say otherwise.
+**Tier position — available in both tiers.** The library is available with or without an account. Signed-in users get their space's library, synced across devices (`space-asset-sync`). Anonymous users get a device-local library per theatre in local storage, which moves into an account only when imported (`local-data-migration`). AD-9 once intended to gate the library behind an account; `add-local-data-import` withdrew that, so the anonymous library is permanent. The requirements below apply in both tiers unless they say otherwise.
 
 ## Requirements
 
@@ -281,3 +281,19 @@ In the **signed-in** tier, other plans in the space MAY also reference the entry
 #### Scenario: Another plan's reference to a deleted entry is ignored (signed-in)
 - **WHEN** a signed-in user deletes a library entry that another plan in the space references, then opens that plan
 - **THEN** the plan opens normally, the deleted entry appears as a missing-object placeholder, and the plan's other objects are unaffected
+
+### Requirement: The device-local library is a permanent part of the anonymous tier
+
+In the **anonymous** tier, the per-theatre library SHALL remain available on the device, with no account required. It SHALL reach an account only by being imported (`local-data-migration`). Imported entries SHALL then leave the device-local library. Entries not imported SHALL stay on the device and SHALL be available again in the anonymous tier after logout.
+
+#### Scenario: Anonymous user keeps a library
+- **WHEN** an anonymous user opens `/library`
+- **THEN** the device-local library for the theatre is shown and can be edited
+
+#### Scenario: Imported entries leave the device
+- **WHEN** a user imports their local library on sign-in and the server accepts it
+- **THEN** the device-local libraries no longer hold those entries
+
+#### Scenario: Library not imported survives logout
+- **WHEN** a user signs in, chooses Not now, and later logs out
+- **THEN** the anonymous tier shows the same device-local library as before sign-in

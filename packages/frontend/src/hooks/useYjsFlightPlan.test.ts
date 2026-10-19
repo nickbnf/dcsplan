@@ -29,7 +29,8 @@ vi.mock('y-websocket', () => {
   return { WebsocketProvider };
 });
 
-import { useYjsFlightPlan } from './useYjsFlightPlan';
+import { useYjsFlightPlan, readAnonymousPlan, resetAnonymousPlan, clearPlanStore } from './useYjsFlightPlan';
+import { isFreshPlan } from '../utils/flightPlanUtils';
 
 beforeEach(() => {
   providers.length = 0;
@@ -125,5 +126,41 @@ describe('useYjsFlightPlan — sync provider', () => {
     await waitFor(() => expect(h.result.current.isReady).toBe(true));
     expect(providers.length).toBe(0);
     h.unmount();
+  });
+});
+
+describe('anonymous plan outside the editor (add-local-data-import D6)', () => {
+  async function editAnonymousPlan(name: string) {
+    const h = renderHook(() => useYjsFlightPlan('local'));
+    await waitFor(() => expect(h.result.current.isReady).toBe(true));
+    act(() => {
+      const doc = h.result.current.yDoc;
+      doc.transact(() => doc.getMap('flightPlan').set('name', name), 'local');
+    });
+    await new Promise((r) => setTimeout(r, 100)); // let IndexedDB persist
+    h.unmount();
+  }
+
+  it('reads the anonymous plan headlessly', async () => {
+    await editAnonymousPlan('Strike North');
+    expect((await readAnonymousPlan())?.name).toBe('Strike North');
+  });
+
+  it('resets it to a fresh plan that the editor then loads', async () => {
+    await editAnonymousPlan('Strike North');
+    await resetAnonymousPlan();
+    const read = await readAnonymousPlan();
+    expect(read && isFreshPlan(read)).toBe(true);
+
+    const h = renderHook(() => useYjsFlightPlan('local'));
+    await waitFor(() => expect(h.result.current.isReady).toBe(true));
+    expect(isFreshPlan(h.result.current.flightPlan!)).toBe(true);
+    h.unmount();
+  });
+
+  it('is still never deleted by clearPlanStore', async () => {
+    await editAnonymousPlan('Keep me');
+    await clearPlanStore('local');
+    expect((await readAnonymousPlan())?.name).toBe('Keep me');
   });
 });

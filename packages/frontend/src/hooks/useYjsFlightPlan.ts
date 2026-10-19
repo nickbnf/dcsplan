@@ -34,6 +34,45 @@ export function clearPlanStore(planId: string): Promise<void> {
   });
 }
 
+/** Open the anonymous plan's store outside the editor, run `fn` on its doc
+ *  once loaded, then detach. */
+async function withAnonymousDoc<T>(fn: (yDoc: Y.Doc) => T): Promise<T> {
+  const yDoc = new Y.Doc();
+  const idb = new IndexeddbPersistence(LEGACY_STORE, yDoc);
+  try {
+    await idb.whenSynced;
+    return fn(yDoc);
+  } finally {
+    await idb.destroy();
+    yDoc.destroy();
+  }
+}
+
+/**
+ * The anonymous plan, read without opening it in the editor (a signed-in user
+ * importing their local data, add-local-data-import D6). `null` when the store
+ * holds no plan yet.
+ */
+export function readAnonymousPlan(): Promise<FlightPlan | null> {
+  return withAnonymousDoc((yDoc) =>
+    yDoc.getMap('flightPlan').size === 0 ? null : snapshotFromYDoc(yDoc));
+}
+
+/**
+ * Replace the anonymous plan with a fresh one once it has been imported into an
+ * account (local-data-migration: import moves local data off the device). The
+ * store itself is kept; only its content is replaced.
+ */
+export function resetAnonymousPlan(): Promise<void> {
+  return withAnonymousDoc((yDoc) => {
+    const yPlan = yDoc.getMap('flightPlan');
+    yDoc.transact(() => {
+      for (const key of Array.from(yPlan.keys())) yPlan.delete(key);
+      seedYDoc(yDoc, flightPlanUtils.newFlightPlan());
+    }, 'migration');
+  });
+}
+
 function resolveSyncUrl(override?: string): string {
   if (override) return override;
   const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
