@@ -41,6 +41,7 @@ vi.mock('../import/localSource', () => ({
 
 import { waitFor } from '@testing-library/react';
 import PlansHomePage from './PlansHomePage';
+import * as planApi from '../api/planApi';
 
 const plan = (id: string, name: string, theatre = 'caucasus') => ({
   id, name, theatre, updatedAt: new Date().toISOString(), lastEditor: null,
@@ -53,6 +54,7 @@ beforeEach(() => {
     newDraft: vi.fn(() => 'AAAAAAAAAAA9'),
     refreshPlans: vi.fn(async () => []),
     notePlanCreated: vi.fn(),
+    notePlanGone: vi.fn(),
   });
   Object.assign(assets, { sync: {}, state: {}, status: { connectivity: 'online' } });
   auth.connectivity = 'online';
@@ -214,5 +216,52 @@ describe('PlansHomePage — local data from this device (local-data-migration)',
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('not imported'));
     expect(screen.getByRole('checkbox', { name: /Flight plan/ })).toBeInTheDocument();
     expect(screen.queryByRole('checkbox', { name: /Library objects/ })).toBeNull();
+  });
+});
+
+describe('PlansHomePage — deleting plans (add-trash-and-soft-delete 7.1)', () => {
+  it('Delete asks for confirmation naming the plan and the 30-day window', async () => {
+    const del = vi.spyOn(planApi, 'deletePlan').mockResolvedValue();
+    render(<PlansHomePage />);
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Ingress Alpha' }));
+    expect(navigate).not.toHaveBeenCalled();             // the row is not opened
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveTextContent('"Ingress Alpha" moves to the Trash, where it can be restored for 30 days.');
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    await waitFor(() => expect(sel.notePlanGone).toHaveBeenCalledWith('AAAAAAAAAAA1'));
+    expect(del).toHaveBeenCalledWith('AAAAAAAAAAA1');
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('cancel keeps the plan', () => {
+    const del = vi.spyOn(planApi, 'deletePlan').mockResolvedValue();
+    render(<PlansHomePage />);
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Ingress Alpha' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(del).not.toHaveBeenCalled();
+    expect(sel.notePlanGone).not.toHaveBeenCalled();
+  });
+
+  it('a failed delete keeps the dialog open with an error', async () => {
+    vi.spyOn(planApi, 'deletePlan').mockRejectedValue(new TypeError('Failed to fetch'));
+    render(<PlansHomePage />);
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Ingress Alpha' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('could not be deleted');
+    expect(sel.notePlanGone).not.toHaveBeenCalled();
+  });
+
+  it('Delete is unavailable offline', () => {
+    auth.connectivity = 'offline';
+    render(<PlansHomePage />);
+    const button = screen.getByRole('button', { name: 'Delete Ingress Alpha' });
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute('title', 'Deleting a plan needs a connection');
+  });
+
+  it('the Trash is reachable from the list', () => {
+    render(<PlansHomePage />);
+    fireEvent.click(screen.getByRole('button', { name: 'Trash' }));
+    expect(navigate).toHaveBeenCalledWith('/trash');
   });
 });

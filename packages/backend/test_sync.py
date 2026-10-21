@@ -125,6 +125,7 @@ def test_malformed_plan_id_rejected_before_db_lookup(ctx, monkeypatch):
 
 def test_planystore_write_read_roundtrip(ctx):
     _app, _db = ctx
+    _seed_plan("d-1", PA)  # updates are only accepted for a live plan
     store = sync.PlanYStore(PA)
     doc = Doc()
     doc.get("data", type=Map)["k"] = "v"
@@ -226,6 +227,7 @@ def test_offline_rename_updates_index_when_it_reaches_the_server(ctx):
 
 def test_squash_reduces_rows_preserving_state(ctx):
     _app, _db = ctx
+    _seed_plan("d-1", PA)  # updates are only accepted for a live plan
     doc = Doc()
     m = doc.get("data", type=Map)
     m["a"] = 1
@@ -245,8 +247,83 @@ def test_squash_reduces_rows_preserving_state(ctx):
 
 def test_squash_is_noop_for_single_update(ctx):
     _app, _db = ctx
+    _seed_plan("d-1", PA)  # updates are only accepted for a live plan
     doc = Doc()
     doc.get("data", type=Map)["a"] = 1
     asyncio.run(plans.append_update(PA, doc.get_update()))
     asyncio.run(sync.squash_plan(PA))
     assert asyncio.run(plans.count_updates(PA)) == 1
+
+
+# --- add-trash-and-soft-delete 4.1/4.2: trashed plans stop syncing -------------
+
+def _receive_until_closed(ws) -> int:
+    """Drain server messages until the server closes; return the close code."""
+    while True:
+        try:
+            ws.receive_bytes()
+        except WebSocketDisconnect as exc:
+            return exc.code
+
+
+def test_trashed_plan_refused_with_4410(ctx):
+    app, _db = ctx
+    uid = _seed_plan("d-1", PA)
+    asyncio.run(plans.trash_plan(PA))
+    with TestClient(app) as client:
+        client.get(f"/testlogin/{uid}")
+        with client.websocket_connect(f"/sync/{PA}") as ws:
+            assert _receive_until_closed(ws) == sync.CLOSE_GONE
+
+
+def test_trashed_plan_of_another_user_is_forbidden_not_gone(ctx):
+    app, _db = ctx
+    _seed_plan("d-1", PA)
+    asyncio.run(plans.trash_plan(PA))
+    other = asyncio.run(users.upsert_user("d-2"))["id"]
+    with TestClient(app) as client:
+        client.get(f"/testlogin/{other}")
+        with pytest.raises(WebSocketDisconnect) as exc:
+            with client.websocket_connect(f"/sync/{PA}"):
+                pass
+        assert exc.value.code == sync.CLOSE_FORBIDDEN
+
+
+def test_deleting_an_open_plan_closes_its_sockets(ctx):
+    import space_routes
+
+    app, _db = ctx
+    uid = _seed_plan("d-1", PA)
+    app.include_router(space_routes.router)
+    app.dependency_overrides[space_routes.require_user] = lambda: {"id": uid}
+    with TestClient(app) as client:
+        client.get(f"/testlogin/{uid}")
+        with client.websocket_connect(f"/sync/{PA}") as ws:
+            ws.receive_bytes()  # SyncStep1: the socket is in the room
+            assert client.delete(f"/plans/{PA}").status_code == 204
+            assert _receive_until_closed(ws) == sync.CLOSE_GONE
+        assert PA not in sync.sync_server.rooms
+        with client.websocket_connect(f"/sync/{PA}") as ws:  # reconnect refused
+            assert _receive_until_closed(ws) == sync.CLOSE_GONE
+
+    before = asyncio.run(plans.count_updates(PA))
+    doc = Doc()
+    doc.get("flightPlan", type=Map)["name"] = "late edit"
+    asyncio.run(sync.PlanYStore(PA, doc).write(doc.get_update()))
+    assert asyncio.run(plans.count_updates(PA)) == before
+
+
+def test_close_plan_room_without_room_is_noop(ctx):
+    asyncio.run(sync.close_plan_room(PA))
+
+
+def test_restored_plan_syncs_again(ctx):
+    app, _db = ctx
+    uid = _seed_plan("d-1", PA)
+    asyncio.run(plans.trash_plan(PA))
+    asyncio.run(plans.restore_plan(PA))
+    with TestClient(app) as client:
+        client.get(f"/testlogin/{uid}")
+        with client.websocket_connect(f"/sync/{PA}") as ws:
+            # Accepted and served: the server sends SyncStep1, not a 4410 close.
+            assert isinstance(ws.receive_bytes(), (bytes, bytearray))

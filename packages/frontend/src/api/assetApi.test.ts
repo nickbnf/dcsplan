@@ -83,4 +83,26 @@ describe('assetApi', () => {
     vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('Failed to fetch'));
     await expect(api.getChanges(0)).rejects.toBeInstanceOf(TypeError);
   });
+
+  it('restoreEntry and restoreProfile POST to the restore paths', async () => {
+    const f = mockFetch(200, { seq: 9, entry: { id: 'e 1' } });
+    await api.restoreEntry('lib1', 'e 1');
+    expect(f.mock.calls[0][0]).toBe('/api/libraries/lib1/entries/e%201/restore');
+    expect(f.mock.calls[0][1]).toMatchObject({ method: 'POST' });
+    await api.restoreProfile('p1');
+    expect(f.mock.calls[1][0]).toBe('/api/profiles/p1/restore');
+  });
+
+  it('countReferences returns the number of plans', async () => {
+    const f = mockFetch(200, { plans: 3 });
+    expect(await api.countReferences('profile', 'p1')).toBe(3);
+    expect(f.mock.calls[0][0]).toBe('/api/references/profiles/p1');
+    await api.countReferences('entry', 'e1');
+    expect(f.mock.calls[1][0]).toBe('/api/references/entries/e1');
+  });
+
+  it('countReferences rejects on a server error', async () => {
+    mockFetch(500, {});
+    await expect(api.countReferences('entry', 'e1')).rejects.toBeInstanceOf(api.AssetApiError);
+  });
 });

@@ -85,3 +85,13 @@ async def get_member_role(space_id: str, user_id: str) -> Optional[str]:
 async def user_in_space(space_id: str, user_id: str) -> bool:
     """Whether the user is a member of the space (authorization helper)."""
     return (await get_member_role(space_id, user_id)) is not None
+
+
+# Roles allowed to restore from the space's Trash (AD-7: any member may delete,
+# the admin restores). A Personal space's sole member is its owner.
+RESTORE_ROLES = frozenset({"owner", "admin"})
+
+
+def can_restore(role: Optional[str]) -> bool:
+    """Whether a member with `role` may restore trashed items."""
+    return role in RESTORE_ROLES

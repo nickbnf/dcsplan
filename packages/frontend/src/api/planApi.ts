@@ -8,10 +8,20 @@
  * same-origin so the session cookie is sent automatically.
  */
 import { getApiUrl } from '../config/api';
+import type { LibraryObject, PerformanceProfile } from '../types/flightPlan';
 
 export interface SpaceSummary {
   id: string;
   kind: string;
+  /** The caller's role in the space: 'owner' for a Personal space. Absent from
+   *  copies cached before roles were reported. */
+  role?: string | null;
+}
+
+/** Roles that may restore from the space's Trash (add-trash-and-soft-delete D6);
+ * mirrors the server's `can_restore`. */
+export function canRestore(role: string | null | undefined): boolean {
+  return role === 'owner' || role === 'admin';
 }
 
 export interface PlanSummary {
@@ -76,3 +86,53 @@ export async function createPlan(plan: {
   return resp.json();
 }
 
+
+// --- Trash (capability: soft-delete; AD-7) -----------------------------------
+
+export interface TrashedPlan {
+  id: string;
+  name: string;
+  theatre: string;
+  deletedAt: string;
+}
+
+export interface TrashedEntry {
+  id: string;
+  libraryId: string;
+  theatre: string;
+  entry: LibraryObject;
+  deletedAt: string;
+}
+
+export interface TrashedProfile {
+  id: string;
+  profile: PerformanceProfile;
+  deletedAt: string;
+}
+
+export interface TrashContents {
+  plans: TrashedPlan[];
+  entries: TrashedEntry[];
+  profiles: TrashedProfile[];
+  retentionDays: number;
+}
+
+/** Move a plan to the space's Trash. Requires a connection. */
+export async function deletePlan(planId: string): Promise<void> {
+  const resp = await request(`plans/${encodeURIComponent(planId)}`, { method: 'DELETE' });
+  if (!resp.ok) throw new PlanRequestError(`Failed to delete plan (${resp.status})`, resp.status);
+}
+
+/** Everything trashed in the caller's space and not yet purged. */
+export async function getTrash(): Promise<TrashContents> {
+  const resp = await request('trash');
+  if (!resp.ok) throw new PlanRequestError(`Failed to load the Trash (${resp.status})`, resp.status);
+  return resp.json();
+}
+
+/** Bring a trashed plan back to the list (space admin only). */
+export async function restorePlan(planId: string): Promise<PlanSummary> {
+  const resp = await request(`plans/${encodeURIComponent(planId)}/restore`, { method: 'POST' });
+  if (!resp.ok) throw new PlanRequestError(`Failed to restore plan (${resp.status})`, resp.status);
+  return resp.json();
+}

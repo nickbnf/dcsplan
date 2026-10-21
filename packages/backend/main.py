@@ -16,6 +16,7 @@ import asset_routes
 import auth_routes
 import space_routes
 import sync
+import trash
 import os
 import secrets
 import logging
@@ -32,11 +33,13 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Apply DB migrations and load auth config before serving requests."""
+    """Apply DB migrations and load auth config before serving requests, then
+    run the plan-sync server and the trash purge for the app's lifetime."""
     apply_migrations()
     auth_routes.init_auth()
     async with sync.lifespan_server():  # run the plan-sync WebSocket server
-        yield
+        async with trash.lifespan_purge():  # purge expired trash (soft-delete)
+            yield
 
 
 app = FastAPI(lifespan=lifespan)

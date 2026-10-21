@@ -226,3 +226,73 @@ describe('AssetSync — after stop (logout)', () => {
     expect(Object.keys(localStorage)).toEqual([]);
   });
 });
+
+describe('AssetSync — Trash (add-trash-and-soft-delete 5.2)', () => {
+  const P1 = { id: 'p1', aircraft: { ...defaultAircraft(), model: 'F-15E' } };
+
+  it('a local delete is trashed, then purged when the feed says so', async () => {
+    const d = device();
+    d.start();
+    d.putEntry('caucasus', E1);
+    await settle();
+    d.deleteEntry('e1');
+    expect(d.isTrashed('entry', 'e1')).toBe(true);
+    await settle();
+    expect(d.isTrashed('entry', 'e1')).toBe(true);   // acknowledged and pulled back
+    server.purge('entry', 'e1');
+    await d.pull();
+    expect(d.entryStatus('e1')).toBe('deleted');
+    expect(d.isTrashed('entry', 'e1')).toBe(false);
+  });
+
+  it('a delete made on another device arrives as trashed', async () => {
+    const a = device('u1');
+    const b = new AssetSync('u1-b', { api: server.api });
+    devices.push(b);
+    a.start();
+    b.start();
+    a.putProfile(P1);
+    await settle();
+    await b.pull();
+    a.deleteProfile('p1');
+    await settle();
+    await b.pull();
+    expect(b.profileStatus('p1')).toBe('deleted');
+    expect(b.isTrashed('profile', 'p1')).toBe(true);
+  });
+
+  it('a restore turns the tombstone back into a live row with its data', async () => {
+    const d = device();
+    d.start();
+    d.putProfile(P1);
+    await settle();
+    d.deleteProfile('p1');
+    await settle();
+    server.restore('profile', 'p1');
+    await d.pull();
+    expect(d.profileStatus('p1')).toBe('present');
+    expect(d.isTrashed('profile', 'p1')).toBe(false);
+    expect(d.getState().profiles.p1.profile.aircraft.model).toBe('F-15E');
+    expect(d.getState().tombstones.profile).not.toHaveProperty('p1');
+  });
+
+  it('profileStatus is pending until caught up', async () => {
+    server.offline = true;
+    const d = device();
+    d.start();
+    await settle();
+    expect(d.profileStatus('p9')).toBe('pending');
+    server.offline = false;
+    await d.pull();
+    expect(d.profileStatus('p9')).toBe('deleted');
+  });
+
+  it('deleting a row the server never saw is not trashed', async () => {
+    server.offline = true;
+    const d = device();
+    d.start();
+    d.putEntry('caucasus', E1);
+    d.deleteEntry('e1');
+    expect(d.isTrashed('entry', 'e1')).toBe(false);
+  });
+});

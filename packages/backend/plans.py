@@ -102,6 +102,64 @@ async def get_plan(plan_id: str) -> Optional[dict]:
 
 
 
+async def trash_plan(plan_id: str) -> bool:
+    """Move a plan to its space's Trash (soft-delete, AD-7). Returns False if the
+    plan is unknown or already trashed; the first `deleted_at` is kept."""
+    async with connect() as db:
+        cur = await db.execute(
+            "UPDATE plans SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL",
+            (_now(), plan_id),
+        )
+        return cur.rowcount == 1
+
+
+async def restore_plan(plan_id: str) -> bool:
+    """Bring a trashed (not purged) plan back to its space's list, with the
+    content it had when deleted. Returns False if there is nothing to restore."""
+    async with connect() as db:
+        cur = await db.execute(
+            "UPDATE plans SET deleted_at = NULL "
+            "WHERE id = ? AND deleted_at IS NOT NULL AND purged_at IS NULL",
+            (plan_id,),
+        )
+        return cur.rowcount == 1
+
+
+async def trashed_plans(space_id: str) -> list[dict]:
+    """The space's trashed, not yet purged, plans."""
+    async with connect() as db:
+        async with db.execute(
+            "SELECT * FROM plans WHERE space_id = ? "
+            "AND deleted_at IS NOT NULL AND purged_at IS NULL",
+            (space_id,),
+        ) as cur:
+            return [dict(r) for r in await cur.fetchall()]
+
+
+async def purge_plans(cutoff: str) -> list[str]:
+    """Purge plans trashed before `cutoff` (an ISO timestamp): their update log
+    is deleted and `purged_at` set. The row is kept so the id is never reused.
+    Returns the purged ids."""
+    async with connect() as db:
+        await db.execute("BEGIN IMMEDIATE")
+        async with db.execute(
+            "SELECT id FROM plans "
+            "WHERE deleted_at IS NOT NULL AND purged_at IS NULL AND deleted_at < ?",
+            (cutoff,),
+        ) as cur:
+            ids = [r["id"] for r in await cur.fetchall()]
+        now = _now()
+        for plan_id in ids:
+            await db.execute("DELETE FROM plan_updates WHERE plan_id = ?", (plan_id,))
+            await db.execute("UPDATE plans SET purged_at = ? WHERE id = ?", (now, plan_id))
+        return ids
+
+
+def is_live(plan: Optional[dict]) -> bool:
+    """Whether a plan row exists and is neither trashed nor purged."""
+    return plan is not None and plan["deleted_at"] is None
+
+
 async def touch_plan(plan_id: str, name: Optional[str] = None) -> None:
     """Refresh a plan's `updated_at`, and its index `name` when given — the
     server-maintained copy of the document's name (unify-plan-name D2)."""
@@ -117,14 +175,17 @@ async def touch_plan(plan_id: str, name: Optional[str] = None) -> None:
 
 # --- Plan-update log (AD-14) ----------------------------------------------
 
-async def append_update(plan_id: str, update_blob: bytes) -> None:
-    """Append one Yjs update to a plan's log."""
+async def append_update(plan_id: str, update_blob: bytes) -> bool:
+    """Append one Yjs update to a plan's log. A trashed plan accepts no update
+    (plan-sync): the update is dropped and False returned."""
     async with connect() as db:
-        await db.execute(
+        cur = await db.execute(
             "INSERT INTO plan_updates (plan_id, update_blob, created_at) "
-            "VALUES (?, ?, ?)",
-            (plan_id, update_blob, _now()),
+            "SELECT ?, ?, ? WHERE EXISTS "
+            "(SELECT 1 FROM plans WHERE id = ? AND deleted_at IS NULL)",
+            (plan_id, update_blob, _now(), plan_id),
         )
+        return cur.rowcount == 1
 
 
 async def load_updates(plan_id: str) -> list[bytes]:

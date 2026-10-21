@@ -18,6 +18,8 @@ from pydantic import BaseModel, Field
 
 import plans
 import spaces
+import sync
+import trash
 from auth_routes import get_current_user
 
 router = APIRouter(tags=["spaces"])
@@ -34,6 +36,20 @@ async def require_user(request: Request) -> dict:
     if user is None:
         raise HTTPException(status_code=401, detail="Authentication required")
     return user
+
+
+async def my_space(user: dict = Depends(require_user)) -> dict:
+    """Dependency: the caller's Personal space, materialized on first access."""
+    return await spaces.get_or_create_personal_space(user["id"])
+
+
+async def restorer_space(user: dict = Depends(require_user)) -> dict:
+    """Dependency: the caller's space, or 403 unless their role may restore
+    from its Trash (soft-delete; add-trash-and-soft-delete D6)."""
+    space = await spaces.get_or_create_personal_space(user["id"])
+    if not spaces.can_restore(await spaces.get_member_role(space["id"], user["id"])):
+        raise HTTPException(status_code=403, detail="Only the space admin can restore")
+    return space
 
 
 class CreatePlanRequest(BaseModel):
@@ -79,7 +95,8 @@ def _public_plan(plan: dict) -> dict:
 async def get_my_space(user: dict = Depends(require_user)):
     """The caller's Personal space, materialized on first access (AD-1)."""
     space = await spaces.get_or_create_personal_space(user["id"])
-    return {"id": space["id"], "kind": space["kind"]}
+    role = await spaces.get_member_role(space["id"], user["id"])
+    return {"id": space["id"], "kind": space["kind"], "role": role}
 
 
 @router.get("/plans")
@@ -106,3 +123,33 @@ async def create_plan(body: CreatePlanRequest, user: dict = Depends(require_user
         raise HTTPException(status_code=409, detail="A plan with that id already exists")
     return _public_plan(plan)
 
+
+
+# --- Trash (capability: soft-delete; AD-7) -----------------------------------
+
+async def _plan_in_space(plan_id: str, space: dict) -> Optional[dict]:
+    plan = await plans.get_plan(plan_id) if plans.is_plan_id(plan_id) else None
+    return plan if plan is not None and plan["space_id"] == space["id"] else None
+
+
+@router.delete("/plans/{plan_id}", status_code=204)
+async def delete_plan(plan_id: str, space: dict = Depends(my_space)):
+    """Move a plan to the space's Trash. Any member may delete (AD-7)."""
+    plan = await _plan_in_space(plan_id, space)
+    if not plans.is_live(plan) or not await plans.trash_plan(plan_id):
+        raise HTTPException(status_code=404, detail="Plan not found")
+    await sync.close_plan_room(plan_id)  # open devices leave the plan (plan-sync)
+
+
+@router.post("/plans/{plan_id}/restore")
+async def restore_plan(plan_id: str, space: dict = Depends(restorer_space)):
+    """Bring a trashed plan back to the list, with the content it had."""
+    if await _plan_in_space(plan_id, space) is None or not await plans.restore_plan(plan_id):
+        raise HTTPException(status_code=404, detail="Plan is not in the Trash")
+    return _public_plan(await plans.get_plan(plan_id))
+
+
+@router.get("/trash")
+async def get_trash(space: dict = Depends(my_space)):
+    """Everything trashed in the caller's space and not yet purged."""
+    return await trash.trash_contents(space["id"])

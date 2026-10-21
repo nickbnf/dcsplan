@@ -36,7 +36,13 @@ vi.mock('../contexts/SpaceAssetsContext', () => ({
   }),
 }));
 
+vi.mock('../api/assetApi', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../api/assetApi')>()),
+  countReferences: vi.fn(async () => 2),
+}));
+
 import PerformancePage from './PerformancePage';
+import { countReferences } from '../api/assetApi';
 import { PerformanceProvider } from '../contexts/PerformanceContext';
 
 const REGIME = { id: 'r1', name: 'Cruise', cruise: { tas: 450, ff: 9000 } };
@@ -162,19 +168,64 @@ describe('Performance page — header chooser (8.2)', () => {
   });
 });
 
-describe('Performance page — deleting profiles (8.4)', () => {
-  it('deleting the flown profile with bound legs warns, then clears the plan', async () => {
+describe('Performance page — deleting profiles (add-trash-and-soft-delete 6.2)', () => {
+  it('deleting the flown profile moves it to the Trash and leaves the plan untouched', async () => {
     seedProfiles();
     await act(() => vi.advanceTimersByTimeAsync(2_000));     // profiles reach the server
     plan = { ...plan, profileId: 'pA' };
+    const before = plan;
     renderPage();
     fireEvent.click(within(screen.getByRole('region', { name: 'Aircraft identity' })).getByText('Delete'));
-    expect(screen.getByText(/2 legs are bound to regimes in this profile/)).toBeInTheDocument();
-    fireEvent.click(within(screen.getByRole('dialog')).getByText('Delete'));
-    expect(plan.profileId).toBeUndefined();
-    expect(plan.points.map(p => p.regimeId)).toEqual([undefined, undefined, undefined, 'orphan']);
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByText(/will move to the Trash/)).toBeInTheDocument();
+    await act(() => vi.advanceTimersByTimeAsync(10));
+    expect(within(dialog).getByText(/Flown by 2 flight plans/)).toBeInTheDocument();
+    expect(countReferences).toHaveBeenCalledWith('profile', 'pA');
+    fireEvent.click(within(dialog).getByText('Delete'));
+    expect(plan).toBe(before);                                // profileId and every regimeId kept
+    expect(plan.points.map(p => p.regimeId)).toEqual([undefined, 'r1', 'r1', 'orphan']);
     await act(() => vi.advanceTimersByTimeAsync(2_000));
     expect(server.profileOnServer('pA')).toBeNull();
+    expect(engine.isTrashed('profile', 'pA')).toBe(true);
+  });
+
+  it('restoring the profile makes the untouched plan fly it again', async () => {
+    seedProfiles();
+    await act(() => vi.advanceTimersByTimeAsync(2_000));
+    plan = { ...plan, profileId: 'pA' };
+    renderPage();
+    fireEvent.click(within(screen.getByRole('region', { name: 'Aircraft identity' })).getByText('Delete'));
+    fireEvent.click(within(screen.getByRole('dialog')).getByText('Delete'));
+    await act(() => vi.advanceTimersByTimeAsync(2_000));
+    expect(chooser().value).not.toBe('pA');
+    server.restore('profile', 'pA');
+    await act(() => engine.pull());
+    expect(chooser().value).toBe('pA');
+    expect(plan.points.map(p => p.regimeId)).toEqual([undefined, 'r1', 'r1', 'orphan']);
+  });
+
+  it('restoring heals every plan that flies the profile, none of them edited', async () => {
+    seedProfiles();
+    await act(() => vi.advanceTimersByTimeAsync(2_000));
+    const flying = (name: string): FlightPlan => ({ ...plan, name, profileId: 'pA' });
+    const plans = [flying('P1'), flying('P2'), flying('P3')];
+    plan = plans[0];
+    renderPage();
+    fireEvent.click(within(screen.getByRole('region', { name: 'Aircraft identity' })).getByText('Delete'));
+    fireEvent.click(within(screen.getByRole('dialog')).getByText('Delete'));
+    await act(() => vi.advanceTimersByTimeAsync(2_000));
+    for (const p of plans) {
+      act(() => planStore.set(p));                          // open each plan in turn
+      expect(chooser().value).not.toBe('pA');
+    }
+    server.restore('profile', 'pA');
+    await act(() => engine.pull());
+    for (const p of plans) {
+      act(() => planStore.set(p));
+      expect(chooser().value).toBe('pA');
+      expect(plan).toBe(p);                                 // the plan was never edited
+      expect(plan.points.map(pt => pt.regimeId)).toEqual([undefined, 'r1', 'r1', 'orphan']);
+    }
   });
 
   it('deleting a profile the plan does not fly leaves the plan untouched', () => {
@@ -184,9 +235,58 @@ describe('Performance page — deleting profiles (8.4)', () => {
     renderPage();
     fireEvent.click(row('A-10C'));
     fireEvent.click(within(screen.getByRole('region', { name: 'Aircraft identity' })).getByText('Delete'));
-    expect(screen.getByText('Delete "A-10C"? This cannot be undone.')).toBeInTheDocument();
+    expect(screen.getByText(/"A-10C" will move to the Trash/)).toBeInTheDocument();
     fireEvent.click(within(screen.getByRole('dialog')).getByText('Delete'));
     expect(plan).toBe(before);
     expect(engine.getState().profiles.pB).toBeUndefined();
+  });
+});
+
+describe('Performance page — plan whose profile is deleted (add-trash-and-soft-delete 6.4)', () => {
+  async function deleteFlownProfile() {
+    seedProfiles();
+    await act(() => vi.advanceTimersByTimeAsync(2_000));
+    plan = { ...plan, profileId: 'pA' };
+    renderPage();
+    fireEvent.click(within(screen.getByRole('region', { name: 'Aircraft identity' })).getByText('Delete'));
+    fireEvent.click(within(screen.getByRole('dialog')).getByText('Delete'));
+    await act(() => vi.advanceTimersByTimeAsync(2_000));
+  }
+
+  it('a trashed profile is stated as deleted and restorable', async () => {
+    await deleteFlownProfile();
+    expect(within(header()).getByRole('status')).toHaveTextContent(
+      "This plan's profile was deleted and can be restored from the Trash. Choose another profile.",
+    );
+    expect(within(chooser()).getByText('Deleted profile (manual legs)')).toBeInTheDocument();
+  });
+
+  it('a purged profile is stated as deleted, without restore', async () => {
+    await deleteFlownProfile();
+    server.purge('profile', 'pA');
+    await act(() => engine.pull());
+    expect(within(header()).getByRole('status')).toHaveTextContent(
+      "This plan's profile was deleted. Choose another profile.",
+    );
+  });
+
+  it('choosing another profile keeps the orphan bindings', async () => {
+    await deleteFlownProfile();
+    fireEvent.change(chooser(), { target: { value: 'pB' } });
+    expect(screen.queryByText('Switch')).toBeNull();
+    expect(plan.profileId).toBe('pB');
+    expect(plan.points.map(p => p.regimeId)).toEqual([undefined, 'r1', 'r1', 'orphan']);
+    expect(within(header()).queryByRole('status')).toBeNull();
+  });
+
+  it('a profile not synced yet is not stated as deleted', () => {
+    server.offline = true;
+    engine.stop();
+    engine = new AssetSync('u2', { api: server.api });
+    engine.start();
+    plan = { ...plan, profileId: 'pZ' };
+    renderPage();
+    expect(within(header()).queryByRole('status')).toBeNull();
+    expect(within(chooser()).getByText('No profile (manual legs)')).toBeInTheDocument();
   });
 });

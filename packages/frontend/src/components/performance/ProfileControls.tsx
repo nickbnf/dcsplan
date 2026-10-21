@@ -5,6 +5,8 @@ import { usePerformance } from '../../contexts/PerformanceContext';
 import { countBoundLegs, switchPlanProfile } from '../../utils/regimeUtils';
 import { profileLabel } from '../../types/flightPlan';
 import PerformanceImportDialog from '../PerformanceImportDialog';
+import { ReferenceCountNotice } from '../ReferenceCountNotice';
+import { useSpaceAssets } from '../../contexts/SpaceAssetsContext';
 
 // The bound-leg warning shared by switching and deleting the flown profile
 // (performance-profile: same wording for both).
@@ -15,7 +17,7 @@ export function boundLegsMessage(count: number): string {
 
 interface ConfirmProps {
   title: string;
-  message: string;
+  message: React.ReactNode;
   confirmLabel: string;
   cancelLabel?: string;
   destructive?: boolean;
@@ -56,7 +58,14 @@ const NONE = '';
 export const PlanProfileHeader: React.FC = () => {
   const { flightPlan, onFlightPlanUpdate } = useFlightPlan();
   const { profiles, flownProfileId, performance } = usePerformance();
+  const { sync } = useSpaceAssets();
   const [pending, setPending] = useState<string | null | undefined>(undefined);
+
+  // The plan names a profile that no longer resolves because it was deleted
+  // (trashed or purged), not merely not synced yet (soft-delete).
+  const missingId = flightPlan.profileId && !flownProfileId ? flightPlan.profileId : null;
+  const deleted = missingId !== null && sync?.profileStatus(missingId) === 'deleted';
+  const restorable = deleted && sync!.isTrashed('profile', missingId!);
 
   const apply = (id: string | null) => {
     onFlightPlanUpdate(switchPlanProfile(flightPlan, performance, id));
@@ -83,9 +92,15 @@ export const PlanProfileHeader: React.FC = () => {
         onChange={e => choose(e.target.value)}
         className="text-sm font-aero-mono border border-gray-300 rounded px-2 py-0.5 bg-white"
       >
-        <option value={NONE}>No profile (manual legs)</option>
+        <option value={NONE}>{deleted ? 'Deleted profile (manual legs)' : 'No profile (manual legs)'}</option>
         {profiles.map(p => <option key={p.id} value={p.id}>{profileLabel(p.aircraft)}</option>)}
       </select>
+      {deleted && (
+        <span role="status" className="text-xs text-amber-700">
+          This plan's profile was deleted
+          {restorable ? ' and can be restored from the Trash' : ''}. Choose another profile.
+        </span>
+      )}
       {pending !== undefined && (
         <ConfirmDialog
           title="Switch profile?"
@@ -150,21 +165,17 @@ export const ProfileSidebar: React.FC = () => {
 };
 
 /**
- * Delete the edited profile (signed-in). Deleting the flown profile clears the
- * active plan's bound legs, after the same warning as switching; other plans
- * are not touched and fall back to the null profile when opened.
+ * Delete the edited profile (signed-in): it moves to the Trash. No plan is
+ * edited, the open one included: plans flying it keep their `profileId` and
+ * regime bindings, compute as Manual while it is trashed, and are whole again
+ * if it is restored (soft-delete). The confirmation states how many plans fly it.
  */
 export const DeleteProfileButton: React.FC = () => {
-  const { flightPlan, onFlightPlanUpdate } = useFlightPlan();
-  const { editingProfileId, flownProfileId, performance, editingAircraft, deleteProfile } = usePerformance();
+  const { editingProfileId, editingAircraft, deleteProfile } = usePerformance();
   const [confirm, setConfirm] = useState(false);
   if (!editingProfileId) return null;
 
-  const isFlown = editingProfileId === flownProfileId;
-  const bound = isFlown ? countBoundLegs(flightPlan, performance) : 0;
-
   const doDelete = () => {
-    if (isFlown) onFlightPlanUpdate(switchPlanProfile(flightPlan, performance, null));
     deleteProfile(editingProfileId);
     setConfirm(false);
   };
@@ -180,7 +191,12 @@ export const DeleteProfileButton: React.FC = () => {
       {confirm && (
         <ConfirmDialog
           title="Delete profile?"
-          message={bound > 0 ? boundLegsMessage(bound) : `Delete "${profileLabel(editingAircraft)}"? This cannot be undone.`}
+          message={
+            <>
+              "{profileLabel(editingAircraft)}" will move to the Trash, where it can be restored for 30 days.
+              <ReferenceCountNotice kind="profile" id={editingProfileId} />
+            </>
+          }
           confirmLabel="Delete"
           destructive
           onConfirm={doDelete}

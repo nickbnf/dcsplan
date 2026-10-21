@@ -164,3 +164,28 @@ describe('anonymous plan outside the editor (add-local-data-import D6)', () => {
     expect((await readAnonymousPlan())?.name).toBe('Keep me');
   });
 });
+
+describe('useYjsFlightPlan — trashed plan (add-trash-and-soft-delete 5.3)', () => {
+  it('reports a 4410 close as gone, and no other close', async () => {
+    const onGone = vi.fn();
+    const h = renderHook(() => useYjsFlightPlan('plan-T', { sync: true, onGone }));
+    await waitFor(() => expect(providers).toHaveLength(1));
+    act(() => providers[0].emit('closed', { code: 4403, reason: '' }));
+    expect(onGone).not.toHaveBeenCalled();
+    act(() => providers[0].emit('closed', { code: 4410, reason: '' }));
+    expect(onGone).toHaveBeenCalledWith('plan-T');
+    h.unmount();
+  });
+
+  it('y-websocket stops reconnecting after 4410 but not after a network close', async () => {
+    const real = await vi.importActual<typeof import('y-websocket')>('y-websocket');
+    const Y = await import('yjs');
+    const provider = new real.WebsocketProvider('ws://localhost:1', 'room', new Y.Doc(), { connect: false });
+    try {
+      expect(provider.shouldReconnect({ code: 4410 } as CloseEvent, provider)).toBe(false);
+      expect(provider.shouldReconnect({ code: 1006 } as CloseEvent, provider)).toBe(true);
+    } finally {
+      provider.destroy();
+    }
+  });
+});

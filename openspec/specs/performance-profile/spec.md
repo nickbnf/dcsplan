@@ -61,23 +61,23 @@ In the **signed-in** tier, `FlightPlan` SHALL include an optional `profileId` fi
 ---
 
 ### Requirement: Profile deletion (signed-in only)
-In the **signed-in** tier, any profile MAY be deleted. When the plan's `profileId` references the profile being deleted AND at least one leg is bound to a regime, a confirmation dialog SHALL name the count of bound legs and state the consequence — the same wording as the profile-switching confirmation. On confirm, the profile is deleted, `profileId` is cleared, and the plan falls back to the null profile; all bound legs are cleared to Manual, retaining stored `tas` and `fuelFlow`. When no leg is bound, deletion asks a simpler confirmation naming the profile by its label. The collection MAY be empty after deletion.
-
-Other plans in the space that reference the deleted profile SHALL NOT be modified by the deletion. They resolve to the null profile when opened, and their bound legs compute as Manual (see `performance-regime`).
-
-In the **anonymous** tier, deletion SHALL NOT be offered — there is exactly one profile.
+In the **signed-in** tier, any profile MAY be deleted, including one that plans fly. Deletion SHALL require a confirmation naming the profile by its label and stating how many plans fly it (`soft-delete`). On confirm, the profile moves to the Trash, and the collection MAY be empty afterwards. What happens to the plans that fly it is defined by *Deleting a profile never modifies a plan*. In the **anonymous** tier, deletion SHALL NOT be offered — there is exactly one profile.
 
 #### Scenario: Delete unreferenced profile (signed-in)
-- **WHEN** a signed-in user deletes a profile that the plan does not reference
-- **THEN** the profile is removed from the collection; the plan is unaffected
+- **WHEN** a signed-in user deletes a profile that no plan flies
+- **THEN** the profile moves to the Trash and leaves the profile list; no plan is affected
 
 #### Scenario: Delete referenced profile with bound legs requires confirmation (signed-in)
-- **WHEN** a signed-in user deletes the profile the plan flies and 12 legs are bound to regimes
-- **THEN** a confirmation dialog states the bound-leg count and consequence; on confirm, the profile is deleted, the plan falls back to the null profile, and all bound legs are cleared to Manual
+- **WHEN** a signed-in user deletes the profile the current plan flies, with 12 legs bound to its regimes, and confirms
+- **THEN** the confirmation states how many plans fly the profile; on confirm the profile moves to the Trash, the plan keeps its `profileId` and the 12 legs keep their `regimeId`, and the plan computes from the null profile with those legs as Manual
 
 #### Scenario: Delete referenced profile with no bound legs (signed-in)
-- **WHEN** a signed-in user deletes the profile the plan flies and no legs are bound
-- **THEN** the profile is deleted and the plan falls back to the null profile without a bound-leg warning
+- **WHEN** a signed-in user deletes the profile the current plan flies and no legs are bound
+- **THEN** the profile moves to the Trash, the plan keeps its `profileId`, and it resolves to the null profile
+
+#### Scenario: Restoring the flown profile restores the plan's performance (signed-in)
+- **WHEN** the profile deleted in the previous scenario is restored from the Trash, the plan having not been edited meanwhile
+- **THEN** the plan flies the profile again and the 12 legs compute from their regimes, with no edit to the plan
 
 #### Scenario: Delete last profile leaves collection empty (signed-in)
 - **WHEN** a signed-in user deletes the only profile in the collection
@@ -90,8 +90,6 @@ In the **anonymous** tier, deletion SHALL NOT be offered — there is exactly on
 #### Scenario: Anonymous user has no deletion control
 - **WHEN** an anonymous user views the Performance page
 - **THEN** no profile deletion control is visible
-
----
 
 ### Requirement: Profile switching resets legs to Manual (signed-in only)
 In the **signed-in** tier, switching the plan's `profileId` to a different profile SHALL clear `regimeId` on every waypoint **bound** to a regime of the current profile, retaining the waypoint's stored `tas` and `fuelFlow`. A `regimeId` that does not resolve in the current profile (an orphan, see `performance-regime`) is not bound: the switch SHALL leave it unchanged, and it becomes bound if it resolves in the new profile. Before the switch, a confirmation dialog SHALL name the count of bound legs and state the consequence: legs will be set to Manual while their TAS and fuel flow are kept. When **no** leg is bound to a regime, the switch SHALL proceed without confirmation.
@@ -292,3 +290,33 @@ On load, a synchronous pre-mount bootstrap SHALL ensure `dcsplan.performance` ho
 #### Scenario: Failed bootstrap falls back to defaults
 - **WHEN** the bootstrap throws an error (corrupted localStorage, unexpected shape)
 - **THEN** the error is caught, a default profile is used, and the app starts normally
+
+### Requirement: A plan whose profile is deleted says so (signed-in only)
+In the **signed-in** tier, when a plan's `profileId` is set but does not resolve because the profile is trashed or purged, the plan's profile chooser SHALL state that the plan's profile was deleted instead of naming a profile, and SHALL offer choosing another profile. When the profile is trashed rather than purged, it SHALL also say it can be restored from the Trash. While the device is still syncing or disconnected, an unresolved `profileId` SHALL NOT be presented as deleted.
+
+#### Scenario: Plan flying a trashed profile (signed-in)
+- **WHEN** a signed-in user opens a plan whose profile is in the Trash
+- **THEN** the profile chooser states the plan's profile was deleted and can be restored from the Trash, and offers choosing another profile
+
+#### Scenario: Plan flying a purged profile (signed-in)
+- **WHEN** a signed-in user opens a plan whose profile was purged
+- **THEN** the profile chooser states the plan's profile was deleted, without offering restore, and offers choosing another profile
+
+#### Scenario: Choosing another profile keeps the orphan bindings (signed-in)
+- **WHEN** the user chooses another profile for that plan
+- **THEN** the switch follows *Profile switching resets legs to Manual*: orphan `regimeId` values are left unchanged
+
+#### Scenario: Not yet synced is not deleted (signed-in)
+- **WHEN** a signed-in user opens a plan on a device that has not yet received its profile
+- **THEN** the chooser does not state that the profile was deleted
+
+### Requirement: Deleting a profile never modifies a plan (signed-in only)
+In the **signed-in** tier, deleting a profile SHALL NOT modify any plan, the current one included. Every plan that flies it keeps its `profileId` and its legs' `regimeId` values, resolves to the null profile while the profile is trashed or purged, and computes its bound legs as Manual (see `performance-regime`).
+
+#### Scenario: Bindings survive the purge (signed-in)
+- **WHEN** a profile flown by a plan with bound legs is deleted and later purged from the Trash
+- **THEN** the plan still holds its `profileId` and every `regimeId`, resolves to the null profile, and computes those legs as Manual
+
+#### Scenario: Several plans keep the profile (signed-in)
+- **WHEN** a signed-in user deletes a profile that three plans fly
+- **THEN** none of the three plans is modified, and each resolves to the null profile until the profile is restored

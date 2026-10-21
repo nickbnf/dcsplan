@@ -11,6 +11,8 @@
  *               the theatre's library id is known can still be routed)
  *   profiles    CachedProfile by profile id
  *   tombstones  deleted entry/profile ids, so a placeholder can say "deleted"
+ *   trashed     those deleted ids still in the space's Trash, so a placeholder
+ *               can say they can be restored (add-trash-and-soft-delete D2)
  *   cursor      the change-feed cursor
  *   outbox      pending writes (see assetSync.ts)
  *
@@ -45,13 +47,14 @@ export interface AssetCacheState {
   entries: Record<string, CachedEntry>;
   profiles: Record<string, CachedProfile>;
   tombstones: { entry: Record<string, number | null>; profile: Record<string, number | null> };
+  trashed: { entry: Record<string, true>; profile: Record<string, true> };
   cursor: number;
   outbox: Record<string, OutboxOp>;
 }
 
 export const userPrefix = (userId: string): string => `dcsplan.u.${userId}.`;
 
-const KEYS = ['libraries', 'entries', 'profiles', 'tombstones', 'cursor', 'outbox'] as const;
+const KEYS = ['libraries', 'entries', 'profiles', 'tombstones', 'trashed', 'cursor', 'outbox'] as const;
 
 export function emptyState(): AssetCacheState {
   return {
@@ -59,6 +62,7 @@ export function emptyState(): AssetCacheState {
     entries: {},
     profiles: {},
     tombstones: { entry: {}, profile: {} },
+    trashed: { entry: {}, profile: {} },
     cursor: 0,
     outbox: {},
   };
@@ -83,6 +87,7 @@ export function loadState(userId: string): AssetCacheState {
     entries: read(p + 'entries', empty.entries),
     profiles: read(p + 'profiles', empty.profiles),
     tombstones: read(p + 'tombstones', empty.tombstones),
+    trashed: read(p + 'trashed', empty.trashed),
     cursor: read(p + 'cursor', empty.cursor),
     outbox: read(p + 'outbox', empty.outbox),
   };
@@ -121,6 +126,7 @@ export function applyFeed(state: AssetCacheState, feed: ChangeFeed): AssetCacheS
     entries: { ...state.entries },
     profiles: { ...state.profiles },
     tombstones: { entry: { ...state.tombstones.entry }, profile: { ...state.tombstones.profile } },
+    trashed: { entry: { ...state.trashed.entry }, profile: { ...state.trashed.profile } },
     cursor: Math.max(state.cursor, feed.cursor),
   };
   for (const lib of feed.libraries) next.libraries[lib.id] = lib;
@@ -130,10 +136,12 @@ export function applyFeed(state: AssetCacheState, feed: ChangeFeed): AssetCacheS
     if (row.deleted || row.entry === null) {
       delete next.entries[row.id];
       next.tombstones.entry[row.id] = row.seq;
+      setTrashed(next.trashed.entry, row.id, row.deleted && row.trashed === true);
     } else {
       const theatre = next.libraries[row.libraryId]?.theatre ?? next.entries[row.id]?.theatre ?? '';
       next.entries[row.id] = { theatre, libraryId: row.libraryId, entry: row.entry, seq: row.seq };
       delete next.tombstones.entry[row.id];
+      delete next.trashed.entry[row.id];
     }
   }
 
@@ -142,12 +150,19 @@ export function applyFeed(state: AssetCacheState, feed: ChangeFeed): AssetCacheS
     if (row.deleted || row.profile === null) {
       delete next.profiles[row.id];
       next.tombstones.profile[row.id] = row.seq;
+      setTrashed(next.trashed.profile, row.id, row.deleted && row.trashed === true);
     } else {
       next.profiles[row.id] = { profile: row.profile, seq: row.seq };
       delete next.tombstones.profile[row.id];
+      delete next.trashed.profile[row.id];
     }
   }
   return next;
+}
+
+function setTrashed(map: Record<string, true>, id: string, trashed: boolean): void {
+  if (trashed) map[id] = true;
+  else delete map[id];
 }
 
 /** The library id for a theatre, if known (exactly one per theatre today). */

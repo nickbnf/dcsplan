@@ -11,11 +11,13 @@ import type { EntryStatus } from '../../sync/assetSync';
 
 let library: LibraryObject[] = [];
 let statuses: Record<string, EntryStatus> = {};
+let trashed: Set<string> = new Set();
 
 vi.mock('../../contexts/LibraryContext', () => ({
   useLibrary: () => ({
     library,
     entryStatus: (id: string) => statuses[id] ?? (library.some(e => e.id === id) ? 'present' : 'deleted'),
+    isTrashed: (id: string) => trashed.has(id),
   }),
 }));
 vi.mock('../../contexts/ObjectSelectionContext', () => ({
@@ -45,6 +47,7 @@ function renderZone(fp: FlightPlan, onFlightPlanUpdate = vi.fn()) {
 beforeEach(() => {
   library = [SAM];
   statuses = {};
+  trashed = new Set();
 });
 
 describe('ObjectsZone — missing-object placeholder', () => {
@@ -98,5 +101,39 @@ describe('ObjectsZone — missing-object placeholder', () => {
   it('showing a plan with unresolved refs does not change it', () => {
     const { onFlightPlanUpdate } = renderZone(plan([{ uuid: 'gone' }]));
     expect(onFlightPlanUpdate).not.toHaveBeenCalled();
+  });
+});
+
+describe('ObjectsZone — trashed entries (add-trash-and-soft-delete 6.5)', () => {
+  it('a trashed entry says it can be restored, and still offers Remove from plan', () => {
+    trashed = new Set(['gone']);
+    renderZone(plan([{ uuid: 'gone' }]));
+    const card = screen.getByTestId('missing-object-card');
+    expect(card).toHaveTextContent('Object deleted from the library');
+    expect(card).toHaveTextContent('It can be restored from the Trash.');
+    expect(screen.getByTitle('Remove from plan')).toBeInTheDocument();
+  });
+
+  it('a purged entry does not mention restoring', () => {
+    renderZone(plan([{ uuid: 'gone' }]));
+    expect(screen.getByTestId('missing-object-card')).not.toHaveTextContent('Trash');
+  });
+
+  it('restoring the entry replaces the placeholder with a normal card', () => {
+    trashed = new Set(['gone']);
+    const fp = plan([{ uuid: 'gone' }]);
+    const { rerender } = renderZone(fp);
+    library = [SAM, { id: 'gone', type: 'aaa', lat: 42, lon: 41, name: 'ZSU-23' }];
+    trashed = new Set();
+    rerender(
+      <MemoryRouter>
+        <ObjectsZone
+          flightPlan={fp} onFlightPlanUpdate={vi.fn()}
+          isAddMode={false} addType="sam_site" onAddModeToggle={vi.fn()} onAddTypeChange={vi.fn()}
+        />
+      </MemoryRouter>,
+    );
+    expect(screen.queryByTestId('missing-object-card')).toBeNull();
+    expect(screen.getByText('ZSU-23')).toBeInTheDocument();
   });
 });

@@ -54,6 +54,9 @@ const Layout: React.FC = () => {
   const { flightPlan, flightPlanId } = useFlightPlan();
   const location = useLocation();
   const onHome = location.pathname === '/plans';
+  // The space's Trash is off-plan like Home (soft-delete).
+  const onTrash = location.pathname === '/trash';
+  const offPlan = onHome || onTrash;
   const signedIn = status === 'authenticated';
 
   // Routing (AD-15, AD-16). Nothing is judged while auth or the plan list loads.
@@ -61,9 +64,9 @@ const Layout: React.FC = () => {
     // An address that does not resolve: signed-in → Home, anonymous → their plan.
     if (requestUnresolved) return <Navigate to={signedIn ? '/plans' : '/p/local'} replace />;
     // Anonymous has no Home.
-    if (!signedIn && onHome) return <Navigate to="/" replace />;
+    if (!signedIn && offPlan) return <Navigate to="/" replace />;
     // A signed-in user with no plan to open belongs on Home.
-    if (atHome && !onHome) return <Navigate to="/plans" replace />;
+    if (atHome && !offPlan) return <Navigate to="/plans" replace />;
   }
 
   // Tab links follow the active plan's address; the name is only trusted once
@@ -75,8 +78,8 @@ const Layout: React.FC = () => {
     { label: 'ATTACK', to: planPath(activePlanId, planName, 'attack'), end: false },
   ];
 
-  const showEditingTabs = !onHome;
-  const showBreadcrumb = signedIn && !onHome && hasActivePlan && !!planName;
+  const showEditingTabs = !offPlan;
+  const showBreadcrumb = signedIn && !offPlan && hasActivePlan && !!planName;
 
   return (
     <div className="h-screen w-screen flex flex-col overflow-hidden">
@@ -95,6 +98,14 @@ const Layout: React.FC = () => {
           )}
           {onHome && (
             <span className="flex items-center px-3 h-full font-aero-label text-sm text-gray-700">FLIGHT PLANS</span>
+          )}
+          {onTrash && (
+            <Link
+              to="/plans"
+              className="flex items-center px-3 h-full font-aero-label text-sm text-gray-600 hover:text-avio-primary"
+            >
+              ‹ FLIGHT PLANS
+            </Link>
           )}
           {showEditingTabs && (
             <div className="flex h-full items-center">

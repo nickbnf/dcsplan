@@ -144,3 +144,40 @@ def test_duplicate_id_with_initial_update_adds_no_row(db_path):
     with pytest.raises(DuplicatePlanId):
         asyncio.run(plans.create_plan("p1", sid, "Second", "caucasus", initial_update=_seeded_update("Second")))
     assert asyncio.run(plans.load_updates("p1")) == [first]
+
+
+# --- add-trash-and-soft-delete 1.4: trashing a plan ---------------------------
+
+def test_trashed_plan_is_not_listed(db_path):
+    sid = _seed_space()
+    asyncio.run(plans.create_plan("p1", sid, "Alpha", "caucasus"))
+    asyncio.run(plans.create_plan("p2", sid, "Bravo", "caucasus"))
+    assert asyncio.run(plans.trash_plan("p1")) is True
+    assert [p["id"] for p in asyncio.run(plans.list_plans(sid))] == ["p2"]
+    trashed = asyncio.run(plans.get_plan("p1"))
+    assert trashed["deleted_at"] is not None and trashed["purged_at"] is None
+    assert not plans.is_live(trashed) and plans.is_live(asyncio.run(plans.get_plan("p2")))
+
+
+def test_trashing_twice_keeps_first_deleted_at(db_path):
+    sid = _seed_space()
+    asyncio.run(plans.create_plan("p1", sid, "Alpha", "caucasus"))
+    asyncio.run(plans.trash_plan("p1"))
+    first = asyncio.run(plans.get_plan("p1"))["deleted_at"]
+    assert asyncio.run(plans.trash_plan("p1")) is False
+    assert asyncio.run(plans.get_plan("p1"))["deleted_at"] == first
+
+
+def test_trashing_unknown_plan_is_false(db_path):
+    assert asyncio.run(plans.trash_plan("nope")) is False
+
+
+def test_append_update_refuses_trashed_plan(db_path):
+    sid = _seed_space()
+    asyncio.run(plans.create_plan("p1", sid, "Alpha", "caucasus"))
+    doc = Doc()
+    doc.get("flightPlan", type=Map)["name"] = "Alpha"
+    assert asyncio.run(plans.append_update("p1", doc.get_update())) is True
+    asyncio.run(plans.trash_plan("p1"))
+    assert asyncio.run(plans.append_update("p1", doc.get_update())) is False
+    assert asyncio.run(plans.count_updates("p1")) == 1

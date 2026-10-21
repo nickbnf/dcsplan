@@ -7,6 +7,7 @@ import PerformancePage from './PerformancePage';
 import AttackPlanningPage from './AttackPlanningPage';
 import { TheatreLibraryPage } from './TheatreLibraryPage';
 import PlansHomePage from './PlansHomePage';
+import TrashPage from './TrashPage';
 import { About } from './About';
 import { PlanRedirect, PlanRoute } from './PlanRoutes';
 import { FlightPlanProvider } from '../contexts/FlightPlanContext';
@@ -19,7 +20,7 @@ import { LocalDataMigration } from './import/LocalDataMigration';
 
 /**
  * The route table (unify-plan-name D4). Plan-scoped views live under a plan's
- * address `/p/:id/:slug`; the library and the Flight Plans home do not. The old
+ * address `/p/:id/:slug`; the library, the Flight Plans home and the Trash do not. The old
  * flat routes redirect to the active plan's address.
  */
 export const AppRoutes: React.FC = () => (
@@ -29,6 +30,7 @@ export const AppRoutes: React.FC = () => (
       <Route path="/performance" element={<PlanRedirect tab="perf" />} />
       <Route path="/attack" element={<PlanRedirect tab="attack" />} />
       <Route path="/plans" element={<PlansHomePage />} />
+      <Route path="/trash" element={<TrashPage />} />
       <Route path="/library" element={<TheatreLibraryPage />} />
       <Route path="/p/:id" element={<PlanRedirect />} />
       <Route path="/p/:id/:slug" element={<PlanRoute />}>

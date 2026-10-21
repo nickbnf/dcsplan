@@ -5,7 +5,9 @@ container).
 Every write takes the next value of the shared `asset_seq` counter inside its
 own transaction, so `seq` order is commit order and a client can pull "all rows
 with seq > cursor" (the change feed). Rows are last-write-wins as a whole; a
-delete leaves a tombstone so a stale offline device cannot bring it back.
+delete leaves a tombstone so a stale offline device cannot bring it back. A
+tombstone that still holds its data is in the Trash; purging nulls the data
+(add-trash-and-soft-delete D1).
 
 Write rules (design D3), by the row's state on the server and `base_seq`
 (None = the client believes it is creating the row):
@@ -99,23 +101,36 @@ def _decode(data: Optional[str]) -> Optional[dict]:
     return json.loads(data) if data is not None else None
 
 
+def _live_data(row: aiosqlite.Row) -> Optional[dict]:
+    """A row's payload, or None for any tombstone: trashed content is never
+    sent with the row (add-trash-and-soft-delete D2)."""
+    return _decode(row["data"]) if row["deleted_at"] is None else None
+
+
+def _is_trashed(row: aiosqlite.Row) -> bool:
+    """A tombstone that still holds its data is in the Trash (D1)."""
+    return row["deleted_at"] is not None and row["data"] is not None
+
+
 def _public_entry(row: aiosqlite.Row) -> dict:
-    data = _decode(row["data"])
+    data = _live_data(row)
     return {
         "id": row["id"],
         "libraryId": row["library_id"],
         "seq": row["seq"],
         "deleted": row["deleted_at"] is not None,
+        "trashed": _is_trashed(row),
         "entry": {"id": row["id"], **data} if data is not None else None,
     }
 
 
 def _public_profile(row: aiosqlite.Row) -> dict:
-    data = _decode(row["data"])
+    data = _live_data(row)
     return {
         "id": row["id"],
         "seq": row["seq"],
         "deleted": row["deleted_at"] is not None,
+        "trashed": _is_trashed(row),
         "profile": {"id": row["id"], **data} if data is not None else None,
     }
 
@@ -169,9 +184,11 @@ async def write_entry(
 
 
 async def delete_entry(space_id: str, library_id: str, entry_id: str) -> dict:
-    """Tombstone a library entry. Deleting a live row always applies (a delete
-    is a write, LWW); deleting a tombstone is a no-op. A delete for an unknown
-    id records a tombstone so a stale device cannot create it later as an edit."""
+    """Tombstone a library entry, moving it to the Trash: its data is kept so it
+    can be restored until purged (add-trash-and-soft-delete D1). Deleting a live
+    row always applies (a delete is a write, LWW); deleting a tombstone is a
+    no-op. A delete for an unknown id records a data-less (purged) tombstone so
+    a stale device cannot create it later as an edit."""
     async with connect() as db:
         await _begin(db)
         await _require_library(db, space_id, library_id)
@@ -187,7 +204,7 @@ async def delete_entry(space_id: str, library_id: str, entry_id: str) -> dict:
             "(space_id, id, library_id, data, seq, updated_at, deleted_at) "
             "VALUES (?, ?, ?, NULL, ?, ?, ?) "
             "ON CONFLICT (space_id, id) DO UPDATE SET "
-            "data = NULL, seq = excluded.seq, updated_at = excluded.updated_at, "
+            "seq = excluded.seq, updated_at = excluded.updated_at, "
             "deleted_at = excluded.deleted_at",
             (space_id, entry_id, library_id, seq, now, now),
         )
@@ -233,11 +250,111 @@ async def delete_profile(space_id: str, profile_id: str) -> dict:
             "INSERT INTO profiles (space_id, id, data, seq, updated_at, deleted_at) "
             "VALUES (?, ?, NULL, ?, ?, ?) "
             "ON CONFLICT (space_id, id) DO UPDATE SET "
-            "data = NULL, seq = excluded.seq, updated_at = excluded.updated_at, "
+            "seq = excluded.seq, updated_at = excluded.updated_at, "
             "deleted_at = excluded.deleted_at",
             (space_id, profile_id, seq, now, now),
         )
         return {"applied": True, "seq": seq}
+
+
+# --- Trash: restore and purge (add-trash-and-soft-delete D1) -----------------
+
+class NotTrashed(Exception):
+    """The row is live, purged or unknown, so there is nothing to restore."""
+
+
+async def _restore(db, table: str, space_id: str, row_id: str) -> aiosqlite.Row:
+    row = await _fetch_row(db, table, space_id, row_id)
+    if row is None or not _is_trashed(row):
+        raise NotTrashed(row_id)
+    await db.execute(
+        f"UPDATE {table} SET deleted_at = NULL, seq = ?, updated_at = ? "
+        "WHERE space_id = ? AND id = ?",
+        (await _next_seq(db), _now(), space_id, row_id),
+    )
+    return await _fetch_row(db, table, space_id, row_id)
+
+
+async def restore_entry(space_id: str, library_id: str, entry_id: str) -> dict:
+    """Bring a trashed entry back with the data it had when deleted, under a new
+    `seq` so every device picks it up from the feed. Raises NotTrashed."""
+    async with connect() as db:
+        await _begin(db)
+        await _require_library(db, space_id, library_id)
+        row = await _fetch_row(db, "library_entries", space_id, entry_id)
+        if row is not None and row["library_id"] != library_id:
+            raise LibraryMismatch(entry_id)
+        public = _public_entry(await _restore(db, "library_entries", space_id, entry_id))
+        return {"seq": public["seq"], "entry": public["entry"]}
+
+
+async def restore_profile(space_id: str, profile_id: str) -> dict:
+    """Bring a trashed profile back; same rules as `restore_entry`."""
+    async with connect() as db:
+        await _begin(db)
+        public = _public_profile(await _restore(db, "profiles", space_id, profile_id))
+        return {"seq": public["seq"], "profile": public["profile"]}
+
+
+async def trashed_assets(space_id: str) -> dict:
+    """The space's trashed entries (with their theatre) and profiles, with the
+    data they had when deleted. Purged tombstones are not included."""
+    async with connect() as db:
+        async with db.execute(
+            "SELECT e.*, l.theatre FROM library_entries e "
+            "JOIN libraries l ON l.id = e.library_id "
+            "WHERE e.space_id = ? AND e.deleted_at IS NOT NULL AND e.data IS NOT NULL",
+            (space_id,),
+        ) as cur:
+            entries = [
+                {
+                    "id": r["id"],
+                    "libraryId": r["library_id"],
+                    "theatre": r["theatre"],
+                    "entry": {"id": r["id"], **json.loads(r["data"])},
+                    "deletedAt": r["deleted_at"],
+                }
+                for r in await cur.fetchall()
+            ]
+        async with db.execute(
+            "SELECT * FROM profiles "
+            "WHERE space_id = ? AND deleted_at IS NOT NULL AND data IS NOT NULL",
+            (space_id,),
+        ) as cur:
+            profiles = [
+                {
+                    "id": r["id"],
+                    "profile": {"id": r["id"], **json.loads(r["data"])},
+                    "deletedAt": r["deleted_at"],
+                }
+                for r in await cur.fetchall()
+            ]
+    return {"entries": entries, "profiles": profiles}
+
+
+async def purge_assets(cutoff: str) -> int:
+    """Purge entries and profiles trashed before `cutoff` (an ISO timestamp):
+    their data is dropped and each takes a new `seq`, so devices learn the item
+    can no longer be restored. The bare tombstone stays (deletions win).
+    Returns the number of rows purged."""
+    purged = 0
+    async with connect() as db:
+        await _begin(db)
+        for table in ("library_entries", "profiles"):
+            async with db.execute(
+                f"SELECT space_id, id FROM {table} "
+                "WHERE deleted_at IS NOT NULL AND data IS NOT NULL AND deleted_at < ?",
+                (cutoff,),
+            ) as cur:
+                rows = await cur.fetchall()
+            for r in rows:
+                await db.execute(
+                    f"UPDATE {table} SET data = NULL, seq = ?, updated_at = ? "
+                    "WHERE space_id = ? AND id = ?",
+                    (await _next_seq(db), _now(), r["space_id"], r["id"]),
+                )
+            purged += len(rows)
+    return purged
 
 
 # --- Change feed -------------------------------------------------------------

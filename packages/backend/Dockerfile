@@ -70,6 +70,9 @@ COPY backend/sync.py .
 COPY backend/assets.py .
 COPY backend/asset_routes.py .
 
+# Trash and its retention purge (add-trash-and-soft-delete)
+COPY backend/trash.py .
+
 # Runtime data directory (SQLite DB) — mounted as a persistent volume in prod
 RUN mkdir -p /app/data
 

@@ -63,3 +63,11 @@ def test_member_role_and_user_in_space(db_path):
     assert asyncio.run(spaces.get_member_role(sp["id"], uid)) == "owner"
     assert asyncio.run(spaces.user_in_space(sp["id"], uid)) is True
     assert asyncio.run(spaces.user_in_space(sp["id"], "someone-else")) is False
+
+
+# --- add-trash-and-soft-delete 2.5: who can restore ----------------------------
+
+def test_can_restore_owner_and_admin_only():
+    import spaces as sp
+    assert sp.can_restore("owner") and sp.can_restore("admin")
+    assert not sp.can_restore("member") and not sp.can_restore(None)

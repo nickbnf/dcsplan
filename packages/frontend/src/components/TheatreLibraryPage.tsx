@@ -8,6 +8,8 @@ import { parseLibraryFile, serializeLibraryFile, mergeLibraryEntries, replaceLib
 import type { LibraryObject, PictogramType } from '../types/flightPlan';
 import LibraryMap from './LibraryMap';
 import { TypeStampedAddToggle } from './sidebar/TypeStampedAddToggle';
+import { ReferenceCountNotice } from './ReferenceCountNotice';
+import { useSpaceAssets } from '../contexts/SpaceAssetsContext';
 
 // ── Entry card ────────────────────────────────────────────────────────────────
 
@@ -18,6 +20,8 @@ interface EntryCardProps {
   onUpdate: (updates: Partial<LibraryObject>) => void;
   onDelete: () => void;
   isReferencedByPlan: boolean;
+  /** Signed-in: deletion moves the entry to the space's Trash (soft-delete). */
+  toTrash: boolean;
 }
 
 const EntryCard: React.FC<EntryCardProps> = ({
@@ -27,6 +31,7 @@ const EntryCard: React.FC<EntryCardProps> = ({
   onUpdate,
   onDelete,
   isReferencedByPlan,
+  toTrash,
 }) => {
   const { coordEntry } = useLibrarySelection();
   const isEditingCoord = isSelected && coordEntry !== null;
@@ -180,14 +185,21 @@ const EntryCard: React.FC<EntryCardProps> = ({
             onClick={e => e.stopPropagation()}
           >
             <Dialog.Title className="text-base font-semibold mb-3">Delete library entry?</Dialog.Title>
-            <p id="lib-delete-desc" className="text-sm text-gray-600 mb-4">
-              {entry.name ? `"${entry.name}"` : 'This entry'} will be permanently removed from the library.
-              {isReferencedByPlan && (
-                <span className="block mt-2 text-amber-700 font-medium">
-                  ⚠ This entry is referenced by the current flight plan. Confirming will also remove that reference.
-                </span>
-              )}
-            </p>
+            {toTrash ? (
+              <p id="lib-delete-desc" className="text-sm text-gray-600 mb-4">
+                {entry.name ? `"${entry.name}"` : 'This entry'} moves to the Trash, where it can be restored for 30 days.
+                <ReferenceCountNotice kind="entry" id={entry.id} />
+              </p>
+            ) : (
+              <p id="lib-delete-desc" className="text-sm text-gray-600 mb-4">
+                {entry.name ? `"${entry.name}"` : 'This entry'} will be permanently removed from the library.
+                {isReferencedByPlan && (
+                  <span className="block mt-2 text-amber-700 font-medium">
+                    ⚠ This entry is referenced by the current flight plan. Confirming will also remove that reference.
+                  </span>
+                )}
+              </p>
+            )}
             <div className="flex justify-end gap-2">
               <button
                 onClick={() => setPendingDelete(false)}
@@ -367,17 +379,21 @@ const TheatreLibraryPageInner: React.FC = () => {
     updateEntry(id, { lat, lon });
   }, [updateEntry]);
 
+  // Signed-in deletion goes to the Trash and never edits a plan (soft-delete):
+  // the reference stays, shown as a placeholder until the entry is restored.
+  const toTrash = useSpaceAssets().sync !== null;
+
   const handleDelete = useCallback((id: string) => {
     deleteEntry(id);
-    // Remove from plan if referenced
-    if (flightPlan.libraryRefs?.some(r => r.uuid === id)) {
+    // Anonymous: the entry is gone for good, so remove the plan's reference too.
+    if (!toTrash && flightPlan.libraryRefs?.some(r => r.uuid === id)) {
       onFlightPlanUpdate({
         ...flightPlan,
         libraryRefs: flightPlan.libraryRefs!.filter(r => r.uuid !== id),
       });
     }
     if (selectedId === id) setSelectedId(null);
-  }, [deleteEntry, flightPlan, onFlightPlanUpdate, selectedId, setSelectedId]);
+  }, [deleteEntry, toTrash, flightPlan, onFlightPlanUpdate, selectedId, setSelectedId]);
 
   const handleExport = () => {
     const file = serializeLibraryFile(library);
@@ -447,6 +463,7 @@ const TheatreLibraryPageInner: React.FC = () => {
                 onUpdate={updates => updateEntry(entry.id, updates)}
                 onDelete={() => handleDelete(entry.id)}
                 isReferencedByPlan={referencedIds.has(entry.id)}
+                toTrash={toTrash}
               />
             ))
           )}

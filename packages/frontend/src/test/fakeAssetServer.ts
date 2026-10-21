@@ -3,6 +3,8 @@
  * write rules (design D3), so several AssetSync instances can act as devices of
  * one user. `offline` makes every call fail like a network error; `hold()`
  * pauses the next call until released, to test writes that are in flight.
+ * A delete keeps the row's data (it is in the Trash) until `purge()`;
+ * `restore()` brings it back as the Trash would (add-trash-and-soft-delete D1).
  */
 import type {
   ChangeFeed, DeleteResult, EntryRow, EntryWriteResult, ProfileRow, ProfileWriteResult, ServerLibrary,
@@ -10,7 +12,7 @@ import type {
 import type { AssetApi } from '../sync/assetSync';
 import type { LibraryObject, PerformanceProfile } from '../types/flightPlan';
 
-interface Row<T> { data: T | null; seq: number; libraryId?: string }
+interface Row<T> { data: T | null; seq: number; libraryId?: string; deleted?: boolean }
 
 export class FakeAssetServer {
   offline = false;
@@ -41,8 +43,26 @@ export class FakeAssetServer {
 
   private applies(row: Row<unknown> | undefined, baseSeq: number | null): boolean {
     if (!row) return true;
-    if (row.data !== null) return baseSeq !== null;
+    if (!row.deleted) return baseSeq !== null;
     return baseSeq === null;
+  }
+
+  private rows(kind: 'entry' | 'profile'): Map<string, Row<unknown>> {
+    return kind === 'entry' ? this.entries : this.profiles;
+  }
+
+  /** Restore a trashed row from the Trash, as the space admin would. */
+  restore(kind: 'entry' | 'profile', id: string): void {
+    const row = this.rows(kind).get(id);
+    if (!row?.deleted || row.data === null) throw new Error(`${kind} ${id} is not in the Trash`);
+    this.rows(kind).set(id, { ...row, deleted: false, seq: ++this.seq });
+  }
+
+  /** Purge a trashed row: its data is dropped, the tombstone stays. */
+  purge(kind: 'entry' | 'profile', id: string): void {
+    const row = this.rows(kind).get(id);
+    if (!row?.deleted) throw new Error(`${kind} ${id} is not deleted`);
+    this.rows(kind).set(id, { ...row, data: null, seq: ++this.seq });
   }
 
   /** Write directly on the server, as another device would. */
@@ -52,12 +72,15 @@ export class FakeAssetServer {
     return this.seq;
   }
 
+  /** The live row's data, null for a deleted row, undefined for none. */
   entryOnServer(id: string): LibraryObject | null | undefined {
-    return this.entries.get(id)?.data;
+    const row = this.entries.get(id);
+    return row && (row.deleted ? null : row.data);
   }
 
   profileOnServer(id: string): PerformanceProfile | null | undefined {
-    return this.profiles.get(id)?.data;
+    const row = this.profiles.get(id);
+    return row && (row.deleted ? null : row.data);
   }
 
   private library(theatre: string): ServerLibrary {
@@ -80,13 +103,13 @@ export class FakeAssetServer {
         this.entries.set(entry.id, { data: entry, seq: ++this.seq, libraryId });
         return { applied: true, seq: this.seq, entry };
       }
-      return { applied: false, seq: row!.seq, entry: row!.data };
+      return { applied: false, seq: row!.seq, entry: row!.deleted ? null : row!.data };
     },
     deleteEntry: async (libraryId: string, entryId: string): Promise<DeleteResult> => {
       await this.enter(`deleteEntry ${entryId}`);
       const row = this.entries.get(entryId);
-      if (row && row.data === null) return { applied: false, seq: row.seq };
-      this.entries.set(entryId, { data: null, seq: ++this.seq, libraryId });
+      if (row?.deleted) return { applied: false, seq: row.seq };
+      this.entries.set(entryId, { data: row?.data ?? null, seq: ++this.seq, libraryId, deleted: true });
       return { applied: true, seq: this.seq };
     },
     putProfile: async (profile: PerformanceProfile, baseSeq: number | null): Promise<ProfileWriteResult> => {
@@ -96,13 +119,13 @@ export class FakeAssetServer {
         this.profiles.set(profile.id, { data: profile, seq: ++this.seq });
         return { applied: true, seq: this.seq, profile };
       }
-      return { applied: false, seq: row!.seq, profile: row!.data };
+      return { applied: false, seq: row!.seq, profile: row!.deleted ? null : row!.data };
     },
     deleteProfile: async (profileId: string): Promise<DeleteResult> => {
       await this.enter(`deleteProfile ${profileId}`);
       const row = this.profiles.get(profileId);
-      if (row && row.data === null) return { applied: false, seq: row.seq };
-      this.profiles.set(profileId, { data: null, seq: ++this.seq });
+      if (row?.deleted) return { applied: false, seq: row.seq };
+      this.profiles.set(profileId, { data: row?.data ?? null, seq: ++this.seq, deleted: true });
       return { applied: true, seq: this.seq };
     },
     getChanges: async (since: number): Promise<ChangeFeed> => {
@@ -110,10 +133,16 @@ export class FakeAssetServer {
       const libraries = [...this.libraries.values()].filter(l => l.seq > since);
       const entries: EntryRow[] = [...this.entries.entries()]
         .filter(([, r]) => r.seq > since)
-        .map(([id, r]) => ({ id, libraryId: r.libraryId!, seq: r.seq, deleted: r.data === null, entry: r.data }));
+        .map(([id, r]) => ({
+          id, libraryId: r.libraryId!, seq: r.seq, deleted: !!r.deleted,
+          trashed: !!r.deleted && r.data !== null, entry: r.deleted ? null : r.data,
+        }));
       const profiles: ProfileRow[] = [...this.profiles.entries()]
         .filter(([, r]) => r.seq > since)
-        .map(([id, r]) => ({ id, seq: r.seq, deleted: r.data === null, profile: r.data }));
+        .map(([id, r]) => ({
+          id, seq: r.seq, deleted: !!r.deleted,
+          trashed: !!r.deleted && r.data !== null, profile: r.deleted ? null : r.data,
+        }));
       const seqs = [...libraries, ...entries, ...profiles].map(r => r.seq);
       return { cursor: Math.max(since, ...seqs), libraries, entries, profiles };
     },

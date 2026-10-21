@@ -209,11 +209,14 @@ export class AssetSync {
       entries,
       outbox,
       tombstones: { ...this.state.tombstones, entry: { ...this.state.tombstones.entry, [id]: null } },
+      // A synced entry goes to the server's Trash (soft-delete).
+      trashed: { ...this.state.trashed, entry: { ...this.state.trashed.entry, [id]: true } },
     };
     if (prev.seq === null) {
       // Never reached the server: forget it locally, nothing to send.
       delete outbox[outboxKey('entry', id)];
       delete next.tombstones.entry[id];
+      delete next.trashed.entry[id];
     } else {
       next = this.enqueue(next, {
         kind: 'entry', id, op: 'delete', theatre: prev.theatre, libraryId: prev.libraryId,
@@ -251,10 +254,12 @@ export class AssetSync {
       profiles,
       outbox,
       tombstones: { ...this.state.tombstones, profile: { ...this.state.tombstones.profile, [id]: null } },
+      trashed: { ...this.state.trashed, profile: { ...this.state.trashed.profile, [id]: true } },
     };
     if (prev.seq === null) {
       delete outbox[outboxKey('profile', id)];
       delete next.tombstones.profile[id];
+      delete next.trashed.profile[id];
     } else {
       next = this.enqueue(next, { kind: 'profile', id, op: 'delete', readyAt: Date.now(), rev: 0 });
     }
@@ -266,9 +271,25 @@ export class AssetSync {
    * while caught up and online reads as deleted; otherwise it may still arrive. */
   entryStatus(id: string): EntryStatus {
     if (this.state.entries[id]) return 'present';
-    if (id in this.state.tombstones.entry) return 'deleted';
+    return this.absentStatus(id in this.state.tombstones.entry);
+  }
+
+  /** The same three states for a plan's `profileId` (performance-profile). */
+  profileStatus(id: string): EntryStatus {
+    if (this.state.profiles[id]) return 'present';
+    return this.absentStatus(id in this.state.tombstones.profile);
+  }
+
+  private absentStatus(knownDeleted: boolean): EntryStatus {
+    if (knownDeleted) return 'deleted';
     const { connectivity, caughtUp } = this.status;
     return connectivity === 'online' && caughtUp ? 'deleted' : 'pending';
+  }
+
+  /** Whether a deleted entry or profile is still in the Trash, so restorable
+   * (soft-delete). False once it is purged, and for ids never seen deleted. */
+  isTrashed(kind: 'entry' | 'profile', id: string): boolean {
+    return this.state.trashed[kind][id] === true;
   }
 
   // --- Draining the outbox ------------------------------------------------------

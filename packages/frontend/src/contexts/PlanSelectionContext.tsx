@@ -82,6 +82,10 @@ export interface PlanSelectionValue {
   /** A plan was added to the space outside the draft flow (an import): list
    *  it at once, so opening its address resolves before the next refresh. */
   notePlanCreated: (plan: PlanSummary) => void;
+  /** A plan was trashed (deleted here, or refused by the server as trashed):
+   *  drop it from the list and its local copy, so its address falls back to
+   *  the plan list (plan-sync, soft-delete). */
+  notePlanGone: (planId: string) => void;
 }
 
 const PlanSelectionContext = createContext<PlanSelectionValue | null>(null);
@@ -174,11 +178,32 @@ export const PlanSelectionProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const refreshPlans = useCallback(async () => {
     const list = await apiListPlans();
+    // Plans the server listed before and no longer does were trashed elsewhere:
+    // drop their local copies (plan-sync). Drafts are never in the server list.
+    const listed = new Set(list.map((p) => p.id));
+    const before = userId ? readIndex(userId)?.plans ?? [] : [];
+    before.filter((p) => !listed.has(p.id)).forEach((p) => {
+      knownPlanIds.current.delete(p.id);
+      void clearPlanStore(p.id);
+    });
     setPlans(list);
     list.forEach((p) => knownPlanIds.current.add(p.id));
     if (userId && spaceRef.current) writeIndex(userId, { space: spaceRef.current, plans: list });
     return list;
   }, [userId]);
+
+  const notePlanGone = useCallback((planId: string) => {
+    knownPlanIds.current.delete(planId);
+    setPlans((prev) => prev.filter((p) => p.id !== planId));
+    setLastOpenedId((prev) => (prev === planId ? null : prev));
+    if (readStored()?.planId === planId) writeStored(null);
+    if (userId) {
+      const cached = readIndex(userId);
+      if (cached) writeIndex(userId, { ...cached, plans: cached.plans.filter((p) => p.id !== planId) });
+    }
+    void clearPlanStore(planId);
+    refreshPlans().catch(() => { /* offline: the list was already updated */ });
+  }, [userId, refreshPlans]);
 
   // Load the space + plan list when signing in; fall back to the cached copy
   // when the server cannot be reached.
@@ -361,11 +386,12 @@ export const PlanSelectionProvider: React.FC<{ children: React.ReactNode }> = ({
       refreshPlans,
       notePlanName,
       notePlanCreated,
+      notePlanGone,
     }),
     [
       activePlanId, hasActivePlan, sync, isDraft, atHome, isResolving, requestedPlanId,
       requestUnresolved, draftSeed, spaceId, plans, newDraft, commitDraft, commitError, refreshPlans, notePlanName,
-      notePlanCreated,
+      notePlanCreated, notePlanGone,
     ],
   );
 
@@ -390,6 +416,7 @@ const ANON_SELECTION: PlanSelectionValue = {
   refreshPlans: async () => [],
   notePlanName: () => {},
   notePlanCreated: () => {},
+  notePlanGone: () => {},
 };
 
 /**

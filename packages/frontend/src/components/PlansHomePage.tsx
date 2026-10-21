@@ -5,7 +5,7 @@ import { usePlanSelection } from '../contexts/PlanSelectionContext';
 import { useSpaceAssets } from '../contexts/SpaceAssetsContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheatres } from '../hooks/useTheatres';
-import { createPlan, type PlanSummary } from '../api/planApi';
+import { createPlan, deletePlan, type PlanSummary } from '../api/planApi';
 import { planPath } from '../utils/planAddress';
 import { ImportFlightPlanDialog } from './sidebar/ImportFlightPlanDialog';
 import { LocalDataImportDialog } from './import/LocalDataImportDialog';
@@ -112,14 +112,21 @@ const NewPlanDialog: React.FC<{
   );
 };
 
+const TRASH_ICON = (
+  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+);
+
 const PlanRow: React.FC<{
   plan: PlanSummary;
   theatreName: string;
   onSelect: () => void;
-}> = ({ plan, theatreName, onSelect }) => (
+  onDelete: () => void;
+  /** Why Delete is unavailable (offline), if it is. */
+  deleteDisabledReason?: string;
+}> = ({ plan, theatreName, onSelect, onDelete, deleteDisabledReason }) => (
   <li
     onClick={onSelect}
-    className="flex items-center justify-between px-4 py-3 border-b border-gray-200 cursor-pointer hover:bg-avio-panel transition-colors"
+    className="group flex items-center justify-between px-4 py-3 border-b border-gray-200 cursor-pointer hover:bg-avio-panel transition-colors"
   >
     <div className="min-w-0">
       <div className="text-sm font-medium text-gray-900 truncate">{plan.name}</div>
@@ -129,12 +136,71 @@ const PlanRow: React.FC<{
         {plan.lastEditor ? ` · ${plan.lastEditor}` : ''}
       </div>
     </div>
-    <span className="text-gray-400 pl-3 shrink-0" aria-hidden>›</span>
+    <div className="flex items-center gap-1 pl-3 shrink-0">
+      <button
+        onClick={(e) => { e.stopPropagation(); onDelete(); }}
+        disabled={deleteDisabledReason !== undefined}
+        aria-label={`Delete ${plan.name}`}
+        title={deleteDisabledReason ?? 'Delete plan'}
+        className="p-1 rounded text-gray-400 hover:text-red-500 hover:bg-gray-100 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-gray-400"
+      >
+        {TRASH_ICON}
+      </button>
+      <span className="text-gray-400" aria-hidden>›</span>
+    </div>
   </li>
 );
 
+/** Confirm moving a plan to the Trash (soft-delete). */
+const DeletePlanDialog: React.FC<{
+  plan: PlanSummary;
+  onConfirm: () => Promise<void>;
+  onClose: () => void;
+}> = ({ plan, onConfirm, onClose }) => {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const confirm = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await onConfirm();
+      onClose();
+    } catch {
+      setError('The plan could not be deleted. Check your connection and try again.');
+      setBusy(false);
+    }
+  };
+  return (
+    <Dialog.Root open onOpenChange={(open) => !open && onClose()}>
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 bg-black/50 z-[100]" />
+        <Dialog.Content aria-describedby="delete-plan-desc" className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-lg shadow-lg p-6 w-96 max-w-[90vw] z-[101]">
+          <Dialog.Title className="text-base font-semibold mb-3">Delete flight plan?</Dialog.Title>
+          <p id="delete-plan-desc" className="text-sm text-gray-600 mb-4">
+            "{plan.name}" moves to the Trash, where it can be restored for 30 days.
+          </p>
+          {error && <p role="alert" className="text-sm text-red-600 mb-4">{error}</p>}
+          <div className="flex justify-end gap-2">
+            <button onClick={onClose} className="px-4 py-2 text-sm border border-gray-300 rounded hover:bg-gray-50">
+              Cancel
+            </button>
+            <button
+              onClick={confirm}
+              disabled={busy}
+              className="px-4 py-2 text-sm bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50"
+            >
+              Delete
+            </button>
+          </div>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+};
+
 const PlansHomePage: React.FC = () => {
-  const { plans, newDraft, refreshPlans } = usePlanSelection();
+  const { plans, newDraft, refreshPlans, notePlanGone } = usePlanSelection();
+  const [deleting, setDeleting] = useState<PlanSummary | null>(null);
   const { sync, state: assets, status: assetStatus } = useSpaceAssets();
   const { connectivity } = useAuth();
   // Re-fetch whenever Home is shown, so renames made on other devices appear.
@@ -179,6 +245,13 @@ const PlansHomePage: React.FC = () => {
             Your plans · Personal
           </h1>
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => navigate('/trash')}
+              className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-aero-label rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition-colors"
+            >
+              {TRASH_ICON}
+              Trash
+            </button>
             {sync && held && (
               <ImportFlightPlanDialog
                 tier="signed-in"
@@ -233,11 +306,23 @@ const PlansHomePage: React.FC = () => {
                   plan={p}
                   theatreName={theatreName(p.theatre)}
                   onSelect={() => handleSelect(p)}
+                  onDelete={() => setDeleting(p)}
+                  deleteDisabledReason={offline ? 'Deleting a plan needs a connection' : undefined}
                 />
               ))}
             </ul>
           )}
         </div>
+        {deleting && (
+          <DeletePlanDialog
+            plan={deleting}
+            onConfirm={async () => {
+              await deletePlan(deleting.id);
+              notePlanGone(deleting.id);
+            }}
+            onClose={() => setDeleting(null)}
+          />
+        )}
       </div>
     </div>
   );

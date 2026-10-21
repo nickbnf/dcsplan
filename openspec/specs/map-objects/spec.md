@@ -459,11 +459,23 @@ A library ref whose entry is not in the library for the plan's theatre is **unre
 ---
 
 ### Requirement: Placeholder distinguishes deleted from not-yet-synced entries
-An unresolved ref SHALL be shown as **deleted** when its entry is known to be deleted, or is absent while the device is caught up with the server; it offers *Remove from plan* with the usual ref-removal confirmation. It SHALL be shown as **not synced yet** while the device is disconnected or still syncing: not styled as an error, no removal, replaced by a normal card once the entry arrives. In the **anonymous** tier every unresolved ref SHALL be shown as deleted.
+An unresolved ref SHALL be shown as **deleted** when its entry is known to be deleted, or is absent while the device is caught up with the server; it offers *Remove from plan* with the usual ref-removal confirmation. In the **signed-in** tier, a deleted placeholder whose entry is in the Trash SHALL also state that it can be restored from the Trash. It SHALL be shown as **not synced yet** while the device is disconnected or still syncing: not styled as an error, no removal, replaced by a normal card once the entry arrives. In the **anonymous** tier every unresolved ref SHALL be shown as deleted.
 
 #### Scenario: Entry deleted elsewhere (signed-in)
 - **WHEN** a signed-in user opens a plan referencing an entry that was deleted from the space's library
 - **THEN** the placeholder states the object was deleted from the library and offers Remove from plan
+
+#### Scenario: Trashed entry can be restored (signed-in)
+- **WHEN** a signed-in user opens a plan referencing an entry that is in the Trash
+- **THEN** the placeholder states the object was deleted and can be restored from the Trash, and offers Remove from plan
+
+#### Scenario: Purged entry cannot be restored (signed-in)
+- **WHEN** a signed-in user opens a plan referencing an entry that was purged from the Trash
+- **THEN** the placeholder states the object was deleted, does not mention restoring, and offers Remove from plan
+
+#### Scenario: Restoring the entry resolves the placeholder (signed-in)
+- **WHEN** a trashed entry referenced by the open plan is restored from the Trash
+- **THEN** the placeholder is replaced by a normal library ref card, and the object is drawn on the map
 
 #### Scenario: Remove a deleted placeholder
 - **WHEN** the user chooses Remove from plan on a deleted placeholder and confirms
@@ -484,8 +496,6 @@ An unresolved ref SHALL be shown as **deleted** when its entry is known to be de
 #### Scenario: Anonymous unresolved ref is shown as deleted
 - **WHEN** an anonymous user opens a plan referencing an entry absent from the device-local library
 - **THEN** the placeholder states the object was deleted and offers Remove from plan
-
----
 
 ### Requirement: Unresolved library refs are not drawn
 An unresolved library ref SHALL NOT be drawn on the planner map or on the kneeboard, SHALL NOT contribute a threat range ring, and SHALL NOT cause an error in either. This applies in both tiers.

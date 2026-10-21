@@ -33,6 +33,7 @@ vi.mock('./PerformancePage', () => ({ default: () => <div>PERF VIEW</div> }));
 vi.mock('./AttackPlanningPage', () => ({ default: () => <div>ATTACK VIEW</div> }));
 vi.mock('./TheatreLibraryPage', () => ({ TheatreLibraryPage: () => <div>LIBRARY VIEW</div> }));
 vi.mock('./PlansHomePage', () => ({ default: () => <div>HOME VIEW</div> }));
+vi.mock('./TrashPage', () => ({ default: () => <div>TRASH VIEW</div> }));
 vi.mock('./import/LocalDataMigration', () => ({ LocalDataMigration: () => null }));
 vi.mock('./About', () => ({ About: () => <div>ABOUT</div> }));
 
@@ -143,5 +144,13 @@ describe('slug canonicalization (5.2)', () => {
     renderAt([`/p/${P1}/old-name`]);
     await new Promise((r) => setTimeout(r, 20));
     expect(path()).toBe(`/p/${P1}/old-name`);
+  });
+});
+
+describe('the Trash route (add-trash-and-soft-delete 7.3)', () => {
+  it('/trash shows the Trash, outside plan addresses', () => {
+    renderAt(['/trash']);
+    expect(screen.getByText('TRASH VIEW')).toBeInTheDocument();
+    expect(path()).toBe('/trash');
   });
 });

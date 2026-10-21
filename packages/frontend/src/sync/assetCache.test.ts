@@ -95,4 +95,28 @@ describe('assetCache', () => {
       'dcsplan.library.caucasus', 'dcsplan.performance', userPrefix('u2') + 'cursor',
     ]));
   });
+
+  it('tracks trashed ids, clearing them on purge, restore or an older server', () => {
+    let state = applyFeed(emptyState(), {
+      cursor: 3, libraries: [LIB],
+      entries: [
+        { id: 'e1', libraryId: 'l1', seq: 2, deleted: true, trashed: true, entry: null },
+        { id: 'e2', libraryId: 'l1', seq: 3, deleted: true, entry: null },   // no flag: older server
+      ],
+      profiles: [{ id: 'p1', seq: 3, deleted: true, trashed: true, profile: null }],
+    });
+    expect(state.trashed).toEqual({ entry: { e1: true }, profile: { p1: true } });
+    state = applyFeed(state, {
+      cursor: 5, libraries: [],
+      entries: [{ id: 'e1', libraryId: 'l1', seq: 4, deleted: true, trashed: false, entry: null }],
+      profiles: [{ id: 'p1', seq: 5, deleted: false, profile: { id: 'p1', aircraft: defaultAircraft() } }],
+    });
+    expect(state.trashed).toEqual({ entry: {}, profile: {} });
+    expect(state.tombstones.entry).toHaveProperty('e1');   // purged: still deleted
+  });
+
+  it('loads a cache saved before trashed ids were kept', () => {
+    localStorage.setItem(userPrefix('u1') + 'tombstones', JSON.stringify({ entry: { e1: 2 }, profile: {} }));
+    expect(loadState('u1').trashed).toEqual({ entry: {}, profile: {} });
+  });
 });

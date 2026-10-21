@@ -48,6 +48,7 @@ def test_spaces_me_creates_personal_space_once(ctx):
     second = client.get("/spaces/me").json()
     assert first["id"] == second["id"]
     assert first["kind"] == "personal"
+    assert first["role"] == "owner"  # add-trash-and-soft-delete D6
 
     async def counts():
         async with connect() as c:

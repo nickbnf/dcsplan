@@ -16,6 +16,8 @@ const TRASH_ICON = (
 interface MissingObjectCardProps {
   ref_: PlanLibraryRef;
   status: EntryStatus;
+  /** Deleted but still in the Trash (soft-delete). */
+  trashed: boolean;
   isSelected: boolean;
   onSelect: () => void;
   onDelete: () => void;
@@ -29,7 +31,7 @@ interface MissingObjectCardProps {
  * never changed by being shown.
  */
 const MissingObjectCard: React.FC<MissingObjectCardProps> = ({
-  ref_, status, isSelected, onSelect, onDelete, cardRef,
+  ref_, status, trashed, isSelected, onSelect, onDelete, cardRef,
 }) => {
   const deleted = status === 'deleted';
   return (
@@ -67,6 +69,11 @@ const MissingObjectCard: React.FC<MissingObjectCardProps> = ({
           This object will appear once your library has synced.
         </div>
       )}
+      {deleted && trashed && (
+        <div className="text-xs font-aero-label text-gray-400 mt-1">
+          It can be restored from the Trash.
+        </div>
+      )}
       {ref_.comment && (
         <div className="text-xs font-aero-label text-gray-600 mt-1 whitespace-pre-wrap">{ref_.comment}</div>
       )}
@@ -91,7 +98,7 @@ const LibraryRefCard: React.FC<LibraryRefCardProps> = ({
   onUpdateComment,
   onDelete,
 }) => {
-  const { library, entryStatus } = useLibrary();
+  const { library, entryStatus, isTrashed } = useLibrary();
   const entry = library.find(e => e.id === ref_.uuid);
   const [commentValue, setCommentValue] = useState(ref_.comment ?? '');
   const cardRef = useRef<HTMLDivElement>(null);
@@ -121,6 +128,7 @@ const LibraryRefCard: React.FC<LibraryRefCardProps> = ({
       <MissingObjectCard
         ref_={ref_}
         status={entryStatus(ref_.uuid)}
+        trashed={isTrashed(ref_.uuid)}
         isSelected={isSelected}
         onSelect={onSelect}
         onDelete={onDelete}

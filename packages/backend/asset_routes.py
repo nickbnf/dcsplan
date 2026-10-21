@@ -15,6 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 import assets
 import spaces
+import sync
 from flight_plan import (
     Aircraft,
     LibraryObject,
@@ -24,7 +25,7 @@ from flight_plan import (
     RegimeDescent,
     TakeoffPerformance,
 )
-from space_routes import require_user
+from space_routes import require_user, restorer_space
 
 router = APIRouter(tags=["assets"])
 
@@ -154,3 +155,37 @@ async def delete_profile(profile_id: str, space_id: str = Depends(my_space_id)):
 async def get_changes(since: int = Query(default=0, ge=0), space_id: str = Depends(my_space_id)):
     """Rows written after `since`, tombstones included, plus the next cursor."""
     return await assets.changes_since(space_id, since)
+
+
+# --- Trash and references (capability: soft-delete; AD-7) --------------------
+
+@router.post("/libraries/{library_id}/entries/{entry_id}/restore")
+async def restore_entry(library_id: str, entry_id: str, space: dict = Depends(restorer_space)):
+    """Bring a trashed entry back with the data it had when deleted."""
+    try:
+        return await assets.restore_entry(space["id"], library_id, entry_id)
+    except (assets.UnknownLibrary, assets.NotTrashed):
+        raise HTTPException(status_code=404, detail="Entry is not in the Trash")
+    except assets.LibraryMismatch:
+        raise HTTPException(status_code=409, detail="Entry belongs to another library")
+
+
+@router.post("/profiles/{profile_id}/restore")
+async def restore_profile(profile_id: str, space: dict = Depends(restorer_space)):
+    """Bring a trashed profile back with its aircraft data and regimes."""
+    try:
+        return await assets.restore_profile(space["id"], profile_id)
+    except assets.NotTrashed:
+        raise HTTPException(status_code=404, detail="Profile is not in the Trash")
+
+
+@router.get("/references/profiles/{profile_id}")
+async def profile_references(profile_id: str, space_id: str = Depends(my_space_id)):
+    """How many live plans fly the profile, for the delete confirmation."""
+    return {"plans": await sync.count_profile_refs(space_id, profile_id)}
+
+
+@router.get("/references/entries/{entry_id}")
+async def entry_references(entry_id: str, space_id: str = Depends(my_space_id)):
+    """How many live plans reference the library entry."""
+    return {"plans": await sync.count_entry_refs(space_id, entry_id)}

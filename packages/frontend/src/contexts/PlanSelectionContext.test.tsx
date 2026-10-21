@@ -325,3 +325,37 @@ describe('list names follow renames (plan-sync: the list follows the plan\'s own
     expect(result.current.sel.plans).toBe(before);
   });
 });
+
+describe('trashed plans (add-trash-and-soft-delete 5.3/5.4)', () => {
+  it('notePlanGone drops the open plan, clears its store, and falls back to Home', async () => {
+    const { result } = renderAt(`/p/${P1}/ingress-alpha`);
+    await waitFor(() => expect(result.current.sel.activePlanId).toBe(P1));
+    (planApi.listPlans as any).mockResolvedValue([]);   // the server no longer lists it
+    act(() => result.current.sel.notePlanGone(P1));
+    await waitFor(() => expect(result.current.sel.requestUnresolved).toBe(true));
+    expect(result.current.sel.atHome).toBe(true);
+    expect(result.current.sel.plans).toEqual([]);
+    expect(clearPlanStore).toHaveBeenCalledWith(P1);
+    expect(localStorage.getItem('dcsplan-active-selection')).toBeNull();
+    expect(JSON.parse(localStorage.getItem('dcsplan.u.u1.planIndex')!).plans).toEqual([]);
+  });
+
+  it('a list load clears the local copies of plans no longer listed', async () => {
+    localStorage.setItem('dcsplan.u.u1.planIndex', JSON.stringify({
+      space: { id: 'space-1', kind: 'personal' }, plans: [plan(P1), plan(P2)],
+    }));
+    const { result } = renderAt('/plans');
+    await waitFor(() => expect(result.current.sel.isResolving).toBe(false));
+    expect(clearPlanStore).toHaveBeenCalledWith(P2);
+    expect(clearPlanStore).not.toHaveBeenCalledWith(P1);
+  });
+
+  it('a list load never clears a draft', async () => {
+    const { result } = renderAt('/plans');
+    await waitFor(() => expect(result.current.sel.isResolving).toBe(false));
+    let draftId = '';
+    act(() => { draftId = result.current.sel.newDraft('caucasus'); });
+    await act(async () => { await result.current.sel.refreshPlans(); });
+    expect(clearPlanStore).not.toHaveBeenCalledWith(draftId);
+  });
+});

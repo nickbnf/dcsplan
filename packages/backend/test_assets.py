@@ -182,3 +182,58 @@ def test_changes_never_include_other_spaces(db_path):
     run(assets.write_profile("s2", "p1", None, {"aircraft": {}}))
     feed = run(assets.changes_since("s1", 0))
     assert feed["libraries"] == [] and feed["entries"] == [] and feed["profiles"] == []
+
+
+# --- add-trash-and-soft-delete 1.2-1.3: tombstones keep data; trashed flag ----
+
+def _raw_row(table, space_id, row_id):
+    async def go():
+        async with connect() as c:
+            async with c.execute(
+                f"SELECT data, deleted_at FROM {table} WHERE space_id = ? AND id = ?",
+                (space_id, row_id),
+            ) as cur:
+                return await cur.fetchone()
+    return run(go())
+
+
+def test_delete_keeps_entry_data(db_path):
+    lid = lib()
+    run(assets.write_entry("s1", lid, "e1", None, ENTRY))
+    run(assets.delete_entry("s1", lid, "e1"))
+    row = _raw_row("library_entries", "s1", "e1")
+    assert row["deleted_at"] is not None
+    assert row["data"] is not None and '"SA-10"' in row["data"]
+
+
+def test_delete_keeps_profile_data(db_path):
+    run(assets.write_profile("s1", "p1", None, {"aircraft": {"model": "F-15E"}}))
+    run(assets.delete_profile("s1", "p1"))
+    row = _raw_row("profiles", "s1", "p1")
+    assert row["deleted_at"] is not None and "F-15E" in row["data"]
+
+
+def test_delete_of_unknown_id_records_dataless_tombstone(db_path):
+    run(assets.delete_entry("s1", lib(), "ghost"))
+    run(assets.delete_profile("s1", "ghost"))
+    assert _raw_row("library_entries", "s1", "ghost")["data"] is None
+    assert _raw_row("profiles", "s1", "ghost")["data"] is None
+
+
+def test_feed_marks_live_trashed_and_purged_rows(db_path):
+    lid = lib()
+    for eid in ("live", "trashed"):
+        run(assets.write_entry("s1", lid, eid, None, ENTRY))
+    run(assets.delete_entry("s1", lid, "trashed"))
+    run(assets.delete_entry("s1", lid, "purged"))  # unknown id: data-less tombstone
+    run(assets.write_profile("s1", "p1", None, {"aircraft": {}}))
+    run(assets.delete_profile("s1", "p1"))
+    feed = run(assets.changes_since("s1", 0))
+    rows = {e["id"]: e for e in feed["entries"]}
+    assert (rows["live"]["deleted"], rows["live"]["trashed"]) == (False, False)
+    assert rows["live"]["entry"]["name"] == "SA-10"
+    assert (rows["trashed"]["deleted"], rows["trashed"]["trashed"]) == (True, True)
+    assert rows["trashed"]["entry"] is None  # trashed content is never in the feed
+    assert (rows["purged"]["deleted"], rows["purged"]["trashed"]) == (True, False)
+    [profile] = feed["profiles"]
+    assert profile["trashed"] is True and profile["profile"] is None

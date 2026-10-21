@@ -23,6 +23,8 @@ export interface EntryRow {
   libraryId: string;
   seq: number;
   deleted: boolean;
+  /** Deleted but still in the Trash, so restorable (absent from older servers). */
+  trashed?: boolean;
   entry: LibraryObject | null;
 }
 
@@ -30,6 +32,8 @@ export interface ProfileRow {
   id: string;
   seq: number;
   deleted: boolean;
+  /** Deleted but still in the Trash, so restorable (absent from older servers). */
+  trashed?: boolean;
   profile: PerformanceProfile | null;
 }
 
@@ -120,4 +124,26 @@ export function deleteProfile(profileId: string): Promise<DeleteResult> {
 /** Rows written after `since` (tombstones included) and the next cursor. */
 export function getChanges(since: number): Promise<ChangeFeed> {
   return request(`changes?since=${since}`, 'load changes');
+}
+
+/** Bring a trashed entry back (space admin only); it reaches every device
+ * through the change feed. */
+export function restoreEntry(
+  libraryId: string, entryId: string,
+): Promise<{ seq: number; entry: LibraryObject }> {
+  return request(`libraries/${enc(libraryId)}/entries/${enc(entryId)}/restore`, 'restore library entry', {
+    method: 'POST',
+  });
+}
+
+export function restoreProfile(profileId: string): Promise<{ seq: number; profile: PerformanceProfile }> {
+  return request(`profiles/${enc(profileId)}/restore`, 'restore profile', { method: 'POST' });
+}
+
+/** How many live plans in the space reference a profile or library entry,
+ * counted by the server now (soft-delete: the delete confirmation). */
+export async function countReferences(kind: 'profile' | 'entry', id: string): Promise<number> {
+  const path = kind === 'profile' ? 'profiles' : 'entries';
+  const body = await request<{ plans: number }>(`references/${path}/${enc(id)}`, 'count references');
+  return body.plans;
 }

@@ -126,7 +126,14 @@ export interface UseYjsFlightPlanOptions {
   /** Initial plan to seed an empty, non-synced store with (e.g. a new draft on
    *  its chosen theatre). Defaults to a fresh plan on the default theatre. */
   seedPlan?: FlightPlan;
+  /** The server refused the plan as trashed (close code 4410, plan-sync). The
+   *  provider has stopped reconnecting; the caller leaves the plan. */
+  onGone?: (planId: string) => void;
 }
+
+/** Close code for a trashed plan (add-trash-and-soft-delete D4). y-websocket
+ *  does not reconnect after a 44xx close. */
+export const CLOSE_GONE = 4410;
 
 export type UseYjsFlightPlanResult = {
   yDoc: Y.Doc;
@@ -148,7 +155,7 @@ export function useYjsFlightPlan(
   planId: string = ANON_PLAN_ID,
   options: UseYjsFlightPlanOptions = {},
 ): UseYjsFlightPlanResult {
-  const { sync = false, syncUrl, seedPlan } = options;
+  const { sync = false, syncUrl, seedPlan, onGone } = options;
   const [flightPlan, setFlightPlan] = useState<FlightPlan | null>(null);
   const [isReady, setIsReady] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -159,6 +166,8 @@ export function useYjsFlightPlan(
   seedRef.current = seedPlan;
   const syncAtOpenRef = useRef(sync);
   syncAtOpenRef.current = sync;
+  const onGoneRef = useRef(onGone);
+  onGoneRef.current = onGone;
   // Let the WebSocket effect mark the doc ready (empty-synced case).
   const finishReadyRef = useRef<(() => void) | null>(null);
 
@@ -228,6 +237,10 @@ export function useYjsFlightPlan(
       if (!isSynced) return;
       setIsSyncing(false);
       finishReadyRef.current?.();
+    });
+    // A terminal close: y-websocket has stopped reconnecting (any 44xx code).
+    ws.on('closed', (event: { code: number }) => {
+      if (event.code === CLOSE_GONE) onGoneRef.current?.(planId);
     });
     return () => { ws.destroy(); };
   }, [planId, sync, syncUrl]);

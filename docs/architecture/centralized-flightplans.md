@@ -68,7 +68,7 @@ The split we follow:
 - The lingering v1.4 backend coupling (wire format expects `aircraft` nested in `flightPlan`, marshalled in/out on import) is *not* cleaned up here — it needs the FastAPI side, so it rides with C2 `add-cloud-sync`, where the wire format is being reshaped anyway. That keeps C0 front-end only.
 - Waypoints continue to reference `regimeId`; regimes now resolve through the plan's profile. Switching a plan's profile can therefore orphan leg regime references — resolution is C0's problem to specify.
 - The `aircraft-performance` and `performance-regime` specs still describe the pre-1.5 world (aircraft block and regime collection "on the flight plan"). C0 corrects that drift.
-- A plan must **always** have exactly one profile — this is what makes AD-7's block-while-referenced rule necessary rather than merely tidy.
+- A plan must **always** have exactly one profile — this is what made AD-7's block-while-referenced rule necessary rather than merely tidy. *(`add-trash-and-soft-delete` replaced the block with a warning: a plan whose profile is in the Trash resolves to the null profile, which still counts as its one profile, until the profile is restored.)*
 
 **Spans:** `aircraft-performance`, `performance-regime`, `plan-sync`, `version-history`
 
@@ -183,11 +183,13 @@ The theatre library and performance profiles remain **plain React state + localS
 |---|---|
 | **Plan** (incl. shared) | Any member may delete → **soft-delete to a space-level trash**, admin-restorable (~30 days), then purged. |
 | **Library object** referenced by live plans | Warn (*"used by N plans"*) → **soft-delete** → live plans render a **missing object placeholder**. |
-| **Performance profile** referenced by live plans | **Blocked** until those plans are reassigned — a plan must always have exactly one profile (AD-2). |
+| **Performance profile** referenced by live plans | Warn (*"flown by N plans"*) → **soft-delete** → live plans resolve to the null profile, with their bindings kept *(amended by `add-trash-and-soft-delete`; originally blocked until the plans were reassigned)*. |
 | **Squadron** | Soft-delete + ~30-day grace + export offered. Members lose access immediately; admin can undo in-window. |
 | **Account** | Squadron-shared assets stay with the squadron; private assets are deleted (AD-1). |
 
 **Why.** The asymmetry is deliberate: a missing threat object *degrades* a plan (placeholder, still usable), while a missing profile *breaks* it (unflyable). Degradation gets a placeholder; breakage gets a block.
+
+**Amended by `add-trash-and-soft-delete`: trashing never edits a plan, so profiles warn instead of block.** Deleting a library object or a profile leaves every plan's references exactly as they were, including the open plan's library refs, `profileId` and per-leg regime bindings. While the item is in the Trash those references are unresolved: a placeholder, or the null profile with legs computing as Manual. Restoring the item makes every plan whole again with nothing to repair. That makes deleting a referenced profile fully reversible for the retention period, so the breakage the block guarded against is now recoverable, and a warning is enough. After the purge, references stay unresolved for good; the plan still opens and the user picks another profile. The count of referencing plans is computed by the server when something is deleted, by reading the space's plan documents. It is advisory: a device that adds a reference offline is not counted. A persistent reference index is deferred until squadron-sized spaces need one, behind the same lookup.
 
 **Consequences.**
 - A squadron is never left adminless — the **longest-standing member auto-promotes**. Last member out archives, then purges, the squadron.
@@ -446,7 +448,7 @@ Neither touches entry ids, entry routes, or any stored plan. Uniqueness per spac
 | AD-4 | Three independent histories | `version-history` | `add-version-history` |
 | AD-5 | Autosave ≠ version | `plan-sync`, `version-history` | `add-yjs-flightplan` (plan persistence), then `add-cloud-sync` |
 | AD-6 | Yjs CRDT for flight plans; LWW for library/profiles | `plan-sync`, `edit-undo` | `add-yjs-flightplan` (client prep), then `add-cloud-sync` |
-| AD-7 | Soft delete + integrity at delete time | `soft-delete`, `space` | `add-trash-and-soft-delete` |
+| AD-7 | Soft delete + integrity at delete time | `soft-delete`, `space` | `add-trash-and-soft-delete` (delivered for the Personal space, profile rule amended) |
 | AD-8 | Additive migration that moves local work; per-item chooser | `local-data-migration`, `user-identity`, `plan-sync` | `add-local-data-import` |
 | AD-9 | Anonymous tier is permanent (library included) | `user-identity`, `map-objects`, `theatre-library` | `add-user-accounts`, amended by `add-local-data-import` |
 | AD-10 | Link-based sharing only | `plan-sharing` | `add-plan-sharing` |

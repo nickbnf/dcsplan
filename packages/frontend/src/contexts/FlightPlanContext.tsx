@@ -29,7 +29,11 @@ export const FlightPlanProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const selection = usePlanSelection();
   const { yDoc, flightPlan, loadedPlanId, isReady, isSyncing } = useYjsFlightPlan(
     selection.activePlanId,
-    { sync: selection.sync, seedPlan: selection.isDraft ? selection.draftSeed ?? undefined : undefined },
+    {
+      sync: selection.sync,
+      seedPlan: selection.isDraft ? selection.draftSeed ?? undefined : undefined,
+      onGone: selection.notePlanGone,
+    },
   );
 
   const flightPlanRef = useRef<FlightPlan | null>(null);

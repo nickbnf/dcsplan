@@ -18,6 +18,9 @@ interface LibraryContextValue {
   /** Whether a library ref's entry is here, known deleted, or may still arrive
    * (map-objects placeholder). Anonymous: present or deleted only. */
   entryStatus: (id: string) => EntryStatus;
+  /** A deleted entry is still in the space's Trash, so restorable (soft-delete).
+   * Always false in the anonymous tier, which has no Trash. */
+  isTrashed: (id: string) => boolean;
 }
 
 const LibraryContext = createContext<LibraryContextValue | null>(null);
@@ -142,8 +145,15 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sync, synced, syncStatus, state.entries]);
 
+  const isTrashed = useCallback(
+    (id: string): boolean => sync?.isTrashed('entry', id) ?? false,
+    // `synced` changes when the feed reports a trash, restore or purge.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [sync, synced],
+  );
+
   return (
-    <LibraryContext.Provider value={{ library, addEntry, updateEntry, deleteEntry, setLibrary, mergeEntries, entryStatus }}>
+    <LibraryContext.Provider value={{ library, addEntry, updateEntry, deleteEntry, setLibrary, mergeEntries, entryStatus, isTrashed }}>
       {children}
     </LibraryContext.Provider>
   );

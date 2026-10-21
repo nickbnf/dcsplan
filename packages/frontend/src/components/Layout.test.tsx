@@ -32,6 +32,7 @@ function renderAt(path: string) {
         <Route element={<Layout />}>
           <Route path="/" element={<div>ROOT CONTENT</div>} />
           <Route path="/plans" element={<div>HOME CONTENT</div>} />
+          <Route path="/trash" element={<div>TRASH CONTENT</div>} />
           <Route path="/library" element={<div>LIB CONTENT</div>} />
           <Route path="/p/:id" element={<div>CANON CONTENT</div>} />
           <Route path="/p/:id/:slug/*" element={<div>PLAN CONTENT</div>} />
@@ -145,5 +146,29 @@ describe('Layout — routing', () => {
     renderAt(`/p/${P1}/ingress-alpha`);
     expect(screen.getByText(/Loading your plans/)).toBeInTheDocument();
     expect(screen.queryByText('PLAN CONTENT')).not.toBeInTheDocument();
+  });
+});
+
+describe('Layout — the Trash and trashed plans (add-trash-and-soft-delete 7.2/7.3)', () => {
+  it('signed-in with no active plan stays on the Trash, with a way back to the list', () => {
+    selState = { ...selState, atHome: true, hasActivePlan: false };
+    renderAt('/trash');
+    expect(screen.getByText('TRASH CONTENT')).toBeInTheDocument();
+    expect(screen.getByText('‹ FLIGHT PLANS').closest('a')).toHaveAttribute('href', '/plans');
+    expect(screen.queryByText('NAV')).not.toBeInTheDocument();
+  });
+
+  it('anonymous has no Trash', () => {
+    authState = { status: 'anonymous' };
+    selState = { ...selState, activePlanId: 'local' };
+    renderAt('/trash');
+    expect(screen.getByText('ROOT CONTENT')).toBeInTheDocument();
+  });
+
+  it("a trashed plan's address falls back to the plan list", () => {
+    // A trashed plan is not in the space's list, so its address does not resolve.
+    selState = { ...selState, requestUnresolved: true, atHome: true, hasActivePlan: false };
+    renderAt(`/p/${P1}/ingress-alpha`);
+    expect(screen.getByText('HOME CONTENT')).toBeInTheDocument();
   });
 });
