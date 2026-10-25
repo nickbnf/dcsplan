@@ -6,15 +6,17 @@ Unified CI/CD workflow that runs tests and builds both backend and frontend imag
 
 **Triggers:**
 - Push to `master` branch
-- Pull requests to `master` (tests run, images built but not pushed)
+- Pull requests to `master` (tests run; the backend image is built and smoke-tested but not pushed; the frontend image is not built)
 - Version tags (e.g., `v1.0.0`)
 - Manual workflow dispatch
 
 **What it does:**
-1. **Test Job**: Runs both frontend and backend tests
+1. **Test Job**: Runs both frontend and backend tests. Backend dependencies are installed with `uv sync --locked`, which fails if `packages/backend/uv.lock` is out of date with `pyproject.toml`.
 2. **Build Jobs**: After tests pass, builds both images in parallel:
-   - Backend image: `ghcr.io/<username>/<repo>/backend:<tag>`
+   - Backend image: `ghcr.io/<username>/<repo>/backend:<tag>`. Before pushing (and on PRs, instead of pushing) the arm64 image is run under QEMU and smoke-tested: it must answer on `/`, list theatres, have applied every migration, and not contain `pytest`. A failure prints the container logs.
    - Frontend image: `ghcr.io/<username>/<repo>/frontend:<tag>`
+
+The uv version is pinned in two places that must match: `astral-sh/setup-uv` in `ci.yml` and the `ghcr.io/astral-sh/uv` image in `packages/backend/Dockerfile`.
 
 **Configuration:**
 - Uses `VITE_API_URL` repository variable (if set) or defaults to `http://localhost:8000`

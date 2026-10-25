@@ -3,6 +3,6 @@
     "python-envs.workspaceSearchPaths": [
         ".venv",
         "*/.venv",
-        "packages/backend/venv"
+        "packages/backend/.venv"
     ]
 }

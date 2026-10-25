@@ -22,8 +22,8 @@ This is a monorepo using pnpm workspaces.
 
 ### Prerequisites
 
-- Node.js (v18+) and pnpm
-- Python (v3.8+)
+- Node.js 24 and pnpm (the version is pinned by `packageManager` in `package.json`; `corepack enable` picks it up)
+- [uv](https://docs.astral.sh/uv/) (`brew install uv`). It installs the Python version the backend needs (3.13, from `packages/backend/.python-version`) if you don't have it.
 
 ### Installation
 
@@ -35,10 +35,13 @@ This is a monorepo using pnpm workspaces.
     This will install dependencies for the root workspace and the front-end package (once it's created).
 
 2.  **Set up and install back-end dependencies:**
-    This command will create a Python virtual environment in `packages/backend/venv` and install the required packages.
+    This runs `uv sync`, which creates `packages/backend/.venv` and installs the locked dependencies from `packages/backend/uv.lock` (runtime and dev).
     ```bash
     pnpm run install:backend
     ```
+    If you have an old `packages/backend/venv` from before the move to uv, delete it.
+
+    Dependencies are declared in `packages/backend/pyproject.toml`. To add or upgrade one, use uv from `packages/backend` (`uv add <pkg>`, `uv add --dev <pkg>`, `uv lock --upgrade-package <pkg>`) and commit `uv.lock`. To run any other backend command in the environment, prefix it with `uv run` (for example `uv run python -m some_module`).
 
 ### Running the Development Servers
 

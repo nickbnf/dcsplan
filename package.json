@@ -5,13 +5,13 @@
   "packageManager": "pnpm@10.17.1",
   "description": "A flight planning tool for flight simulators",
   "scripts": {
-    "install:backend": "cd packages/backend && python3 -m venv venv && ./venv/bin/pip install -r requirements.txt",
-    "lock:backend": "cd packages/backend && ./venv/bin/pip install -r requirements.txt && ./venv/bin/pip freeze > requirements-lock.txt",
+    "install:backend": "cd packages/backend && uv sync",
+    "lock:backend": "cd packages/backend && uv lock",
     "dev": "concurrently \"pnpm --filter frontend dev\" \"pnpm dev:backend\"",
     "dev:frontend": "pnpm --filter frontend dev",
-    "dev:backend": "cd packages/backend && ./venv/bin/python -m uvicorn main:app --reload",
-    "test:backend": "cd packages/backend && ./venv/bin/python -m pytest -v",
-    "test:backend:watch": "cd packages/backend && ./venv/bin/python -m ptw -- -v",
+    "dev:backend": "cd packages/backend && uv run uvicorn main:app --reload",
+    "test:backend": "cd packages/backend && uv run pytest -v",
+    "test:backend:watch": "cd packages/backend && uv run ptw -- -v",
     "test:frontend": "pnpm --filter frontend test",
     "test": "pnpm test:backend && pnpm test:frontend"
   },

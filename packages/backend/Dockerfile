@@ -1,4 +1,5 @@
 # Multi-stage build for FastAPI backend
+# Build context is packages/ (see packages/.dockerignore)
 FROM python:3.13-slim-bookworm AS builder
 
 # Install build dependencies
@@ -11,12 +12,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   libgeos-dev \
   && rm -rf /var/lib/apt/lists/*
 
+# uv, pinned (keep in sync with astral-sh/setup-uv in .github/workflows/ci.yml)
+COPY --from=ghcr.io/astral-sh/uv:0.13.5 /uv /bin/uv
+
 # Set working directory
 WORKDIR /app
 
-# Copy requirements and install Python dependencies
-COPY backend/requirements-lock.txt .
-RUN pip install --no-cache-dir --user -r requirements-lock.txt
+# Install the locked runtime dependencies (no dev group) into /app/.venv,
+# using the image's Python
+ENV UV_COMPILE_BYTECODE=1 \
+  UV_LINK_MODE=copy \
+  UV_PYTHON_DOWNLOADS=never
+COPY backend/pyproject.toml backend/uv.lock backend/.python-version ./
+RUN uv sync --locked --no-dev --no-install-project
 
 # Production stage
 FROM python:3.13-slim-bookworm
@@ -30,64 +38,28 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   libpangocairo-1.0-0 \
   && rm -rf /var/lib/apt/lists/*
 
-# Copy Python dependencies from builder
-COPY --from=builder /root/.local /root/.local
-
-# Make sure scripts in .local are usable
-ENV PATH=/root/.local/bin:$PATH
-# Make sure Python can find modules installed in .local
-ENV PYTHONPATH=/root/.local/lib/python3.13/site-packages:$PYTHONPATH
+# Create non-root user for security; files are owned by it as they are copied
+# (a later chown -R would duplicate the venv in another layer)
+RUN useradd -m -u 1000 appuser
 
 # Set working directory
 WORKDIR /app
 
-# Copy application code (excluding static/tiles directory - will be mounted as volume)
-COPY backend/flight_plan.py .
-COPY backend/kneeboard.py .
-COPY backend/map_annotations.py .
-COPY backend/task_queue.py .
-COPY backend/main.py .
-COPY backend/logging_config.py .
-COPY backend/waypoint_list_page.py .
-COPY backend/overview_map_page.py .
-COPY backend/theatres ./theatres
+# Copy the virtualenv from builder (same path: its scripts use absolute paths)
+COPY --from=builder --chown=appuser:appuser /app/.venv /app/.venv
+ENV PATH=/app/.venv/bin:$PATH
 
-# User accounts / auth modules + database migrations
-COPY backend/db.py .
-COPY backend/users.py .
-COPY backend/auth_config.py .
-COPY backend/auth_routes.py .
-COPY backend/migrations_runner.py .
-COPY backend/migrations ./migrations
-
-# Spaces, plan index and plan sync (add-cloud-sync, unify-plan-name)
-COPY backend/spaces.py .
-COPY backend/plans.py .
-COPY backend/space_routes.py .
-COPY backend/sync.py .
-
-# Library + profile sync (add-library-profile-sync)
-COPY backend/assets.py .
-COPY backend/asset_routes.py .
-
-# Trash and its retention purge (add-trash-and-soft-delete)
-COPY backend/trash.py .
-
-# Plan version history (add-version-history)
-COPY backend/versions.py .
-COPY backend/version_routes.py .
+# Copy application code (excluding static/tiles directory - will be mounted as volume).
+# Tests, venvs and local data are excluded by packages/.dockerignore.
+COPY --chown=appuser:appuser backend/*.py ./
+COPY --chown=appuser:appuser backend/theatres ./theatres
+COPY --chown=appuser:appuser backend/migrations ./migrations
 
 # Runtime data directory (SQLite DB) — mounted as a persistent volume in prod
-RUN mkdir -p /app/data
+RUN mkdir -p /app/data && chown appuser:appuser /app /app/data
 
 # Copy shared data files referenced via ../shared/ relative path
-COPY shared/pictogramCatalog.json /shared/pictogramCatalog.json
-
-# Create non-root user for security
-RUN useradd -m -u 1000 appuser && \
-  chown -R appuser:appuser /app && \
-  chown -R appuser:appuser /root && \
-  chown -R appuser:appuser /shared
+COPY --chown=appuser:appuser shared/pictogramCatalog.json /shared/pictogramCatalog.json
 
 # Switch to non-root user
 USER appuser
@@ -105,4 +77,3 @@ ENV SERVICE_NAME=dcsplan-backend
 # Set production uvicorn settings
 # Using 1 worker to enable in-memory task queue with single worker thread
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "5001", "--workers", "1"]
-
