@@ -33,6 +33,20 @@
       }
     }
   },
+  "kneeboardRevision": {
+    "description": "add-version-history D8: a signed-in kneeboard carries the version it stamps, built from the finalize response.",
+    "input": {
+      "version": {
+        "rev": 14, "finalizedAt": "2026-07-23T14:32:00+00:00", "restoredFrom": null,
+        "editors": [
+          { "id": "u1", "displayName": "Falcon" },
+          { "id": "u2", "displayName": "Viper" },
+          { "id": "u3", "displayName": "Hawk" }
+        ]
+      }
+    },
+    "revision": { "rev": 14, "finalizedAt": "2026-07-23T14:32:00+00:00", "editor": "Falcon +2" }
+  },
   "import": {
     "input": {
       "file": {

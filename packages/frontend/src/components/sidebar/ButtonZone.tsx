@@ -18,6 +18,9 @@ interface ButtonZoneProps {
   isSettingsOpen: boolean;
   onSettingsToggle: () => void;
   importTrigger: React.ReactNode;
+  /** The version history control, after Redo (version-history). Signed-in,
+   *  synced plans only; null otherwise. */
+  historyTrigger?: React.ReactNode;
   onExport: () => void;
   /** Signed in: files are a secondary path (plans sync and are imported from
    *  /plans), so Export moves into a "⋯" menu and no import is offered here
@@ -46,6 +49,7 @@ export const ButtonZone: React.FC<ButtonZoneProps> = ({
   isSettingsOpen,
   onSettingsToggle,
   importTrigger,
+  historyTrigger = null,
   onExport,
   fileActionsInMenu = false,
   showNewButton = true,
@@ -133,6 +137,7 @@ export const ButtonZone: React.FC<ButtonZoneProps> = ({
           >
             Redo
           </button>
+          {historyTrigger}
           <div className="w-px h-5 bg-gray-200 mx-1" aria-hidden />
           {fileActionsInMenu ? (
             <DropdownMenu.Root>

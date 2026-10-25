@@ -162,13 +162,25 @@ def test_create_plan_with_initial_state(ctx):
     assert asyncio.run(plans.count_updates(P1)) == 1
 
 
+def test_create_plan_with_initial_state_records_its_creator(ctx):
+    """add-version-history task 4.1 (design D4): imported content is credited."""
+    import versions
+    app, client, login_as = ctx
+    login_as("d-1")
+    client.get("/spaces/me")
+    client.post("/plans", json={"id": P1, "name": "Imported", "theatre": "caucasus", "initialState": _initial_state()})
+    assert asyncio.run(versions.has_pending_editors(P1))
+
+
 def test_create_plan_without_initial_state_stores_no_content(ctx):
     import plans
+    import versions
     app, client, login_as = ctx
     login_as("d-1")
     client.get("/spaces/me")
     assert client.post("/plans", json={"id": P1, "name": "Alpha", "theatre": "caucasus"}).status_code == 201
     assert asyncio.run(plans.count_updates(P1)) == 0
+    assert not asyncio.run(versions.has_pending_editors(P1))
 
 
 @pytest.mark.parametrize("bad", ["not base64!", "Z2FyYmFnZQ=="])  # the second is base64 of b"garbage"

@@ -4,6 +4,7 @@ import { ButtonZone } from './sidebar/ButtonZone';
 import { FlightPlanZone } from './sidebar/FlightPlanZone';
 import { ObjectsZone } from './sidebar/ObjectsZone';
 import { ImportFlightPlanDialog } from './sidebar/ImportFlightPlanDialog';
+import { VersionHistoryDialog } from './sidebar/VersionHistoryDialog';
 import type { FlightPlan, PictogramType } from '../types/flightPlan';
 import type { DrawingState } from '../hooks/useDrawing';
 import { useTheatres } from '../hooks/useTheatres';
@@ -83,6 +84,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         onSettingsToggle={() => setIsSettingsOpen(o => !o)}
         showNewButton={status !== 'authenticated'}
         fileActionsInMenu={status === 'authenticated'}
+        historyTrigger={status === 'authenticated' ? <VersionHistoryDialog /> : null}
         importTrigger={status === 'authenticated' ? null : (
           // Signed in, plans are imported from /plans (plan-import).
           <ImportFlightPlanDialog

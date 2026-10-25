@@ -22,9 +22,11 @@ const planStore = {
   get: () => plan,
   set: (p: FlightPlan) => { plan = p; planListeners.forEach(fn => fn()); },
 };
+// Set to stand in for a synced plan's version finalization (add-version-history).
+let finalizeVersion: (() => Promise<unknown>) | undefined;
 const usePlan = () => {
   const flightPlan = useSyncExternalStore(planStore.subscribe, planStore.get);
-  return { flightPlan, onFlightPlanUpdate: planStore.set, replaceFlightPlan: planStore.set };
+  return { flightPlan, onFlightPlanUpdate: planStore.set, replaceFlightPlan: planStore.set, finalizeVersion };
 };
 
 vi.mock('../contexts/FlightPlanContext', () => ({ useFlightPlan: () => usePlan(), useOptionalFlightPlan: () => usePlan() }));
@@ -70,6 +72,7 @@ beforeEach(async () => {
   engine = new AssetSync('u1', { api: server.api });
   engine.start();
   await vi.advanceTimersByTimeAsync(10);
+  finalizeVersion = undefined;
   plan = {
     theatre: 'caucasus', declination: 0, bankAngle: 45, initTimeSec: 0, initFob: 20000, name: 'P',
     points: [wp('a'), wp('b', 'r1'), wp('c', 'r1'), wp('d', 'orphan')],
@@ -155,6 +158,43 @@ describe('Performance page — header chooser (8.2)', () => {
     expect(plan.profileId).toBe('pB');
     expect(plan.points.map(p => p.regimeId)).toEqual([undefined, undefined, undefined, 'orphan']);
     expect(plan.points[1].tas).toBe(300);
+  });
+
+  describe('a confirmed switch saves a version first (add-version-history 8.1)', () => {
+    const switchToB = () => {
+      seedProfiles();
+      plan = { ...plan, profileId: 'pA' };
+      renderPage();
+      fireEvent.change(chooser(), { target: { value: 'pB' } });
+      fireEvent.click(screen.getByText('Switch'));
+    };
+
+    it('connected: the version is saved before the bindings are cleared', async () => {
+      let profileAtFinalize: string | undefined;
+      finalizeVersion = vi.fn(async () => { profileAtFinalize = plan.profileId; return null; });
+      switchToB();
+      await act(() => vi.advanceTimersByTimeAsync(0));
+      expect(finalizeVersion).toHaveBeenCalledTimes(1);
+      expect(profileAtFinalize).toBe('pA');
+      expect(plan.profileId).toBe('pB');
+    });
+
+    it('disconnected: switches at once without saving a version', async () => {
+      finalizeVersion = vi.fn(async () => null);
+      server.offline = true;
+      await act(() => engine.pull());
+      switchToB();
+      expect(finalizeVersion).not.toHaveBeenCalled();
+      expect(plan.profileId).toBe('pB');
+    });
+
+    it('a failed save does not block the switch', async () => {
+      finalizeVersion = vi.fn(async () => { throw new Error('503'); });
+      switchToB();
+      await act(() => vi.advanceTimersByTimeAsync(0));
+      expect(finalizeVersion).toHaveBeenCalledTimes(1);
+      expect(plan.profileId).toBe('pB');
+    });
   });
 
   it('orphan bindings survive a switch from no profile and resolve in the new one', () => {

@@ -3,7 +3,11 @@ import * as Y from 'yjs';
 import type { FlightPlan } from '../types/flightPlan';
 import { useYjsFlightPlan } from '../hooks/useYjsFlightPlan';
 import { usePlanSelection } from './PlanSelectionContext';
-import { applyFlightPlanToYDoc, seedYDoc } from '../utils/yjsFlightPlanBinding';
+import {
+  applyFlightPlanToYDoc, seedYDoc, observeRemoteRestores, planFromVersionState, restoreIntoYDoc,
+} from '../utils/yjsFlightPlanBinding';
+import * as planApi from '../api/planApi';
+import type { PlanVersion } from '../api/planApi';
 
 interface FlightPlanContextValue {
   flightPlan: FlightPlan;
@@ -19,6 +23,15 @@ interface FlightPlanContextValue {
   isSyncing: boolean;
   /** The id of the plan `flightPlan` belongs to. */
   flightPlanId: string;
+  /** Hand this device's copy of the plan to the server and finalize any
+   *  unfinalized edits into a version (version-history; add-version-history
+   *  D5). Resolves to the plan's latest version. Only for a synced plan:
+   *  anonymous plans and drafts have no versions. */
+  finalizeVersion?: () => Promise<PlanVersion | null>;
+  /** Restore the plan to version `rev` (version-history; add-version-history
+   *  D6): finalize the open session, set the content to the version's, and
+   *  finalize the result as a new version. Not undoable. Only for a synced plan. */
+  restoreVersion?: (rev: number) => Promise<PlanVersion | null>;
 }
 
 const FlightPlanContext = createContext<FlightPlanContextValue | null>(null);
@@ -112,10 +125,13 @@ export const FlightPlanProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     });
     um.on('stack-item-popped', updateUndoState);
     um.on('stack-cleared', updateUndoState);
+    // A version restored on another device leaves nothing here to undo (edit-undo).
+    const stopObservingRestores = observeRemoteRestores(yDoc, () => um.clear());
 
     undoManagerRef.current = um;
 
     return () => {
+      stopObservingRestores();
       um.destroy();
       undoManagerRef.current = null;
     };
@@ -155,6 +171,25 @@ export const FlightPlanProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     }, 'replace');
   }, [yDoc]);
 
+  const syncedPlanId = selection.sync && loadedPlanId === selection.activePlanId ? loadedPlanId : null;
+  const finalizeVersion = useCallback(async () => {
+    if (!yDoc || !syncedPlanId) throw new Error('This plan has no version history');
+    return planApi.finalizeVersion(syncedPlanId, Y.encodeStateAsUpdate(yDoc));
+  }, [yDoc, syncedPlanId]);
+
+  const restoreVersion = useCallback(async (rev: number) => {
+    if (!yDoc || !syncedPlanId) throw new Error('This plan has no version history');
+    // 1. The open session becomes its own version, so the restore can be undone
+    //    by restoring that one (AD-5: destructive operations finalize first).
+    await planApi.finalizeVersion(syncedPlanId, Y.encodeStateAsUpdate(yDoc));
+    // 2-3. Diff the version's content onto the plan, then drop the undo history.
+    const restored = planFromVersionState(await planApi.getVersionState(syncedPlanId, rev));
+    restoreIntoYDoc(yDoc, restored);
+    undoManagerRef.current?.clear();
+    // 4. The restored content becomes the new current version.
+    return planApi.finalizeVersion(syncedPlanId, Y.encodeStateAsUpdate(yDoc), rev);
+  }, [yDoc, syncedPlanId]);
+
   const undo = useCallback(() => {
     undoManagerRef.current?.undo();
   }, []);
@@ -178,6 +213,8 @@ export const FlightPlanProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       requestFitToFlightPlan,
       isSyncing,
       flightPlanId: loadedPlanId,
+      finalizeVersion: syncedPlanId ? finalizeVersion : undefined,
+      restoreVersion: syncedPlanId ? restoreVersion : undefined,
     }}>
       {children}
     </FlightPlanContext.Provider>

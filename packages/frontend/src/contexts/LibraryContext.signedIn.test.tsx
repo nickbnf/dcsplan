@@ -97,6 +97,22 @@ describe('LibraryContext — signed in (5.1)', () => {
   });
 });
 
+describe('LibraryContext — recovering a deleted entry (add-version-history 8.2)', () => {
+  it('merging a pinned copy of a deleted entry brings it back under its id', async () => {
+    const { result } = renderHook(() => useLibrary(), { wrapper });
+    act(() => result.current.addEntry(E('e1')));
+    await settle();
+    act(() => result.current.deleteEntry('e1'));
+    await settle();
+    expect(result.current.entryStatus('e1')).toBe('deleted');
+
+    act(() => result.current.mergeEntries('caucasus', [E('e1')]));
+    await settle();
+    expect(result.current.entryStatus('e1')).toBe('present');
+    expect(server.entryOnServer('e1')).toEqual(E('e1'));
+  });
+});
+
 describe('LibraryContext — imports and deletion, signed in (5.2)', () => {
   it('a merge import sends creates only for new UUIDs', async () => {
     const { result } = renderHook(() => useLibrary(), { wrapper });

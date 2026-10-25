@@ -17,6 +17,7 @@ import auth_routes
 import space_routes
 import sync
 import trash
+import version_routes
 import os
 import secrets
 import logging
@@ -34,12 +35,14 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Apply DB migrations and load auth config before serving requests, then
-    run the plan-sync server and the trash purge for the app's lifetime."""
+    run the plan-sync server, the trash purge and the version sweep for the
+    app's lifetime."""
     apply_migrations()
     auth_routes.init_auth()
     async with sync.lifespan_server():  # run the plan-sync WebSocket server
         async with trash.lifespan_purge():  # purge expired trash (soft-delete)
-            yield
+            async with sync.lifespan_sweep():  # finalize idle plans (version-history)
+                yield
 
 
 app = FastAPI(lifespan=lifespan)
@@ -73,6 +76,10 @@ app.include_router(space_routes.router)
 # Library + profile sync routes (add-library-profile-sync). Reached at
 # /api/libraries/*, /api/profiles/*, /api/changes.
 app.include_router(asset_routes.router)
+
+# Plan version routes (add-version-history). Reached at /api/plans/{id}/versions,
+# /api/plans/{id}/pinned-entries.
+app.include_router(version_routes.router)
 
 
 # Flight-plan sync WebSocket (add-cloud-sync, AD-14). Reached at /api/sync/{planId}.
@@ -122,7 +129,7 @@ async def generate_kneeboard(
     
     # Submit task to queue
     task_queue = get_task_queue()
-    task_id = task_queue.submit_task(flight_plan, output, details_set, aircraft=request.aircraft)
+    task_id = task_queue.submit_task(flight_plan, output, details_set, aircraft=request.aircraft, revision=request.revision)
     
     logger.info(f"Task {task_id} submitted to queue")
     return {"task_id": task_id}

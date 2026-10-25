@@ -6,6 +6,8 @@ import { useObjectSelection } from '../../contexts/ObjectSelectionContext';
 import { getPictogramDef, isRangedType, getAllPictograms } from '../../utils/pictogramCatalog';
 import { TypeStampedAddToggle } from './TypeStampedAddToggle';
 import type { EntryStatus } from '../../sync/assetSync';
+import { useOptionalFlightPlan } from '../../contexts/FlightPlanContext';
+import { getPinnedEntries, type PinnedEntry } from '../../api/planApi';
 
 // ── Missing-object placeholder ────────────────────────────────────────────────
 
@@ -21,17 +23,21 @@ interface MissingObjectCardProps {
   isSelected: boolean;
   onSelect: () => void;
   onDelete: () => void;
+  /** Re-create the entry from a version's pinned copy (version-history);
+   *  absent when no version of the plan pinned it. */
+  onRecover?: () => void;
   cardRef: React.RefObject<HTMLDivElement | null>;
 }
 
 /**
  * A library ref whose entry is not in the library (map-objects: missing-object
- * placeholder). *Deleted* offers removal from the plan; *not synced yet* is
+ * placeholder). *Deleted* offers removal from the plan, and recovery into the
+ * library when a version of the plan pinned the entry; *not synced yet* is
  * neutral and resolves by itself once the entry arrives. The ref itself is
  * never changed by being shown.
  */
 const MissingObjectCard: React.FC<MissingObjectCardProps> = ({
-  ref_, status, trashed, isSelected, onSelect, onDelete, cardRef,
+  ref_, status, trashed, isSelected, onSelect, onDelete, onRecover, cardRef,
 }) => {
   const deleted = status === 'deleted';
   return (
@@ -69,10 +75,18 @@ const MissingObjectCard: React.FC<MissingObjectCardProps> = ({
           This object will appear once your library has synced.
         </div>
       )}
-      {deleted && trashed && (
+      {deleted && trashed && !onRecover && (
         <div className="text-xs font-aero-label text-gray-400 mt-1">
           It can be restored from the Trash.
         </div>
+      )}
+      {deleted && onRecover && (
+        <button
+          onClick={e => { e.stopPropagation(); onRecover(); }}
+          className="mt-2 px-2.5 py-1 text-xs font-aero-label rounded border border-gray-300 bg-white hover:bg-gray-50 text-gray-700"
+        >
+          Recover into library
+        </button>
       )}
       {ref_.comment && (
         <div className="text-xs font-aero-label text-gray-600 mt-1 whitespace-pre-wrap">{ref_.comment}</div>
@@ -85,6 +99,8 @@ const MissingObjectCard: React.FC<MissingObjectCardProps> = ({
 
 interface LibraryRefCardProps {
   ref_: PlanLibraryRef;
+  /** A version's pinned copy of the entry, if any version of the plan holds one. */
+  pinned?: PinnedEntry;
   isSelected: boolean;
   onSelect: () => void;
   onUpdateComment: (comment: string | undefined) => void;
@@ -93,12 +109,13 @@ interface LibraryRefCardProps {
 
 const LibraryRefCard: React.FC<LibraryRefCardProps> = ({
   ref_,
+  pinned,
   isSelected,
   onSelect,
   onUpdateComment,
   onDelete,
 }) => {
-  const { library, entryStatus, isTrashed } = useLibrary();
+  const { library, entryStatus, isTrashed, mergeEntries } = useLibrary();
   const entry = library.find(e => e.id === ref_.uuid);
   const [commentValue, setCommentValue] = useState(ref_.comment ?? '');
   const cardRef = useRef<HTMLDivElement>(null);
@@ -132,6 +149,8 @@ const LibraryRefCard: React.FC<LibraryRefCardProps> = ({
         isSelected={isSelected}
         onSelect={onSelect}
         onDelete={onDelete}
+        // Re-creating a deleted id restores it, trashed or purged (space-asset-sync).
+        onRecover={pinned ? () => mergeEntries(pinned.theatre, [pinned.entry]) : undefined}
         cardRef={cardRef}
       />
     );
@@ -337,8 +356,28 @@ export const ObjectsZone: React.FC<ObjectsZoneProps> = ({
   onAddTypeChange,
 }) => {
   const { selectedId, setSelectedId } = useObjectSelection();
+  const { entryStatus } = useLibrary();
 
   const refs = flightPlan.libraryRefs ?? [];
+
+  // Pinned copies of deleted entries, fetched once per open plan that has
+  // versions and a deleted ref (version-history: recovering a missing entry).
+  // Unreachable server: nothing to offer.
+  const flightPlanContext = useOptionalFlightPlan();
+  const syncedPlanId = flightPlanContext?.finalizeVersion ? flightPlanContext.flightPlanId : null;
+  const hasDeletedRef = refs.some(r => entryStatus(r.uuid) === 'deleted');
+  const [pinned, setPinned] = useState<{ planId: string; entries: Record<string, PinnedEntry> } | null>(null);
+  const pinnedLoaded = pinned !== null && pinned.planId === syncedPlanId;
+  useEffect(() => {
+    if (!syncedPlanId || !hasDeletedRef || pinnedLoaded) return;
+    let cancelled = false;
+    getPinnedEntries(syncedPlanId).then(
+      entries => { if (!cancelled) setPinned({ planId: syncedPlanId, entries }); },
+      () => { /* offline or refused: no recovery offered */ },
+    );
+    return () => { cancelled = true; };
+  }, [syncedPlanId, hasDeletedRef, pinnedLoaded]);
+  const pinnedEntries = pinnedLoaded ? pinned!.entries : {};
   const markers = flightPlan.markers ?? [];
   const hasObjects = refs.length > 0 || markers.length > 0;
 
@@ -405,6 +444,7 @@ export const ObjectsZone: React.FC<ObjectsZoneProps> = ({
               <LibraryRefCard
                 key={ref_.uuid}
                 ref_={ref_}
+                pinned={pinnedEntries[ref_.uuid]}
                 isSelected={selectedId === ref_.uuid}
                 onSelect={() => setSelectedId(selectedId === ref_.uuid ? null : ref_.uuid)}
                 onUpdateComment={(comment) => updateRef(ref_.uuid, { comment })}

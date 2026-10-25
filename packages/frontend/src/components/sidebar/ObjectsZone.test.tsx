@@ -4,7 +4,7 @@
  * are present and what entryStatus answers.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import type { FlightPlan, LibraryObject } from '../../types/flightPlan';
 import type { EntryStatus } from '../../sync/assetSync';
@@ -12,14 +12,21 @@ import type { EntryStatus } from '../../sync/assetSync';
 let library: LibraryObject[] = [];
 let statuses: Record<string, EntryStatus> = {};
 let trashed: Set<string> = new Set();
+const mergeEntries = vi.fn();
+// A synced plan (add-version-history): set to offer recovery from pinned copies.
+let flightPlanContext: { flightPlanId: string; finalizeVersion?: () => Promise<unknown> } | null = null;
+const getPinnedEntries = vi.fn();
 
 vi.mock('../../contexts/LibraryContext', () => ({
   useLibrary: () => ({
     library,
     entryStatus: (id: string) => statuses[id] ?? (library.some(e => e.id === id) ? 'present' : 'deleted'),
     isTrashed: (id: string) => trashed.has(id),
+    mergeEntries,
   }),
 }));
+vi.mock('../../contexts/FlightPlanContext', () => ({ useOptionalFlightPlan: () => flightPlanContext }));
+vi.mock('../../api/planApi', () => ({ getPinnedEntries: (id: string) => getPinnedEntries(id) }));
 vi.mock('../../contexts/ObjectSelectionContext', () => ({
   useObjectSelection: () => ({ selectedId: null, setSelectedId: vi.fn() }),
 }));
@@ -48,6 +55,9 @@ beforeEach(() => {
   library = [SAM];
   statuses = {};
   trashed = new Set();
+  flightPlanContext = null;
+  mergeEntries.mockReset();
+  getPinnedEntries.mockReset();
 });
 
 describe('ObjectsZone — missing-object placeholder', () => {
@@ -135,5 +145,50 @@ describe('ObjectsZone — trashed entries (add-trash-and-soft-delete 6.5)', () =
     );
     expect(screen.queryByTestId('missing-object-card')).toBeNull();
     expect(screen.getByText('ZSU-23')).toBeInTheDocument();
+  });
+});
+
+describe('ObjectsZone — recovering a deleted entry from a version (add-version-history 8.2)', () => {
+  const GONE: LibraryObject = { id: 'gone', type: 'sam_site', lat: 43, lon: 40, name: 'SA-6' };
+
+  beforeEach(() => {
+    flightPlanContext = { flightPlanId: 'PLANAAAAAAA1', finalizeVersion: vi.fn() };
+  });
+
+  it('offers recovery only for an entry a version pinned', async () => {
+    getPinnedEntries.mockResolvedValue({ gone: { theatre: 'caucasus', entry: GONE } });
+    renderZone(plan([{ uuid: 'gone' }, { uuid: 'never' }]));
+    expect(await screen.findAllByText('Recover into library')).toHaveLength(1);
+    expect(getPinnedEntries).toHaveBeenCalledWith('PLANAAAAAAA1');
+  });
+
+  it('recovering re-creates the entry with its id and pinned data', async () => {
+    getPinnedEntries.mockResolvedValue({ gone: { theatre: 'caucasus', entry: GONE } });
+    renderZone(plan([{ uuid: 'gone' }]));
+    fireEvent.click(await screen.findByText('Recover into library'));
+    expect(mergeEntries).toHaveBeenCalledWith('caucasus', [GONE]);
+  });
+
+  it('a trashed entry offers recovery instead of the Trash hint', async () => {
+    trashed = new Set(['gone']);
+    getPinnedEntries.mockResolvedValue({ gone: { theatre: 'caucasus', entry: GONE } });
+    renderZone(plan([{ uuid: 'gone' }]));
+    expect(await screen.findByText('Recover into library')).toBeInTheDocument();
+    expect(screen.queryByText('It can be restored from the Trash.')).toBeNull();
+  });
+
+  it('offers nothing when the server cannot be reached', async () => {
+    getPinnedEntries.mockRejectedValue(new TypeError('Failed to fetch'));
+    renderZone(plan([{ uuid: 'gone' }]));
+    await waitFor(() => expect(getPinnedEntries).toHaveBeenCalled());
+    expect(screen.queryByText('Recover into library')).toBeNull();
+  });
+
+  it('asks nothing of the server for an anonymous plan or one with no deleted ref', () => {
+    flightPlanContext = null;
+    renderZone(plan([{ uuid: 'gone' }]));
+    flightPlanContext = { flightPlanId: 'PLANAAAAAAA1', finalizeVersion: vi.fn() };
+    renderZone(plan([{ uuid: 'sam' }]));
+    expect(getPinnedEntries).not.toHaveBeenCalled();
   });
 });

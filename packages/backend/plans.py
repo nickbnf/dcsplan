@@ -137,8 +137,9 @@ async def trashed_plans(space_id: str) -> list[dict]:
 
 
 async def purge_plans(cutoff: str) -> list[str]:
-    """Purge plans trashed before `cutoff` (an ISO timestamp): their update log
-    is deleted and `purged_at` set. The row is kept so the id is never reused.
+    """Purge plans trashed before `cutoff` (an ISO timestamp): their update log,
+    versions and pending editors are deleted and `purged_at` set
+    (add-version-history D1). The row is kept so the id is never reused.
     Returns the purged ids."""
     async with connect() as db:
         await db.execute("BEGIN IMMEDIATE")
@@ -151,6 +152,8 @@ async def purge_plans(cutoff: str) -> list[str]:
         now = _now()
         for plan_id in ids:
             await db.execute("DELETE FROM plan_updates WHERE plan_id = ?", (plan_id,))
+            await db.execute("DELETE FROM plan_versions WHERE plan_id = ?", (plan_id,))
+            await db.execute("DELETE FROM plan_pending_editors WHERE plan_id = ?", (plan_id,))
             await db.execute("UPDATE plans SET purged_at = ? WHERE id = ?", (now, plan_id))
         return ids
 

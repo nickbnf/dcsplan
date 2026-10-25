@@ -444,9 +444,9 @@ Neither touches entry ids, entry routes, or any stored plan. Uniqueness per spac
 |---|---|---|---|
 | AD-1 | Space is the unit of ownership | `space` | `add-user-accounts` |
 | AD-2 | Profile as a first-class entity | `aircraft-performance`, `performance-regime` | `extract-performance-profiles` |
-| AD-3 | Reference vs pinned snapshot | `version-history`, `theatre-library` | `add-version-history` |
-| AD-4 | Three independent histories | `version-history` | `add-version-history` |
-| AD-5 | Autosave ≠ version | `plan-sync`, `version-history` | `add-yjs-flightplan` (plan persistence), then `add-cloud-sync` |
+| AD-3 | Reference vs pinned snapshot | `version-history`, `theatre-library` | `add-version-history` (delivered for plan versions) |
+| AD-4 | Three independent histories | `version-history` | `add-version-history` (plan history delivered; library and profile histories to follow) |
+| AD-5 | Autosave ≠ version | `plan-sync`, `version-history` | `add-yjs-flightplan` (plan persistence), then `add-cloud-sync`; versions in `add-version-history` |
 | AD-6 | Yjs CRDT for flight plans; LWW for library/profiles | `plan-sync`, `edit-undo` | `add-yjs-flightplan` (client prep), then `add-cloud-sync` |
 | AD-7 | Soft delete + integrity at delete time | `soft-delete`, `space` | `add-trash-and-soft-delete` (delivered for the Personal space, profile rule amended) |
 | AD-8 | Additive migration that moves local work; per-item chooser | `local-data-migration`, `user-identity`, `plan-sync` | `add-local-data-import` |

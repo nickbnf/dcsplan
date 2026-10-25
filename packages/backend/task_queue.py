@@ -15,7 +15,7 @@ import io
 from typing import Dict, Optional, Callable
 from enum import Enum
 from dataclasses import dataclass, field
-from flight_plan import FlightPlan, Aircraft, default_aircraft
+from flight_plan import FlightPlan, Aircraft, KneeboardRevision, default_aircraft
 from kneeboard import generate_kneeboard_single_png, generate_kneeboard_zip, FlightPlanData, generate_leg_map
 
 logger = logging.getLogger(__name__)
@@ -39,6 +39,7 @@ class TaskState:
     output: str  # "zip" or leg number
     details: set[str]
     created_at: float
+    revision: Optional[KneeboardRevision] = None  # stamped on the waypoint list page
     started_at: Optional[float] = None
     completed_at: Optional[float] = None
     progress_message: Optional[str] = None
@@ -150,7 +151,7 @@ class TaskQueue:
             # Generate kneeboard
             if task_state.output == "zip":
                 progress_callback("Generating all leg maps...")
-                result = generate_kneeboard_zip(task_state.flight_plan, progress_callback, task_state.details, aircraft=task_state.aircraft)
+                result = generate_kneeboard_zip(task_state.flight_plan, progress_callback, task_state.details, aircraft=task_state.aircraft, revision=task_state.revision)
                 media_type = "application/zip"
             else:
                 leg_index = int(task_state.output) - 1
@@ -181,7 +182,7 @@ class TaskQueue:
                     task_state.error = error_msg
                     task_state.progress_message = f"Error: {error_msg}"
     
-    def submit_task(self, flight_plan: FlightPlan, output: str, details: set[str], aircraft: Aircraft | None = None) -> str:
+    def submit_task(self, flight_plan: FlightPlan, output: str, details: set[str], aircraft: Aircraft | None = None, revision: KneeboardRevision | None = None) -> str:
         """
         Submit a new task to the queue.
 
@@ -189,6 +190,7 @@ class TaskQueue:
             flight_plan: The flight plan to generate
             output: Output type ("zip" or leg number)
             details: Set of extra detail keys to display (e.g. {"coords", "efr"})
+            revision: The plan version to stamp, for a signed-in plan
 
         Returns:
             Task ID
@@ -202,6 +204,7 @@ class TaskQueue:
             output=output,
             details=details,
             created_at=time.time(),
+            revision=revision,
             progress_message="In queue"
         )
         

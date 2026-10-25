@@ -136,3 +136,92 @@ export async function restorePlan(planId: string): Promise<PlanSummary> {
   if (!resp.ok) throw new PlanRequestError(`Failed to restore plan (${resp.status})`, resp.status);
   return resp.json();
 }
+
+
+// --- Versions (capability: version-history; add-version-history D5) ----------
+
+export interface VersionEditor {
+  id: string;
+  displayName: string | null;
+}
+
+/** A finalized version of a plan: `Rev N · date · editor`. */
+export interface PlanVersion {
+  rev: number;
+  /** UTC ISO timestamp. */
+  finalizedAt: string;
+  /** Every user whose edits the version holds, last editor first. */
+  editors: VersionEditor[];
+  restoredFrom: number | null;
+}
+
+export interface PlanVersions {
+  /** Newest first. */
+  versions: PlanVersion[];
+  /** Whether the plan has edits not yet in a version. */
+  pending: boolean;
+}
+
+/** A library entry pinned by a version of the plan, for recovery (D7). */
+export interface PinnedEntry {
+  theatre: string;
+  entry: LibraryObject;
+}
+
+function fromBase64(value: string): Uint8Array {
+  const binary = atob(value);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+/** The editors of a version as shown: the last editor, then how many others
+ *  (`Falcon +2`). */
+export function formatEditors(editors: VersionEditor[]): string {
+  if (editors.length === 0) return 'Unknown';
+  const last = editors[0].displayName ?? 'Unknown';
+  return editors.length > 1 ? `${last} +${editors.length - 1}` : last;
+}
+
+/** The plan's versions, newest first, and whether it has unfinalized edits. */
+export async function listVersions(planId: string): Promise<PlanVersions> {
+  const resp = await request(`plans/${encodeURIComponent(planId)}/versions`);
+  if (!resp.ok) throw new PlanRequestError(`Failed to load versions (${resp.status})`, resp.status);
+  return resp.json();
+}
+
+/** Hand the device's whole document state (`Y.encodeStateAsUpdate`) to the
+ *  server and finalize any unfinalized edits. `restoredFrom` marks the state as
+ *  a restore of that rev. Returns the plan's latest version, or null when the
+ *  plan has no content yet. */
+export async function finalizeVersion(
+  planId: string,
+  state: Uint8Array,
+  restoredFrom?: number,
+): Promise<PlanVersion | null> {
+  const body = restoredFrom === undefined
+    ? { update: toBase64(state) }
+    : { update: toBase64(state), restoredFrom };
+  const resp = await request(`plans/${encodeURIComponent(planId)}/versions`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+  if (!resp.ok) throw new PlanRequestError(`Failed to save a version (${resp.status})`, resp.status);
+  return resp.json();
+}
+
+/** One version's full document state, to apply to a scratch `Y.Doc` (D6). */
+export async function getVersionState(planId: string, rev: number): Promise<Uint8Array> {
+  const resp = await request(`plans/${encodeURIComponent(planId)}/versions/${rev}/state`);
+  if (!resp.ok) throw new PlanRequestError(`Failed to load Rev ${rev} (${resp.status})`, resp.status);
+  const body: { state: string } = await resp.json();
+  return fromBase64(body.state);
+}
+
+/** Every library entry a version of the plan pinned, keyed by id (D7). */
+export async function getPinnedEntries(planId: string): Promise<Record<string, PinnedEntry>> {
+  const resp = await request(`plans/${encodeURIComponent(planId)}/pinned-entries`);
+  if (!resp.ok) throw new PlanRequestError(`Failed to load pinned entries (${resp.status})`, resp.status);
+  const body: { entries: Record<string, PinnedEntry> } = await resp.json();
+  return body.entries;
+}

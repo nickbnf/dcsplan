@@ -5,10 +5,20 @@
  * them to the backend's request models (shared/wire-format-fixtures).
  */
 import type { Aircraft, FlightPlan, LibraryObject } from '../types/flightPlan';
+import { formatEditors, type PlanVersion } from '../api/planApi';
+
+/** The plan version a signed-in kneeboard stamps (add-version-history D8). */
+export interface KneeboardRevision {
+  rev: number;
+  finalizedAt: string;
+  /** Already formatted, e.g. `Falcon +2`. */
+  editor: string;
+}
 
 export interface KneeboardRequestBody {
   flightPlan: FlightPlan & { librarySnapshot?: LibraryObject[] };
   aircraft: Aircraft;
+  revision?: KneeboardRevision;
 }
 
 export interface ImportRequestBody {
@@ -17,16 +27,24 @@ export interface ImportRequestBody {
   aircraft: Aircraft;
 }
 
+/** The stamp for a finalized version: its rev, time and editors. */
+export function kneeboardRevision(version: PlanVersion): KneeboardRevision {
+  return { rev: version.rev, finalizedAt: version.finalizedAt, editor: formatEditors(version.editors) };
+}
+
 /** POST /kneeboard. Library refs resolve from a snapshot of the referenced
- * entries carried inside the plan; unresolved refs simply have no snapshot. */
+ * entries carried inside the plan; unresolved refs simply have no snapshot.
+ * A signed-in plan's kneeboard carries the version it stamps; an anonymous
+ * one has none and is stamped with the generation time. */
 export function buildKneeboardRequest(
-  flightPlan: FlightPlan, aircraft: Aircraft, library: LibraryObject[],
+  flightPlan: FlightPlan, aircraft: Aircraft, library: LibraryObject[], revision?: KneeboardRevision,
 ): KneeboardRequestBody {
   const referenced = new Set((flightPlan.libraryRefs ?? []).map(r => r.uuid));
   const snapshot = library.filter(e => referenced.has(e.id));
   return {
     flightPlan: { ...flightPlan, ...(snapshot.length > 0 && { librarySnapshot: snapshot }) },
     aircraft,
+    ...(revision && { revision }),
   };
 }
 

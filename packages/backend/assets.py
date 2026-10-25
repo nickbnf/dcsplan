@@ -332,6 +332,39 @@ async def trashed_assets(space_id: str) -> dict:
     return {"entries": entries, "profiles": profiles}
 
 
+async def live_entries(space_id: str, entry_ids: list[str]) -> dict[str, dict]:
+    """The live entries among `entry_ids`, as `{id: {"theatre", "data"}}`, for
+    pinning into a plan version (add-version-history D3; AD-3). Trashed and
+    purged entries are left out."""
+    if not entry_ids:
+        return {}
+    marks = ", ".join("?" for _ in entry_ids)
+    async with connect() as db:
+        async with db.execute(
+            "SELECT e.id, e.data, l.theatre FROM library_entries e "
+            "JOIN libraries l ON l.id = e.library_id "
+            f"WHERE e.space_id = ? AND e.id IN ({marks}) "
+            "AND e.deleted_at IS NULL AND e.data IS NOT NULL",
+            (space_id, *entry_ids),
+        ) as cur:
+            return {
+                r["id"]: {"theatre": r["theatre"], "data": json.loads(r["data"])}
+                for r in await cur.fetchall()
+            }
+
+
+async def live_profile(space_id: str, profile_id: str) -> Optional[dict]:
+    """A live profile's data, or None when it is trashed, purged or unknown."""
+    async with connect() as db:
+        async with db.execute(
+            "SELECT data FROM profiles WHERE space_id = ? AND id = ? "
+            "AND deleted_at IS NULL AND data IS NOT NULL",
+            (space_id, profile_id),
+        ) as cur:
+            row = await cur.fetchone()
+    return json.loads(row["data"]) if row else None
+
+
 async def purge_assets(cutoff: str) -> int:
     """Purge entries and profiles trashed before `cutoff` (an ISO timestamp):
     their data is dropped and each takes a new `seq`, so devices learn the item

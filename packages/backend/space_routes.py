@@ -20,6 +20,7 @@ import plans
 import spaces
 import sync
 import trash
+import versions
 from auth_routes import get_current_user
 
 router = APIRouter(tags=["spaces"])
@@ -121,6 +122,8 @@ async def create_plan(body: CreatePlanRequest, user: dict = Depends(require_user
         )
     except plans.DuplicatePlanId:
         raise HTTPException(status_code=409, detail="A plan with that id already exists")
+    if initial_update is not None:
+        await versions.record_editor(plan["id"], user["id"])  # add-version-history D4
     return _public_plan(plan)
 
 
@@ -134,9 +137,14 @@ async def _plan_in_space(plan_id: str, space: dict) -> Optional[dict]:
 
 @router.delete("/plans/{plan_id}", status_code=204)
 async def delete_plan(plan_id: str, space: dict = Depends(my_space)):
-    """Move a plan to the space's Trash. Any member may delete (AD-7)."""
+    """Move a plan to the space's Trash. Any member may delete (AD-7). Its
+    unfinalized edits become a version first, so a restored plan comes back
+    with its whole history (add-version-history)."""
     plan = await _plan_in_space(plan_id, space)
-    if not plans.is_live(plan) or not await plans.trash_plan(plan_id):
+    if not plans.is_live(plan):
+        raise HTTPException(status_code=404, detail="Plan not found")
+    await sync.finalize_plan(plan_id)
+    if not await plans.trash_plan(plan_id):
         raise HTTPException(status_code=404, detail="Plan not found")
     await sync.close_plan_room(plan_id)  # open devices leave the plan (plan-sync)
 

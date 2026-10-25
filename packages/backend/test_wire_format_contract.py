@@ -23,6 +23,14 @@ def test_kneeboard_body_validates():
     assert [r.uuid for r in req.flightPlan.libraryRefs] == ["sam", "gone"]
 
 
+def test_kneeboard_body_with_revision_validates():
+    """add-version-history D8: the stamped kneeboard body the frontend sends."""
+    fixtures = load()
+    body = {**fixtures["kneeboard"]["body"], "revision": fixtures["kneeboardRevision"]["revision"]}
+    req = KneeboardRequest.model_validate(body)
+    assert req.revision.rev == 14 and req.revision.editor == "Falcon +2"
+
+
 def test_import_body_validates():
     req = ImportFlightPlanRequest.model_validate(load()["import"]["body"])
     assert req.version == "1.6" and req.aircraft.model == "A-10C"

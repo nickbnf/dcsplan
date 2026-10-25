@@ -134,11 +134,21 @@ class ImportFlightPlanRequest(BaseModel):
     aircraft: Aircraft
 
 
+class KneeboardRevision(BaseModel):
+    """The plan version a kneeboard is generated from (add-version-history D8):
+    stamped on the waypoint list page as `Rev N · date · editor`."""
+    rev: int
+    finalizedAt: str  # ISO timestamp
+    editor: str       # already formatted, e.g. "Falcon +2"
+
+
 class KneeboardRequest(BaseModel):
     """Request model for kneeboard generation: the plan and its aircraft, side
-    by side on the wire (AD-2)."""
+    by side on the wire (AD-2), and, for a signed-in plan, the version it was
+    finalized as. An anonymous plan has no versions (AD-9)."""
     flightPlan: FlightPlan
     aircraft: Aircraft
+    revision: Optional[KneeboardRevision] = None
 
 def get_effective_exit_time(exit_time_sec: int | None, eta: int) -> int:
     return max(exit_time_sec if exit_time_sec is not None else eta, eta)

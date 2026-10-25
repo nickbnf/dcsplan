@@ -89,6 +89,37 @@ def test_delete_plan_moves_it_out_of_the_list(ctx):
     assert [p["id"] for p in client.get("/plans").json()] == [P2]
 
 
+def test_trashing_finalizes_and_a_restored_plan_keeps_its_history(ctx):
+    """add-version-history task 4.4 (soft-delete: a restored plan keeps its history)."""
+    import plans
+    import versions
+
+    client, login_as = ctx
+    login_as("d-1")
+    create_plan(client, P1, "Alpha")
+    for _ in range(6):  # Revs 1 to 6, each a different name
+        doc = Doc()
+        for u in asyncio.run(plans.load_updates(P1)):
+            doc.apply_update(u)
+        doc.get("flightPlan", type=Map)["name"] = f"Name {len(asyncio.run(versions.list_versions(P1)))}"
+        asyncio.run(sync.finalize_plan(P1, update=doc.get_update()))
+    doc = Doc()
+    for u in asyncio.run(plans.load_updates(P1)):
+        doc.apply_update(u)
+    before = doc.get_state()
+    doc.get("flightPlan", type=Map)["name"] = "Edited before trashing"
+    asyncio.run(plans.append_update(P1, doc.get_update(before)))
+
+    assert client.delete(f"/plans/{P1}").status_code == 204
+    assert client.post(f"/plans/{P1}/restore").status_code == 200
+    revs = [v["rev"] for v in asyncio.run(versions.list_versions(P1))]
+    assert revs == [7, 6, 5, 4, 3, 2, 1]
+    state = asyncio.run(versions.get_version_state(P1, 7))
+    rev7 = Doc()
+    rev7.apply_update(state)
+    assert rev7.get("flightPlan", type=Map)["name"] == "Edited before trashing"
+
+
 def test_delete_plan_404_for_unknown_foreign_or_trashed(ctx):
     client, login_as = ctx
     login_as("d-2")

@@ -3,9 +3,10 @@ import * as Dialog from '@radix-ui/react-dialog';
 import type { FlightPlan, LibraryObject } from '../../types/flightPlan';
 import { slugifyPlanName } from '../../utils/flightPlanUtils';
 import { getApiUrl } from '../../config/api';
-import { buildKneeboardRequest } from '../../utils/wireFormat';
+import { buildKneeboardRequest, kneeboardRevision, type KneeboardRevision } from '../../utils/wireFormat';
 import { trackEvent } from '../../utils/plausible';
 import { usePerformance } from '../../contexts/PerformanceContext';
+import { useOptionalFlightPlan } from '../../contexts/FlightPlanContext';
 
 interface GenerateDialogProps {
   flightPlan?: FlightPlan;
@@ -22,6 +23,7 @@ interface TaskStatus {
 
 export const GenerateDialog: React.FC<GenerateDialogProps> = ({ flightPlan, library }) => {
   const { performance } = usePerformance();
+  const finalizeVersion = useOptionalFlightPlan()?.finalizeVersion;
   const [output, setOutput] = useState<'zip' | number>('zip');
   const [includeFuelCalculations, setIncludeFuelCalculations] = useState(true);
   const [includeCoordinates, setIncludeCoordinates] = useState(true);
@@ -197,8 +199,23 @@ export const GenerateDialog: React.FC<GenerateDialogProps> = ({ flightPlan, libr
         params.append('details', detailsList.join(','));
       }
 
-      // { flightPlan (with a snapshot of its resolved library refs), aircraft } (AD-2)
-      const body = buildKneeboardRequest(flightPlan, performance, library ?? []);
+      // A signed-in plan is stamped with the version it is generated from: the
+      // edits shown here are finalized first (version-history). No version, no
+      // kneeboard: an unstamped one could not be traced back to the plan.
+      let revision: KneeboardRevision | undefined;
+      if (finalizeVersion) {
+        let version;
+        try {
+          version = await finalizeVersion();
+        } catch (err) {
+          const reason = err instanceof Error ? err.message : 'unknown error';
+          throw new Error(`Could not save a version of the plan to stamp the kneeboard (${reason})`);
+        }
+        revision = version ? kneeboardRevision(version) : undefined;
+      }
+
+      // { flightPlan (with a snapshot of its resolved library refs), aircraft, revision? } (AD-2)
+      const body = buildKneeboardRequest(flightPlan, performance, library ?? [], revision);
 
       const response = await fetch(`${getApiUrl('kneeboard')}?${params.toString()}`, {
         method: 'POST',

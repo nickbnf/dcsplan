@@ -1,6 +1,6 @@
 # Multi-stage build for React frontend
 # Build stage
-FROM node:20-alpine AS builder
+FROM node:24-alpine AS builder
 
 WORKDIR /app
 
@@ -8,8 +8,8 @@ WORKDIR /app
 COPY package.json pnpm-lock.yaml* package-lock.json* yarn.lock* ./
 COPY pnpm-workspace.yaml ./
 
-# Install pnpm if not present
-RUN npm install -g pnpm
+# Use the pnpm version pinned by "packageManager" in the root package.json
+RUN corepack enable
 
 # Install dependencies
 COPY packages/frontend/package.json ./packages/frontend/

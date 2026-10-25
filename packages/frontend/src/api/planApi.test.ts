@@ -108,4 +108,60 @@ describe('planApi', () => {
       expect(api.canRestore(undefined)).toBe(false);
     });
   });
+
+  describe('versions (add-version-history)', () => {
+    const version = {
+      rev: 2, finalizedAt: '2026-07-23T14:32:00+00:00',
+      editors: [{ id: 'u1', displayName: 'Falcon' }], restoredFrom: null,
+    };
+
+    it('listVersions GETs the plan\'s versions', async () => {
+      const f = mockFetch(200, { versions: [version], pending: true });
+      const result = await api.listVersions('p1');
+      expect(result.pending).toBe(true);
+      expect(result.versions[0].rev).toBe(2);
+      expect(f.mock.calls[0][0]).toBe('/api/plans/p1/versions');
+    });
+
+    it('finalizeVersion POSTs the state as base64', async () => {
+      const f = mockFetch(200, version);
+      expect(await api.finalizeVersion('p1', new Uint8Array([0, 1, 255]))).toEqual(version);
+      const [url, init] = f.mock.calls[0];
+      expect(url).toBe('/api/plans/p1/versions');
+      expect(init).toMatchObject({ method: 'POST' });
+      expect(JSON.parse((init as RequestInit).body as string)).toEqual({ update: 'AAH/' });
+    });
+
+    it('finalizeVersion sends restoredFrom for a restore', async () => {
+      const f = mockFetch(200, version);
+      await api.finalizeVersion('p1', new Uint8Array([0]), 3);
+      expect(JSON.parse((f.mock.calls[0][1] as RequestInit).body as string)).toEqual({ update: 'AA==', restoredFrom: 3 });
+    });
+
+    it('finalizeVersion carries the HTTP status on failure', async () => {
+      mockFetch(410, {});
+      await expect(api.finalizeVersion('p1', new Uint8Array([0]))).rejects.toMatchObject({ status: 410 });
+    });
+
+    it('getVersionState decodes the base64 state', async () => {
+      const f = mockFetch(200, { rev: 1, state: 'AAH/' });
+      expect(await api.getVersionState('p1', 1)).toEqual(new Uint8Array([0, 1, 255]));
+      expect(f.mock.calls[0][0]).toBe('/api/plans/p1/versions/1/state');
+    });
+
+    it('getPinnedEntries returns the entries by id', async () => {
+      const pinned = { e1: { theatre: 'caucasus', entry: { id: 'e1', name: 'SA-10' } } };
+      const f = mockFetch(200, { entries: pinned });
+      expect(await api.getPinnedEntries('p1')).toEqual(pinned);
+      expect(f.mock.calls[0][0]).toBe('/api/plans/p1/pinned-entries');
+    });
+
+    it('formatEditors shows the last editor and how many others', () => {
+      expect(api.formatEditors([{ id: 'u1', displayName: 'Falcon' }])).toBe('Falcon');
+      expect(api.formatEditors([
+        { id: 'u1', displayName: 'Falcon' }, { id: 'u2', displayName: 'Viper' }, { id: 'u3', displayName: null },
+      ])).toBe('Falcon +2');
+      expect(api.formatEditors([])).toBe('Unknown');
+    });
+  });
 });

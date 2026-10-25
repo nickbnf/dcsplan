@@ -183,6 +183,36 @@ def test_purge_after_retention_keeps_recent_items(db_path):
     assert run(plans.count_updates("new")) == 1
 
 
+def test_purge_deletes_the_plans_versions_only(db_path):
+    """add-version-history task 2.3 (soft-delete: purging a plan purges its versions)."""
+    import versions
+
+    async def counts(plan_id):
+        async with connect() as c:
+            result = []
+            for table in ("plan_versions", "plan_pending_editors"):
+                async with c.execute(
+                    f"SELECT COUNT(*) AS n FROM {table} WHERE plan_id = ?", (plan_id,)
+                ) as cur:
+                    result.append((await cur.fetchone())["n"])
+            return result
+
+    async def seed_user():
+        async with connect() as c:
+            await c.execute("INSERT INTO users (id, discord_id, created_at) VALUES ('u1', 'd1', 't')")
+
+    run(seed_user())
+    for plan_id in ("gone", "kept"):
+        plan_with_content(plan_id)
+        run(versions.insert_version(plan_id, b"s", "h", {}, cutoff="9999"))
+        run(versions.record_editor(plan_id, "u1"))
+    run(plans.trash_plan("gone"))
+    age("plans", "gone", 31)
+    run(trash.purge_expired())
+    assert run(counts("gone")) == [0, 0]
+    assert run(counts("kept")) == [1, 1]
+
+
 def test_purge_reaches_the_feed(db_path):
     run(assets.write_profile("s1", "pr1", None, PROFILE))
     deleted = run(assets.delete_profile("s1", "pr1"))

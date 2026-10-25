@@ -1,6 +1,9 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import * as Y from 'yjs';
-import { applyFlightPlanToYDoc, snapshotFromYDoc, seedYDoc } from './yjsFlightPlanBinding';
+import {
+  applyFlightPlanToYDoc, snapshotFromYDoc, seedYDoc,
+  observeRemoteRestores, planFromVersionState, restoreIntoYDoc, RESTORE_ORIGIN,
+} from './yjsFlightPlanBinding';
 import type { FlightPlan, FlightPlanTurnPoint, PlanLibraryRef, PlanMarker, AttackPlanningParams, AttackPlanningResults } from '../types/flightPlan';
 
 function emptyPlan(overrides: Partial<FlightPlan> = {}): FlightPlan {
@@ -459,5 +462,103 @@ describe('profileId (add-library-profile-sync, task 8.1)', () => {
     const snap = snapshotFromYDoc(doc);
     expect(snap.profileId).toBe('p-2');
     expect(snap.points[0].regimeId).toBeUndefined();
+  });
+});
+
+// --- Version restore (add-version-history tasks 7.1, 7.2; design D6) --------
+
+/** Two devices' docs, kept in sync both ways while `connected` is true. */
+function syncedPair() {
+  const a = new Y.Doc();
+  const b = new Y.Doc();
+  const link = { connected: true, queuedForA: [] as Uint8Array[], queuedForB: [] as Uint8Array[] };
+  a.on('update', (u: Uint8Array, origin: unknown) => {
+    if (origin === 'remote') return;
+    if (link.connected) Y.applyUpdate(b, u, 'remote'); else link.queuedForB.push(u);
+  });
+  b.on('update', (u: Uint8Array, origin: unknown) => {
+    if (origin === 'remote') return;
+    if (link.connected) Y.applyUpdate(a, u, 'remote'); else link.queuedForA.push(u);
+  });
+  const reconnect = () => {
+    link.connected = true;
+    link.queuedForB.splice(0).forEach(u => Y.applyUpdate(b, u, 'remote'));
+    link.queuedForA.splice(0).forEach(u => Y.applyUpdate(a, u, 'remote'));
+  };
+  return { a, b, link, reconnect };
+}
+
+describe('version restore', () => {
+  const rev3 = emptyPlan({ name: 'Rev 3', points: [wp('w1', { name: 'ALPHA' }), wp('w2', { name: 'BRAVO' })] });
+
+  function docAt(plan: FlightPlan): Y.Doc {
+    const doc = new Y.Doc();
+    doc.transact(() => seedYDoc(doc, plan), 'local');
+    return doc;
+  }
+
+  it('planFromVersionState reads the plan held by a state', () => {
+    const state = Y.encodeStateAsUpdate(docAt(rev3));
+    expect(planFromVersionState(state)).toEqual(rev3);
+  });
+
+  it('restoreIntoYDoc sets the plan to the restored content in one restore transaction', () => {
+    const doc = docAt(emptyPlan({ name: 'Rev 7', points: [wp('w1'), wp('w9')] }));
+    const origins: unknown[] = [];
+    doc.on('afterTransaction', (tx: Y.Transaction) => origins.push(tx.origin));
+    restoreIntoYDoc(doc, rev3);
+    expect(snapshotFromYDoc(doc)).toEqual(rev3);
+    expect(origins).toEqual([RESTORE_ORIGIN]);
+  });
+
+  it('keeps the theatre', () => {
+    const doc = docAt(emptyPlan({ theatre: 'caucasus' }));
+    restoreIntoYDoc(doc, { ...rev3, theatre: 'syria' });
+    expect(snapshotFromYDoc(doc).theatre).toBe('caucasus');
+  });
+
+  it('merges an offline edit to a waypoint present in both versions', () => {
+    const { a, b, link, reconnect } = syncedPair();
+    a.transact(() => seedYDoc(a, emptyPlan({ name: 'Rev 7', points: [rev3.points[0], wp('w9')] })), 'local');
+    link.connected = false;
+    // B, disconnected, renames w1; meanwhile A restores Rev 3.
+    const bPlan = snapshotFromYDoc(b);
+    b.transact(() => applyFlightPlanToYDoc(b, bPlan, {
+      ...bPlan, points: bPlan.points.map(p => (p.id === 'w1' ? { ...p, name: 'RENAMED' } : p)),
+    }), 'local');
+    restoreIntoYDoc(a, rev3);
+    reconnect();
+    const merged = snapshotFromYDoc(a);
+    expect(merged.name).toBe('Rev 3');
+    expect(merged.points.map(p => [p.id, p.name])).toEqual([['w1', 'RENAMED'], ['w2', 'BRAVO']]);
+    expect(snapshotFromYDoc(b)).toEqual(merged);
+  });
+
+  it('observeRemoteRestores fires on another device only', () => {
+    const { a, b } = syncedPair();
+    a.transact(() => seedYDoc(a, emptyPlan()), 'local');
+    const onA = vi.fn();
+    const onB = vi.fn();
+    observeRemoteRestores(a, onA);
+    const stop = observeRemoteRestores(b, onB);
+    restoreIntoYDoc(a, rev3);
+    expect(onA).not.toHaveBeenCalled();
+    expect(onB).toHaveBeenCalledTimes(1);
+    stop();
+    restoreIntoYDoc(a, emptyPlan());
+    expect(onB).toHaveBeenCalledTimes(1);
+  });
+
+  it('a remote restore clears the undo history on the other device', () => {
+    const { a, b } = syncedPair();
+    a.transact(() => seedYDoc(a, emptyPlan()), 'local');
+    const um = new Y.UndoManager(b.getMap('flightPlan'), { trackedOrigins: new Set(['local']) });
+    const plan = snapshotFromYDoc(b);
+    b.transact(() => applyFlightPlanToYDoc(b, plan, { ...plan, name: 'Edited on B' }), 'local');
+    expect(um.undoStack.length).toBe(1);
+    observeRemoteRestores(b, () => um.clear());
+    restoreIntoYDoc(a, rev3);
+    expect(um.undoStack.length).toBe(0);
+    expect(um.redoStack.length).toBe(0);
   });
 });

@@ -4,24 +4,39 @@ Served by FastAPI via `pycrdt-websocket` (AD-14): one Y.Doc per plan, the room
 keyed by `planId`. The socket is authorized by the session cookie against the
 plan's owning space. Updates are persisted to the `plan_updates` log (AD-13) and
 the room's doc is rehydrated from that log on first open. Persistence creates no
-finalized version (AD-5) — versioning is a later change.
+finalized version (AD-5).
+
+Versions (capability: version-history; add-version-history) are finalized here,
+because finalizing reads the document from its room or its log:
+`finalize_plan` runs when the last device leaves, from the inactivity sweep,
+before a plan is trashed, and when a device asks (`version_routes`). Sockets
+record their user as an editor when a message changes the plan's content.
 
 The plan's name lives only inside its document; on every persisted update the
 store keeps the `plans` index in step (name on change, `updated_at` always), so
 renames made offline reach the Flight Plans list on reconnect (unify-plan-name D2).
 """
+import asyncio
+import hashlib
+import json
+import logging
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from typing import AsyncIterator, Optional
 
-from pycrdt import Array, Doc, Map
+from pycrdt import Array, Doc, Map, YMessageType, YSyncMessageType
 from pycrdt.store import BaseYStore
 from pycrdt.websocket import WebsocketServer, YRoom
 from pycrdt.websocket.websocket import HttpxWebsocket
 from starlette.websockets import WebSocket
 
+import assets
 import plans
 import spaces
+import versions
+
+logger = logging.getLogger(__name__)
 
 
 def doc_plan_name(ydoc: Doc) -> Optional[str]:
@@ -213,9 +228,198 @@ async def squash_plan(plan_id: str) -> None:
     await plans.squash_updates(plan_id, doc.get_update())
 
 
+# --- Versions (add-version-history D2, D3) -----------------------------------
+
+def content_hash(ydoc: Doc) -> str:
+    """SHA-256 of the plan's `flightPlan` map as canonical JSON (D2). Compares
+    content, not state vectors: a Yjs deletion leaves the state vector as is."""
+    content = ydoc.get("flightPlan", type=Map).to_py()
+    canonical = json.dumps(content, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+EMPTY_CONTENT_HASH = content_hash(Doc())
+
+
+async def pin_dependencies(space_id: str, ydoc: Doc) -> dict:
+    """The library entries and profile a plan references, as they stand now
+    (AD-3). A reference that does not resolve to a live item is recorded as
+    missing."""
+    refs = doc_plan_refs("", ydoc)
+    entries = await assets.live_entries(space_id, sorted(refs.entry_ids))
+    profile = None
+    if refs.profile_id is not None:
+        data = await assets.live_profile(space_id, refs.profile_id)
+        if data is not None:
+            profile = {"id": refs.profile_id, "data": data}
+    return {
+        "entries": entries,
+        "profile": profile,
+        "missing": {
+            "entries": sorted(refs.entry_ids - entries.keys()),
+            "profile": refs.profile_id if refs.profile_id is not None and profile is None else None,
+        },
+    }
+
+
+_finalize_locks: dict[str, asyncio.Lock] = {}
+
+
+async def _plan_doc(plan_id: str) -> tuple[Doc, bool]:
+    """The plan's document, and whether it is an open room's (live) doc."""
+    room = sync_server.rooms.get(plan_id)
+    if room is not None:
+        return room.ydoc, True
+    ydoc = Doc()
+    for update in await plans.load_updates(plan_id):
+        ydoc.apply_update(update)
+    return ydoc, False
+
+
+async def finalize_plan(
+    plan_id: str,
+    update: Optional[bytes] = None,
+    restored_from: Optional[int] = None,
+    actor: Optional[str] = None,
+) -> Optional[dict]:
+    """Finalize the plan's unfinalized edits into a version (D3) and return the
+    plan's latest version, or None for a plan that is not live or has neither
+    a version nor content.
+
+    `update`, a device's document state, is merged first, through the open room
+    when there is one so it is persisted and broadcast like a socket update
+    (D5). A restore (`restored_from`) always writes a version."""
+    lock = _finalize_locks.setdefault(plan_id, asyncio.Lock())
+    async with lock:
+        plan = await plans.get_plan(plan_id)
+        if not plans.is_live(plan):
+            return None
+        ydoc, live = await _plan_doc(plan_id)
+        if update is not None:
+            before = content_hash(ydoc)
+            ydoc.apply_update(update)
+            if not live:
+                await plans.append_update(plan_id, update)
+            if actor is not None and content_hash(ydoc) != before:
+                await versions.record_editor(plan_id, actor)
+        cutoff = datetime.now(timezone.utc).isoformat()
+        digest = content_hash(ydoc)
+        latest = await versions.latest_version(plan_id)
+        if restored_from is None:
+            unchanged = (
+                latest["content_hash"] == digest if latest is not None
+                else digest == EMPTY_CONTENT_HASH
+            )
+            if unchanged:
+                await versions.clear_pending_editors(plan_id, cutoff)
+                return latest
+        pinned = await pin_dependencies(plan["space_id"], ydoc)
+        return await versions.insert_version(
+            plan_id, ydoc.get_update(), digest, pinned,
+            cutoff=cutoff, actor=actor, restored_from=restored_from,
+        )
+
+
+def _may_edit(message: bytes) -> bool:
+    """Whether a received message carries document content: sync step 2 (a
+    connecting device's missing updates, its offline edits included) or an
+    update. A step 2 always holds the sender's whole delete set, so it can be
+    non-empty without changing anything."""
+    return (
+        len(message) >= 2
+        and message[0] == YMessageType.SYNC
+        and message[1] in (YSyncMessageType.SYNC_STEP2, YSyncMessageType.SYNC_UPDATE)
+    )
+
+
+class EditorTrackingChannel(HttpxWebsocket):
+    """A plan socket that records its user as an editor of the plan whenever a
+    message it receives changes the plan's content (add-version-history D4).
+
+    The room applies a sync message synchronously once `recv` returns it, so a
+    callback scheduled at receive time sees the document after the change."""
+
+    def __init__(self, websocket, plan_id: str, ydoc: Doc, user_id: str):
+        super().__init__(websocket, plan_id)
+        self._ydoc = ydoc
+        self._user_id = user_id
+        self._pending: set[asyncio.Task] = set()
+
+    async def recv(self) -> bytes:
+        message = await super().recv()
+        if _may_edit(message):
+            before = content_hash(self._ydoc)
+            asyncio.get_running_loop().call_soon(self._check, before)
+        return message
+
+    def _check(self, before: str) -> None:
+        if content_hash(self._ydoc) == before:
+            return
+        task = asyncio.ensure_future(versions.record_editor(self.path, self._user_id))
+        self._pending.add(task)
+        task.add_done_callback(self._pending.discard)
+
+    async def drain(self) -> None:
+        """Wait until every edit noticed so far has been recorded."""
+        await asyncio.sleep(0)  # let a check scheduled by the last message run
+        if self._pending:
+            await asyncio.gather(*self._pending)
+
+
+async def has_unfinalized_edits(plan_id: str) -> bool:
+    """Whether the plan's content differs from its latest version (D2); for a
+    plan with no version, whether it has any content."""
+    ydoc, _ = await _plan_doc(plan_id)
+    digest = content_hash(ydoc)
+    latest = await versions.latest_version(plan_id)
+    if latest is None:
+        return digest != EMPTY_CONTENT_HASH
+    return digest != latest["content_hash"]
+
+
+SESSION_IDLE_SECONDS = 10 * 60
+SWEEP_INTERVAL_SECONDS = 60
+
+
+async def finalize_idle_plans(now: Optional[datetime] = None) -> int:
+    """Finalize every plan whose editing session has ended: no edit for
+    SESSION_IDLE_SECONDS (AD-5). Returns the number of plans finalized."""
+    idle_since = ((now or datetime.now(timezone.utc)) - timedelta(seconds=SESSION_IDLE_SECONDS)).isoformat()
+    plan_ids = await versions.idle_plans(idle_since)
+    for plan_id in plan_ids:
+        await finalize_plan(plan_id)
+    return len(plan_ids)
+
+
+async def run_sweep_forever(interval: float = SWEEP_INTERVAL_SECONDS) -> None:
+    """Finalize idle plans every `interval` seconds, until cancelled. Sweeping
+    rather than timing each room survives a restart: a session interrupted by
+    one is finalized by the next run (add-version-history D3)."""
+    while True:
+        try:
+            await finalize_idle_plans()
+        except Exception:
+            logger.exception("Version sweep failed")
+        await asyncio.sleep(interval)
+
+
+@asynccontextmanager
+async def lifespan_sweep(interval: float = SWEEP_INTERVAL_SECONDS):
+    """Run the inactivity sweep for the app's lifetime; cancelled on shutdown."""
+    task = asyncio.create_task(run_sweep_forever(interval))
+    try:
+        yield task
+    finally:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+
 async def serve_plan_socket(websocket: WebSocket, plan_id: str) -> None:
-    """Authorize, then serve the Yjs sync protocol for one plan; squash the log
-    when the last client leaves the room."""
+    """Authorize, then serve the Yjs sync protocol for one plan; when the last
+    client leaves the room, finalize a version and squash the log."""
     refusal = await _authorize(websocket, plan_id)
     if refusal == CLOSE_FORBIDDEN:
         await websocket.close(code=CLOSE_FORBIDDEN)  # policy violation (unauthorized room)
@@ -224,10 +428,19 @@ async def serve_plan_socket(websocket: WebSocket, plan_id: str) -> None:
     if refusal == CLOSE_GONE:
         await websocket.close(code=CLOSE_GONE)
         return
-    channel = HttpxWebsocket(websocket, plan_id)
+    room = await sync_server.get_room(plan_id)
+    channel = EditorTrackingChannel(websocket, plan_id, room.ydoc, websocket.session["user_id"])
     await sync_server.serve(channel)
+    await channel.drain()
 
-    # Client disconnected — squash if the room is now empty.
+    # Client disconnected — if the room is now empty, the session is over.
     room = sync_server.rooms.get(plan_id)
     if room is not None and not room.clients:
-        await squash_plan(plan_id)
+        await on_last_client_left(plan_id)
+
+
+async def on_last_client_left(plan_id: str) -> None:
+    """The last device left the plan: finalize the session into a version (AD-5)
+    without waiting for the inactivity sweep, then squash the update log."""
+    await finalize_plan(plan_id)
+    await squash_plan(plan_id)

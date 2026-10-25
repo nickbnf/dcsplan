@@ -9,8 +9,10 @@ import io
 import os
 import math
 import logging
+from datetime import datetime, timezone
+from typing import Optional
 from PIL import Image, ImageDraw, ImageFont
-from flight_plan import FlightPlan
+from flight_plan import FlightPlan, KneeboardRevision
 from map_annotations import _format_coord_ddm
 
 logger = logging.getLogger(__name__)
@@ -29,6 +31,8 @@ MARGIN_RIGHT = 40
 MARGIN_TOP = 40
 TITLE_FONT_SIZE = 32
 ROW_FONT_SIZE = 22
+STAMP_FONT_SIZE = 16
+STAMP_BASELINE_FROM_BOTTOM = 16
 ROW_HEIGHT = 54
 LINE_WIDTH = 1
 
@@ -100,11 +104,33 @@ def _draw_waypoint_icon(draw: ImageDraw.ImageDraw, cx: float, cy: float,
         )
 
 
-def generate_waypoint_list_page(flight_plan: FlightPlan, aircraft=None) -> bytes:
+def _format_utc(moment: datetime) -> str:
+    return moment.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%MZ")
+
+
+def format_stamp(revision: Optional[KneeboardRevision], generated_at: datetime) -> str:
+    """The page stamp (add-version-history D8): `Rev N · date · editor` for a
+    signed-in plan's version, else the generation time alone. UTC, marked Z."""
+    if revision is None:
+        return _format_utc(generated_at)
+    finalized_at = datetime.fromisoformat(revision.finalizedAt)
+    if finalized_at.tzinfo is None:
+        finalized_at = finalized_at.replace(tzinfo=timezone.utc)
+    return f"Rev {revision.rev} · {_format_utc(finalized_at)} · {revision.editor}"
+
+
+def generate_waypoint_list_page(
+    flight_plan: FlightPlan,
+    aircraft=None,
+    revision: Optional[KneeboardRevision] = None,
+    generated_at: Optional[datetime] = None,
+) -> bytes:
     """Generate a 768x1024 PNG image with a waypoint list table.
 
     Args:
         flight_plan: The flight plan containing waypoints.
+        revision: The plan version the kneeboard stamps, when signed in.
+        generated_at: The generation time stamped without a revision (now).
 
     Returns:
         PNG image data as bytes.
@@ -190,6 +216,11 @@ def generate_waypoint_list_page(flight_plan: FlightPlan, aircraft=None) -> bytes
                   fill=BLACK, width=LINE_WIDTH)
 
         current_y = line_y
+
+    # Version stamp, centred in the bottom margin
+    stamp = format_stamp(revision, generated_at or datetime.now(timezone.utc))
+    draw.text((PAGE_WIDTH / 2, PAGE_HEIGHT - STAMP_BASELINE_FROM_BOTTOM),
+              stamp, fill=BLACK, font=_load_fixed_font(STAMP_FONT_SIZE), anchor="ms")
 
     # Convert to RGB (kneeboard pages are RGB PNGs) and save
     img_rgb = img.convert("RGB")

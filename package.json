@@ -2,6 +2,7 @@
   "name": "dcsplan",
   "private": true,
   "version": "1.0.0",
+  "packageManager": "pnpm@10.17.1",
   "description": "A flight planning tool for flight simulators",
   "scripts": {
     "install:backend": "cd packages/backend && python3 -m venv venv && ./venv/bin/pip install -r requirements.txt",

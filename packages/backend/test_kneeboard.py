@@ -564,6 +564,31 @@ def test_zip_contains_overview_page(mock_tiles_info, valid_flight_plan):
         assert names[2] == "leg_01.png"
 
 
+def test_revision_stamps_only_the_waypoint_list_page(mock_tiles_info, valid_flight_plan):
+    """add-version-history task 6.1 (spec: only the waypoint list page is stamped)."""
+    from flight_plan import KneeboardRevision
+    flight_plan = FlightPlan(**valid_flight_plan)
+    revision = KneeboardRevision(rev=5, finalizedAt="2026-07-23T14:32:00+00:00", editor="Falcon")
+    plain = zipfile.ZipFile(io.BytesIO(generate_kneeboard_zip(flight_plan)))
+    stamped = zipfile.ZipFile(io.BytesIO(generate_kneeboard_zip(flight_plan, revision=revision)))
+    for name in plain.namelist():
+        if name != "0wpts.png":
+            assert plain.read(name) == stamped.read(name), name
+    assert plain.read("0wpts.png") != stamped.read("0wpts.png")
+
+
+def test_kneeboard_request_revision_is_optional(valid_flight_plan):
+    from flight_plan import KneeboardRequest
+    aircraft = {"model": "", "takeoffConfiguration": "", "regimes": []}
+    plain = KneeboardRequest(flightPlan=valid_flight_plan, aircraft=aircraft)
+    assert plain.revision is None
+    stamped = KneeboardRequest(
+        flightPlan=valid_flight_plan, aircraft=aircraft,
+        revision={"rev": 5, "finalizedAt": "2026-07-23T14:32:00+00:00", "editor": "Falcon +2"},
+    )
+    assert stamped.revision.rev == 5
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
 

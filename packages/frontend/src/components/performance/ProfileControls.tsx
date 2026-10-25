@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { useFlightPlan } from '../../contexts/FlightPlanContext';
 import { usePerformance } from '../../contexts/PerformanceContext';
@@ -53,13 +53,20 @@ const NONE = '';
 /**
  * Plan-scoped header band: which profile the active plan flies (signed-in).
  * Changing it clears the legs bound to the current profile, after confirmation
- * when any are bound (performance-profile; design D10a).
+ * when any are bound (performance-profile; design D10a). A confirmed switch
+ * first finalizes the open session into a version, so the bindings it clears
+ * stay restorable (version-history; add-version-history D9).
  */
 export const PlanProfileHeader: React.FC = () => {
-  const { flightPlan, onFlightPlanUpdate } = useFlightPlan();
+  const { flightPlan, onFlightPlanUpdate, finalizeVersion } = useFlightPlan();
   const { profiles, flownProfileId, performance } = usePerformance();
-  const { sync } = useSpaceAssets();
+  const { sync, status } = useSpaceAssets();
   const [pending, setPending] = useState<string | null | undefined>(undefined);
+  const [isSaving, setIsSaving] = useState(false);
+  // The plan as of the latest render: a switch applied after saving a version
+  // must not undo edits that arrived meanwhile.
+  const latest = useRef({ flightPlan, performance });
+  latest.current = { flightPlan, performance };
 
   // The plan names a profile that no longer resolves because it was deleted
   // (trashed or purged), not merely not synced yet (soft-delete).
@@ -68,8 +75,27 @@ export const PlanProfileHeader: React.FC = () => {
   const restorable = deleted && sync!.isTrashed('profile', missingId!);
 
   const apply = (id: string | null) => {
-    onFlightPlanUpdate(switchPlanProfile(flightPlan, performance, id));
+    onFlightPlanUpdate(switchPlanProfile(latest.current.flightPlan, latest.current.performance, id));
     setPending(undefined);
+  };
+
+  // Connected: save a version first. Disconnected, or if saving fails, switch
+  // anyway: the edits join the session once they reach the server, and undo
+  // still covers the switch.
+  const confirmSwitch = async (id: string | null) => {
+    if (!finalizeVersion || status?.connectivity === 'offline') {
+      apply(id);
+      return;
+    }
+    setIsSaving(true);
+    try {
+      await finalizeVersion();
+    } catch {
+      /* switch anyway (design D9) */
+    } finally {
+      setIsSaving(false);
+    }
+    apply(id);
   };
 
   const choose = (value: string) => {
@@ -105,8 +131,8 @@ export const PlanProfileHeader: React.FC = () => {
         <ConfirmDialog
           title="Switch profile?"
           message={boundLegsMessage(countBoundLegs(flightPlan, performance))}
-          confirmLabel="Switch"
-          onConfirm={() => apply(pending)}
+          confirmLabel={isSaving ? 'Switching…' : 'Switch'}
+          onConfirm={() => { if (!isSaving) void confirmSwitch(pending); }}
           onCancel={() => setPending(undefined)}
         />
       )}

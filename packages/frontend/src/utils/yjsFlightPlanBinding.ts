@@ -333,3 +333,47 @@ export function seedYDoc(yDoc: Y.Doc, plan: FlightPlan): void {
   };
   applyFlightPlanToYDoc(yDoc, emptyPlan, plan);
 }
+
+// --- Version restore (version-history; add-version-history D6) ---------------
+
+/** The transaction origin of a version restore. Not tracked by the undo
+ *  manager: a restore is not undoable (edit-undo). */
+export const RESTORE_ORIGIN = 'restore';
+
+/** A root map beside `flightPlan`, outside what the undo manager tracks and
+ *  what `snapshotFromYDoc` reads. A restore bumps `restoreSeq` so every device
+ *  can tell that the plan was restored and clear its undo history. */
+const HISTORY_MAP = 'history';
+
+/** The plan content held by a version's full document state. */
+export function planFromVersionState(state: Uint8Array): FlightPlan {
+  const scratch = new Y.Doc();
+  Y.applyUpdate(scratch, state);
+  const plan = snapshotFromYDoc(scratch);
+  scratch.destroy();
+  return plan;
+}
+
+/** Set the plan's content to `restored` in one transaction, as a diff against
+ *  the current content: items present in both keep their identity, so an edit
+ *  to one made concurrently on another device still merges. The theatre never
+ *  changes (plan-lifecycle). */
+export function restoreIntoYDoc(yDoc: Y.Doc, restored: FlightPlan): void {
+  const current = snapshotFromYDoc(yDoc);
+  yDoc.transact(() => {
+    applyFlightPlanToYDoc(yDoc, current, { ...restored, theatre: current.theatre });
+    const history = yDoc.getMap(HISTORY_MAP);
+    history.set('restoreSeq', ((history.get('restoreSeq') as number | undefined) ?? 0) + 1);
+  }, RESTORE_ORIGIN);
+}
+
+/** Call `onRestore` whenever another device restores a version of the plan.
+ *  Returns the unsubscribe function. */
+export function observeRemoteRestores(yDoc: Y.Doc, onRestore: () => void): () => void {
+  const history = yDoc.getMap(HISTORY_MAP);
+  const observer = (event: Y.YMapEvent<unknown>, transaction: Y.Transaction) => {
+    if (!transaction.local && event.keysChanged.has('restoreSeq')) onRestore();
+  };
+  history.observe(observer);
+  return () => history.unobserve(observer);
+}

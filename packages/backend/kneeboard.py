@@ -85,12 +85,13 @@ def generate_kneeboard_single_png(flight_plan: FlightPlan, leg_index: int, detai
 
     return leg_map_png
 
-def generate_kneeboard_zip(flight_plan: FlightPlan, progress_callback: Optional[Callable[[str], None]] = None, details: set[str] = None, aircraft=None) -> bytes:
+def generate_kneeboard_zip(flight_plan: FlightPlan, progress_callback: Optional[Callable[[str], None]] = None, details: set[str] = None, aircraft=None, revision=None) -> bytes:
     """
     Generate a ZIP file containing all the leg maps for the flight plan.
     
     Args:
         flight_plan: The flight plan
+        revision: The plan version stamped on the waypoint list page (add-version-history D8)
     Returns:
         ZIP file data as bytes
     """
@@ -116,7 +117,7 @@ def generate_kneeboard_zip(flight_plan: FlightPlan, progress_callback: Optional[
     # Generate waypoint list page
     if progress_callback:
         progress_callback("Generating waypoint list page...")
-    wpts_page = generate_waypoint_list_page(flight_plan, aircraft)
+    wpts_page = generate_waypoint_list_page(flight_plan, aircraft, revision=revision)
     logger.info(f"Waypoint list page generated: {len(wpts_page)} bytes")
 
     # Generate overview map page (imported here to avoid circular import)

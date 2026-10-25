@@ -50,8 +50,11 @@ class WsChannel:
 
 
 @asynccontextmanager
-async def serving():
-    """Start the real sync server behind a live (unauthenticated) /sync route."""
+async def serving(with_server=False, user_id=None):
+    """Start the real sync server behind a live (unauthenticated) /sync route.
+    Yields the base URL, or `(base URL, server)` when `with_server` is set.
+    With `user_id`, sockets record that user as an editor (add-version-history
+    D4), as the authenticated route does."""
     server = sync.PlanSyncServer()
 
     @asynccontextmanager
@@ -64,10 +67,16 @@ async def serving():
     @app.websocket("/sync/{plan_id}")
     async def ws(websocket: WebSocket, plan_id: str):
         await websocket.accept()
-        await server.serve(HttpxWebsocket(websocket, plan_id))
+        if user_id is None:
+            await server.serve(HttpxWebsocket(websocket, plan_id))
+        else:
+            room = await server.get_room(plan_id)
+            channel = sync.EditorTrackingChannel(websocket, plan_id, room.ydoc, user_id)
+            await server.serve(channel)
+            await channel.drain()
         room = server.rooms.get(plan_id)
         if room is not None and not room.clients:
-            await sync.squash_plan(plan_id)
+            await sync.on_last_client_left(plan_id)
 
     config = uvicorn.Config(app, host="127.0.0.1", port=PORT, log_level="warning")
     uv = uvicorn.Server(config)
@@ -75,7 +84,8 @@ async def serving():
     while not uv.started:
         await asyncio.sleep(0.05)
     try:
-        yield f"ws://127.0.0.1:{PORT}/sync"
+        base = f"ws://127.0.0.1:{PORT}/sync"
+        yield (base, server) if with_server else base
     finally:
         uv.should_exit = True
         await task
@@ -184,3 +194,110 @@ def test_plan_created_with_initial_state_syncs_its_content():
                 return dict(a.get("flightPlan", type=Map))
 
     assert asyncio.run(scenario()) == {"name": "Imported", "initFob": 9000}
+
+
+def test_update_applied_to_the_room_doc_is_persisted_and_broadcast():
+    """add-version-history D5: a REST route merges a device's state by applying
+    it to the open room's doc; that must reach other clients and the log, like
+    an update received over a socket."""
+    import plans
+    from db import connect
+
+    async def scenario():
+        async with connect() as c:
+            await c.execute(
+                "INSERT INTO spaces (id, kind, name, created_at) VALUES ('s1', 'personal', NULL, 't')"
+            )
+        await plans.create_plan("AAAAAAAAAAA2", "s1", "Plan", "caucasus")
+        async with serving(with_server=True) as (base, server):
+            async with client(base, "AAAAAAAAAAA2") as a:
+                before = await plans.count_updates("AAAAAAAAAAA2")
+                outside = Doc()
+                outside["flightPlan"] = fp = Map()
+                fp["name"] = "From REST"
+                server.rooms["AAAAAAAAAAA2"].ydoc.apply_update(outside.get_update())
+                await asyncio.sleep(0.4)
+                after = await plans.count_updates("AAAAAAAAAAA2")
+                return a.get("flightPlan", type=Map).get("name"), before, after
+
+    name, before, after = asyncio.run(scenario())
+    assert name == "From REST"
+    assert after > before
+
+
+# --- Editor attribution (add-version-history task 4.1, design D4) ------------
+
+def _seed_plan(plan_id):
+    import plans
+    from db import connect
+
+    async def go():
+        async with connect() as c:
+            await c.execute(
+                "INSERT INTO spaces (id, kind, name, created_at) VALUES ('s1', 'personal', NULL, 't')"
+            )
+            await c.execute("INSERT INTO users (id, discord_id, created_at) VALUES ('u1', 'd1', 't')")
+        await plans.create_plan(plan_id, "s1", "Plan", "caucasus")
+
+    return go()
+
+
+def test_an_editing_socket_records_its_user():
+    import versions
+
+    async def scenario():
+        await _seed_plan("AAAAAAAAAAA3")
+        async with serving(user_id="u1") as base:
+            async with client(base, "AAAAAAAAAAA3") as a:
+                a.get("flightPlan", type=Map)["name"] = "Edited"
+                await asyncio.sleep(0.4)
+                return await versions.has_pending_editors("AAAAAAAAAAA3")
+
+    assert asyncio.run(scenario()) is True
+
+
+def test_a_reading_socket_records_nothing():
+    import versions
+
+    async def scenario():
+        await _seed_plan("AAAAAAAAAAA4")
+        async with serving(user_id="u1") as base:
+            async with client(base, "AAAAAAAAAAA4"):
+                await asyncio.sleep(0.4)
+                return await versions.has_pending_editors("AAAAAAAAAAA4")
+
+    assert asyncio.run(scenario()) is False
+
+
+def test_a_reconnect_bringing_offline_edits_records_its_user():
+    import versions
+
+    async def scenario():
+        await _seed_plan("AAAAAAAAAAA5")
+        offline = Doc()
+        offline.get("flightPlan", type=Map)["name"] = "Edited offline"
+        async with serving(user_id="u1") as base:
+            async with websockets.connect(f"{base}/AAAAAAAAAAA5") as conn:
+                async with Provider(offline, WsChannel(conn, "AAAAAAAAAAA5")):
+                    await asyncio.sleep(0.4)
+                    return await versions.has_pending_editors("AAAAAAAAAAA5")
+
+    assert asyncio.run(scenario()) is True
+
+
+def test_last_client_leaving_finalizes_a_version():
+    """add-version-history task 4.2 (spec: leaving the plan finalizes a version)."""
+    import versions
+
+    async def scenario():
+        await _seed_plan("AAAAAAAAAAA6")
+        async with serving(user_id="u1") as base:
+            async with client(base, "AAAAAAAAAAA6") as a:
+                a.get("flightPlan", type=Map)["name"] = "Edited"
+                await asyncio.sleep(0.4)
+            await asyncio.sleep(0.4)
+            return await versions.list_versions("AAAAAAAAAAA6")
+
+    [version] = asyncio.run(scenario())
+    assert version["rev"] == 1
+    assert version["editors"] == ["u1"]

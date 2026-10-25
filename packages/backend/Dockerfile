@@ -1,5 +1,5 @@
 # Multi-stage build for FastAPI backend
-FROM python:3.12-slim as builder
+FROM python:3.13-slim-bookworm AS builder
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -19,7 +19,7 @@ COPY backend/requirements-lock.txt .
 RUN pip install --no-cache-dir --user -r requirements-lock.txt
 
 # Production stage
-FROM python:3.12-slim
+FROM python:3.13-slim-bookworm
 
 # Install runtime dependencies for PIL, pyproj, and cairosvg (SVG pictogram rendering)
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -36,7 +36,7 @@ COPY --from=builder /root/.local /root/.local
 # Make sure scripts in .local are usable
 ENV PATH=/root/.local/bin:$PATH
 # Make sure Python can find modules installed in .local
-ENV PYTHONPATH=/root/.local/lib/python3.12/site-packages:$PYTHONPATH
+ENV PYTHONPATH=/root/.local/lib/python3.13/site-packages:$PYTHONPATH
 
 # Set working directory
 WORKDIR /app
@@ -72,6 +72,10 @@ COPY backend/asset_routes.py .
 
 # Trash and its retention purge (add-trash-and-soft-delete)
 COPY backend/trash.py .
+
+# Plan version history (add-version-history)
+COPY backend/versions.py .
+COPY backend/version_routes.py .
 
 # Runtime data directory (SQLite DB) — mounted as a persistent volume in prod
 RUN mkdir -p /app/data

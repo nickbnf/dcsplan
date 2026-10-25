@@ -3,7 +3,10 @@
 import io
 from PIL import Image
 from flight_plan import FlightPlan, FlightPlanTurnPoint
-from waypoint_list_page import generate_waypoint_list_page
+from datetime import datetime, timezone
+
+from flight_plan import KneeboardRevision
+from waypoint_list_page import PAGE_HEIGHT, format_stamp, generate_waypoint_list_page
 
 
 def _make_point(lat, lon, name=None, wpt_type=None):
@@ -141,3 +144,26 @@ class TestAircraftHeader:
         assert b'SecretRegime' not in result
         assert b'taxiFuel' not in result
         assert b'T/O' not in result
+
+
+# --- Version stamp (add-version-history task 6.1, design D8) -----------------
+
+GENERATED = datetime(2026, 7, 23, 16, 5, tzinfo=timezone.utc)
+
+
+def test_stamp_names_the_revision_in_utc():
+    revision = KneeboardRevision(rev=5, finalizedAt="2026-07-23T16:32:00+02:00", editor="Falcon +2")
+    assert format_stamp(revision, GENERATED) == "Rev 5 · 2026-07-23 14:32Z · Falcon +2"
+
+
+def test_stamp_without_revision_is_the_generation_time():
+    assert format_stamp(None, GENERATED) == "2026-07-23 16:05Z"
+
+
+def test_stamp_is_drawn_in_the_bottom_margin():
+    """Rows never reach the bottom margin for a short plan, so ink there is the stamp."""
+    revision = KneeboardRevision(rev=5, finalizedAt="2026-07-23T14:32:00+00:00", editor="Falcon")
+    for kwargs in ({"revision": revision}, {"generated_at": GENERATED}):
+        img = Image.open(io.BytesIO(generate_waypoint_list_page(sample_flight_plan(), **kwargs)))
+        strip = img.crop((0, PAGE_HEIGHT - 40, img.width, PAGE_HEIGHT)).convert("L")
+        assert strip.getextrema()[0] < 128, kwargs
