@@ -53,7 +53,6 @@ ENV PATH=/app/.venv/bin:$PATH
 # Tests, venvs and local data are excluded by packages/.dockerignore.
 COPY --chown=appuser:appuser backend/*.py ./
 COPY --chown=appuser:appuser backend/theatres ./theatres
-COPY --chown=appuser:appuser backend/migrations ./migrations
 
 # Runtime data directory (SQLite DB) — mounted as a persistent volume in prod
 RUN mkdir -p /app/data && chown appuser:appuser /app /app/data
