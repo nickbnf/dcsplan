@@ -49,7 +49,7 @@ jobs:
       # uv installs the Python from packages/backend/.python-version.
       # Keep the version in sync with the uv image in packages/backend/Dockerfile.
       - name: Install uv
-        uses: astral-sh/setup-uv@v10
+        uses: astral-sh/setup-uv@v10.3.2  # setup-uv publishes no floating major tag
         with:
           version: '0.13.5'
           enable-cache: true
