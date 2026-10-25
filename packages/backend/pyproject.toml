@@ -4,31 +4,27 @@ version = "0.0.0"
 description = "FastAPI backend for DCS Plan"
 requires-python = ">=3.13,<3.14"
 dependencies = [
-    "aiosqlite",
-    "cairosvg",
-    "fastapi",
-    "httpx",
-    "httpx-oauth",
-    "itsdangerous",
-    "numpy",
-    "pillow",
-    "pycrdt",
-    "pycrdt-websocket",
-    "pyproj",
-    "python-dotenv",
-    "python-json-logger",
-    "truststore",
-    "uvicorn[standard]",
-    "yoyo-migrations",
+  "aiosqlite",
+  "cairosvg",
+  "fastapi",
+  "httpx",
+  "httpx-oauth",
+  "itsdangerous",
+  "numpy",
+  "pillow",
+  "pycrdt",
+  "pycrdt-websocket",
+  "pyproj",
+  "python-dotenv",
+  "python-json-logger",
+  "truststore",
+  "uvicorn[standard]",
+  "yoyo-migrations",
+  "rich",
 ]
 
 [dependency-groups]
-dev = [
-    "pytest",
-    "pytest-asyncio",
-    "pytest-watch",
-    "requests",
-]
+dev = ["pytest", "pytest-asyncio", "pytest-watch", "requests"]
 
 [tool.uv]
 package = false
