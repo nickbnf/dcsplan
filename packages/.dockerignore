@@ -1,0 +1,23 @@
+# Build context for packages/backend/Dockerfile is packages/ — this is the
+# ignore file that applies to it. The backend image needs only backend/ code
+# and shared/pictogramCatalog.json.
+
+# Other packages
+frontend/
+tools/
+
+# Backend: tests, environments, local state
+backend/test_*.py
+backend/.venv/
+backend/venv/
+backend/data/
+backend/config/
+backend/.env*
+backend/.pytest_cache/
+backend/*.md
+backend/*.service
+
+# Everywhere
+**/__pycache__/
+**/.pytest_cache/
+**/.DS_Store

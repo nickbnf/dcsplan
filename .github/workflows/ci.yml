@@ -46,17 +46,19 @@ jobs:
       - name: Run frontend tests
         run: pnpm --filter frontend test -- --run
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      # uv installs the Python from packages/backend/.python-version.
+      # Keep the version in sync with the uv image in packages/backend/Dockerfile.
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.3.2  # setup-uv publishes no floating major tag
         with:
-          python-version-file: '.python-version'
+          version: '0.13.5'
+          enable-cache: true
+          cache-dependency-glob: packages/backend/uv.lock
 
+      # --locked fails if uv.lock is out of date with pyproject.toml
       - name: Install backend dependencies
-        run: |
-          cd packages/backend
-          python -m venv venv
-          ./venv/bin/pip install --upgrade pip
-          ./venv/bin/pip install -r requirements.txt
+        working-directory: packages/backend
+        run: uv sync --locked
 
       - name: Run backend tests
         run: pnpm test:backend
@@ -65,21 +67,62 @@ jobs:
     name: Build Backend Image
     runs-on: ubuntu-latest
     needs: test
-    if: github.event_name != 'pull_request'
-    
+    # Runs on PRs too: the image is smoke-tested there, but only pushed outside PRs
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      # The image is linux/arm64 and the runner is amd64: QEMU lets the smoke test run it
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to GitHub Container Registry
+        if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build backend image for smoke test
+        uses: docker/build-push-action@v5
+        with:
+          context: ./packages
+          file: ./packages/backend/Dockerfile
+          platforms: linux/arm64
+          load: true
+          push: false
+          tags: dcsplan-backend:smoke
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # The app must start (imports, migrations, background tasks), serve its
+      # theatres, and not contain the dev dependency group.
+      - name: Smoke test backend image
+        run: |
+          docker run -d --name smoke --platform linux/arm64 -p 5001:5001 dcsplan-backend:smoke
+          fail() { echo "::error::$1"; docker logs smoke; exit 1; }
+          for i in $(seq 1 45); do
+            [ "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:5001/)" = 200 ] && break
+            [ "$i" = 45 ] && fail "backend did not answer on / within 90s"
+            sleep 2
+          done
+          curl -sf http://localhost:5001/theatres | grep -q '"theatres":\["' \
+            || fail "/theatres did not return a non-empty list"
+          # A missing migrations/ dir is not an error for yoyo: compare counts instead
+          expected=$(ls packages/backend/migrations/*.sql | grep -vc '\.rollback\.sql$')
+          applied=$(docker exec smoke python -c "import sqlite3, db; print(sqlite3.connect(db.get_db_path()).execute('SELECT COUNT(*) FROM _yoyo_migration').fetchone()[0])") \
+            || fail "could not read the applied migrations"
+          [ "$applied" = "$expected" ] || fail "$applied of $expected migrations applied"
+          if docker exec smoke python -c "import pytest" 2>/dev/null; then
+            fail "pytest is installed in the image (dev dependencies leaked)"
+          fi
+          echo "Smoke test passed"
+          docker rm -f smoke
 
       - name: Extract metadata for backend
         id: meta-backend
@@ -95,7 +138,9 @@ jobs:
             type=sha,prefix={{branch}}-
             type=raw,value=latest,enable={{is_default_branch}}
 
-      - name: Build and push backend image
+      # Every layer is in the cache from the smoke build: this tags and pushes
+      - name: Push backend image
+        if: github.event_name != 'pull_request'
         uses: docker/build-push-action@v5
         with:
           context: ./packages
@@ -105,7 +150,6 @@ jobs:
           tags: ${{ steps.meta-backend.outputs.tags }}
           labels: ${{ steps.meta-backend.outputs.labels }}
           cache-from: type=gha
-          cache-to: type=gha,mode=max
 
   build-frontend:
     name: Build Frontend Image
