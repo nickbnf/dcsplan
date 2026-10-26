@@ -1,0 +1,146 @@
+{
+  "caucasus": {
+    "legs": [
+      {
+        "course": 54.67808211726771,
+        "heading": 52.34978679390667,
+        "distance": 52.133951773221526,
+        "ete": 429,
+        "legFuel": 595.8333333333333
+      },
+      {
+        "course": 111.14255322112984,
+        "heading": 111.2139589705989,
+        "distance": 115.44656978427162,
+        "ete": 866,
+        "legFuel": 1323.0555555555554
+      },
+      {
+        "course": 293.23875118362935,
+        "heading": 291.7253646518751,
+        "distance": 140.93896832449437,
+        "ete": 1304,
+        "legFuel": 1738.6666666666665
+      }
+    ],
+    "draw": [
+      {
+        "turnCenterLat": 0,
+        "turnCenterLon": 0,
+        "straighteningLat": 41.61,
+        "straighteningLon": 41.6,
+        "heading": 52.34978679390667
+      },
+      {
+        "turnCenterLat": 42.15123993977386,
+        "turnCenterLon": 42.50993548757203,
+        "straighteningLat": 42.18616326549056,
+        "straighteningLon": 42.523407340145,
+        "heading": 111.2139589705989
+      },
+      {
+        "turnCenterLat": 41.643029829966,
+        "turnCenterLon": 44.935988489616854,
+        "straighteningLat": 41.615247641724864,
+        "straighteningLon": 44.92513255636288,
+        "heading": 291.7253646518751
+      }
+    ]
+  },
+  "syria": {
+    "legs": [
+      {
+        "course": 21.655381324244843,
+        "heading": 18.35310139595638,
+        "distance": 68.97681453891134,
+        "ete": 584,
+        "legFuel": 811.1111111111111
+      },
+      {
+        "course": 326.47089983434876,
+        "heading": 324.0710844119636,
+        "distance": 61.033867595348376,
+        "ete": 516,
+        "legFuel": 788.3333333333333
+      },
+      {
+        "course": 197.3736839060598,
+        "heading": 199.12119908695803,
+        "distance": 90.42476457759945,
+        "ete": 833,
+        "legFuel": 1110.6666666666665
+      }
+    ],
+    "draw": [
+      {
+        "turnCenterLat": 0,
+        "turnCenterLon": 0,
+        "straighteningLat": 33.5,
+        "straighteningLon": 36.3,
+        "heading": 18.35310139595638
+      },
+      {
+        "turnCenterLat": 34.614394849481506,
+        "turnCenterLon": 36.64316209345175,
+        "straighteningLat": 34.645094497110726,
+        "straighteningLon": 36.68959676431938,
+        "heading": 324.0710844119636
+      },
+      {
+        "turnCenterLat": 35.376260161808226,
+        "turnCenterLon": 35.91250116923737,
+        "straighteningLat": 35.384600998876145,
+        "straighteningLon": 35.866216080696624,
+        "heading": 199.12119908695803
+      }
+    ]
+  },
+  "germany": {
+    "legs": [
+      {
+        "course": 47.52677053538662,
+        "heading": 44.915771486680256,
+        "distance": 107.83559553105805,
+        "ete": 892,
+        "legFuel": 1238.888888888889
+      },
+      {
+        "course": 77.53623016024142,
+        "heading": 75.59474783575058,
+        "distance": 133.71629196764607,
+        "ete": 1013,
+        "legFuel": 1547.6388888888887
+      },
+      {
+        "course": 224.41069822864938,
+        "heading": 225.37124305286846,
+        "distance": 109.0504890294043,
+        "ete": 1016,
+        "legFuel": 1354.6666666666665
+      }
+    ],
+    "draw": [
+      {
+        "turnCenterLat": 0,
+        "turnCenterLon": 0,
+        "straighteningLat": 50.05,
+        "straighteningLon": 8.57,
+        "heading": 44.915771486680256
+      },
+      {
+        "turnCenterLat": 51.47106526341774,
+        "turnCenterLon": 10.262743136855192,
+        "straighteningLat": 51.51558498378072,
+        "straighteningLon": 10.231113415551242,
+        "heading": 75.59474783575058
+      },
+      {
+        "turnCenterLat": 52.323795061922965,
+        "turnCenterLon": 13.521920935282079,
+        "straighteningLat": 52.301370584438004,
+        "straighteningLon": 13.57321409474017,
+        "heading": 225.37124305286846
+      }
+    ]
+  }
+}

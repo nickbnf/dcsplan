@@ -11,3 +11,11 @@ Add your development scripts, build tools, and other utilities here.
 - `scripts/` - Development and build scripts
 - `configs/` - Shared configuration files
 - `utils/` - Utility functions and helpers
+
+## Theatre maps
+
+`scripts/generate_tiles.py --theatre <theatre> --map <map>` produces a map for a
+theatre: tiles plus `backend/theatres/<theatre>/maps/<map>.json`. A theatre's
+`theatre.json` (including the `navigation` settings used for all leg
+calculations) is hand-maintained. See `scripts/README.md`.
+

@@ -15,7 +15,7 @@ vi.mock('../contexts/SpaceAssetsContext', () => ({
 const notePlanCreated = vi.fn();
 vi.mock('../contexts/PlanSelectionContext', () => ({ usePlanSelection: () => ({ notePlanCreated }) }));
 vi.mock('../hooks/useTheatres', () => ({
-  useTheatres: () => ({ theatres: [{ id: 'caucasus', name: 'Caucasus' }], isLoading: false, error: null }),
+  useTheatres: () => ({ theatres: [{ id: 'caucasus', name: 'Caucasus', defaultMap: 'default', maps: [{ id: 'default', name: 'Default' }] }], isLoading: false, error: null }),
 }));
 
 let trash: any;

@@ -22,9 +22,9 @@ const nonEmptyPlan: FlightPlan = {
 };
 
 const theatres: TheatreMetadata[] = [
-  { id: 'caucasus', name: 'Caucasus' },
-  { id: 'syria', name: 'Syria' },
-  { id: 'persian_gulf', name: 'Persian Gulf' },
+  { id: 'caucasus', name: 'Caucasus', defaultMap: 'default', maps: [{ id: 'default', name: 'Default' }] },
+  { id: 'syria', name: 'Syria', defaultMap: 'default', maps: [{ id: 'default', name: 'Default' }] },
+  { id: 'persian_gulf', name: 'Persian Gulf', defaultMap: 'default', maps: [{ id: 'default', name: 'Default' }] },
 ];
 
 function renderDialog(plan: FlightPlan = emptyPlan, onCreate = vi.fn()) {

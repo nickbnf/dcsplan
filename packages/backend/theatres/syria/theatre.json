@@ -1,0 +1,9 @@
+{
+    "theatre_name": "Syria",
+    "default_map": "default",
+    "navigation": {
+        "mode": "geographic",
+        "projection": "transverse_mercator",
+        "central_meridian": 39
+    }
+}

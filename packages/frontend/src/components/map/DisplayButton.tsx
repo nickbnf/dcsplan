@@ -3,6 +3,7 @@ import * as Popover from '@radix-ui/react-popover';
 import { DisplayControls } from './DisplayControls';
 
 interface DisplayButtonProps {
+  theatreId: string;
   gridEnabled: boolean;
   measureEnabled: boolean;
   onGridChange: (enabled: boolean) => void;
@@ -10,6 +11,7 @@ interface DisplayButtonProps {
 }
 
 export const DisplayButton: React.FC<DisplayButtonProps> = ({
+  theatreId,
   gridEnabled,
   measureEnabled,
   onGridChange,
@@ -88,6 +90,7 @@ export const DisplayButton: React.FC<DisplayButtonProps> = ({
           align="end"
         >
           <DisplayControls
+            theatreId={theatreId}
             gridEnabled={gridEnabled}
             measureEnabled={measureEnabled}
             onGridChange={onGridChange}

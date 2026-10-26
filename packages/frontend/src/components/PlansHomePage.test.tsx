@@ -9,7 +9,7 @@ vi.mock('react-router-dom', async (orig) => {
 
 vi.mock('../hooks/useTheatres', () => ({
   useTheatres: () => ({
-    theatres: [{ id: 'caucasus', name: 'Caucasus' }, { id: 'nevada', name: 'Nevada' }],
+    theatres: [{ id: 'caucasus', name: 'Caucasus', defaultMap: 'default', maps: [{ id: 'default', name: 'Default' }] }, { id: 'nevada', name: 'Nevada', defaultMap: 'default', maps: [{ id: 'default', name: 'Default' }] }],
     isLoading: false,
     error: null,
   }),

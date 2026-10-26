@@ -8,12 +8,14 @@ import { useFlightPlan } from '../contexts/FlightPlanContext';
 import { useLibrary } from '../contexts/LibraryContext';
 import { SelectionProvider, useSelection } from '../contexts/SelectionContext';
 import { useUndoShortcuts } from '../hooks/useUndoShortcuts';
+import { useTheatreNavigation } from '../hooks/useTheatreNavigation';
 
 const PlannerAppInner: React.FC = () => {
   const { flightPlan, onFlightPlanUpdate: setFlightPlan, replaceFlightPlan, fitToFlightPlanTrigger, undo, redo, canUndo, canRedo } = useFlightPlan();
   const { library } = useLibrary();
   const { setSelection, setCoordEntry, coordEntry } = useSelection();
-  const [mapNavInfo, setMapNavInfo] = useState<{ projection: any; navigationMode: string } | null>(null);
+  // Leg calculations use the theatre's navigation settings, never the displayed map's.
+  const navigation = useTheatreNavigation(flightPlan.theatre || 'syria');
   const { drawingState, startDrawing, stopDrawing, startDragging, stopDragging, addPoint, confirmKeyboardWaypoint, updatePreviewLine } = useDrawing();
   const [activeTab, setActiveTab] = useState<'flightplan' | 'objects'>('flightplan');
   const [isAddMarkerMode, setIsAddMarkerMode] = useState(false);
@@ -64,8 +66,8 @@ const PlannerAppInner: React.FC = () => {
         <Sidebar
           flightPlan={flightPlan}
           drawingState={drawingState}
-          projection={mapNavInfo?.projection}
-          navigationMode={mapNavInfo?.navigationMode || "geographic"}
+          projection={navigation?.projection}
+          navigationMode={navigation?.navigationMode || "geographic"}
           onUndo={undo}
           onRedo={redo}
           canUndo={canUndo}
@@ -91,7 +93,6 @@ const PlannerAppInner: React.FC = () => {
             addPoint={addPoint}
             confirmKeyboardWaypoint={confirmKeyboardWaypoint}
             updatePreviewLine={updatePreviewLine}
-            onMapNavInfoChange={setMapNavInfo}
             fitToFlightPlanTrigger={fitToFlightPlanTrigger}
             library={library}
             activeTab={activeTab}

@@ -1,0 +1,41 @@
+[
+  {
+    "theatre": "caucasus",
+    "points": [
+      { "id": "c1", "lat": 41.61, "lon": 41.60, "tas": 420, "alt": 15000, "fuelFlow": 5000, "windSpeed": 20, "windDir": 270 },
+      { "id": "c2", "lat": 42.18, "lon": 42.48, "tas": 420, "alt": 15000, "fuelFlow": 5000, "windSpeed": 25, "windDir": 280 },
+      { "id": "c3", "lat": 41.67, "lon": 44.95, "tas": 450, "alt": 20000, "fuelFlow": 5500, "windSpeed": 30, "windDir": 290 },
+      { "id": "c4", "lat": 42.24, "lon": 42.05, "tas": 400, "alt": 10000, "fuelFlow": 4800, "windSpeed": 15, "windDir": 250 }
+    ],
+    "declination": 6,
+    "bankAngle": 45,
+    "initTimeSec": 43200,
+    "initFob": 12000
+  },
+  {
+    "theatre": "syria",
+    "points": [
+      { "id": "s1", "lat": 33.50, "lon": 36.30, "tas": 420, "alt": 15000, "fuelFlow": 5000, "windSpeed": 20, "windDir": 270 },
+      { "id": "s2", "lat": 34.60, "lon": 36.70, "tas": 420, "alt": 15000, "fuelFlow": 5000, "windSpeed": 25, "windDir": 280 },
+      { "id": "s3", "lat": 35.40, "lon": 35.95, "tas": 450, "alt": 20000, "fuelFlow": 5500, "windSpeed": 30, "windDir": 290 },
+      { "id": "s4", "lat": 34.00, "lon": 35.50, "tas": 400, "alt": 10000, "fuelFlow": 4800, "windSpeed": 15, "windDir": 250 }
+    ],
+    "declination": 5,
+    "bankAngle": 45,
+    "initTimeSec": 43200,
+    "initFob": 12000
+  },
+  {
+    "theatre": "germany",
+    "points": [
+      { "id": "g1", "lat": 50.05, "lon": 8.57, "tas": 420, "alt": 15000, "fuelFlow": 5000, "windSpeed": 20, "windDir": 270 },
+      { "id": "g2", "lat": 51.50, "lon": 10.20, "tas": 420, "alt": 15000, "fuelFlow": 5000, "windSpeed": 25, "windDir": 280 },
+      { "id": "g3", "lat": 52.36, "lon": 13.50, "tas": 450, "alt": 20000, "fuelFlow": 5500, "windSpeed": 30, "windDir": 290 },
+      { "id": "g4", "lat": 50.90, "lon": 12.00, "tas": 400, "alt": 10000, "fuelFlow": 4800, "windSpeed": 15, "windDir": 250 }
+    ],
+    "declination": 3,
+    "bankAngle": 45,
+    "initTimeSec": 43200,
+    "initFob": 12000
+  }
+]

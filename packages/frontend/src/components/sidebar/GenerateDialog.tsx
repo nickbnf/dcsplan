@@ -7,6 +7,7 @@ import { buildKneeboardRequest, kneeboardRevision, type KneeboardRevision } from
 import { trackEvent } from '../../utils/plausible';
 import { usePerformance } from '../../contexts/PerformanceContext';
 import { useOptionalFlightPlan } from '../../contexts/FlightPlanContext';
+import { useSelectedMap } from '../../hooks/useSelectedMap';
 
 interface GenerateDialogProps {
   flightPlan?: FlightPlan;
@@ -24,6 +25,8 @@ interface TaskStatus {
 export const GenerateDialog: React.FC<GenerateDialogProps> = ({ flightPlan, library }) => {
   const { performance } = usePerformance();
   const finalizeVersion = useOptionalFlightPlan()?.finalizeVersion;
+  // The kneeboard is drawn on the map shown in the planner (add-theatre-maps D7).
+  const { mapId } = useSelectedMap(flightPlan?.theatre ?? '');
   const [output, setOutput] = useState<'zip' | number>('zip');
   const [includeFuelCalculations, setIncludeFuelCalculations] = useState(true);
   const [includeCoordinates, setIncludeCoordinates] = useState(true);
@@ -197,6 +200,10 @@ export const GenerateDialog: React.FC<GenerateDialogProps> = ({ flightPlan, libr
       if (includeCoordinates) detailsList.push('coords');
       if (detailsList.length > 0) {
         params.append('details', detailsList.join(','));
+      }
+      // Without a map (catalogue not loaded yet) the backend uses the theatre's default.
+      if (mapId) {
+        params.append('map', mapId);
       }
 
       // A signed-in plan is stamped with the version it is generated from: the

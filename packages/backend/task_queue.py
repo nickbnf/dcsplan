@@ -40,6 +40,7 @@ class TaskState:
     details: set[str]
     created_at: float
     revision: Optional[KneeboardRevision] = None  # stamped on the waypoint list page
+    map_id: Optional[str] = None  # theatre map to draw on; default map when None
     started_at: Optional[float] = None
     completed_at: Optional[float] = None
     progress_message: Optional[str] = None
@@ -151,12 +152,12 @@ class TaskQueue:
             # Generate kneeboard
             if task_state.output == "zip":
                 progress_callback("Generating all leg maps...")
-                result = generate_kneeboard_zip(task_state.flight_plan, progress_callback, task_state.details, aircraft=task_state.aircraft, revision=task_state.revision)
+                result = generate_kneeboard_zip(task_state.flight_plan, progress_callback, task_state.details, aircraft=task_state.aircraft, revision=task_state.revision, map_id=task_state.map_id)
                 media_type = "application/zip"
             else:
                 leg_index = int(task_state.output) - 1
                 progress_callback(f"Generating leg {task_state.output} map...")
-                result = generate_kneeboard_single_png(task_state.flight_plan, leg_index, task_state.details, aircraft=task_state.aircraft)
+                result = generate_kneeboard_single_png(task_state.flight_plan, leg_index, task_state.details, aircraft=task_state.aircraft, map_id=task_state.map_id)
                 media_type = "image/png"
             
             # Update task state with result
@@ -182,7 +183,7 @@ class TaskQueue:
                     task_state.error = error_msg
                     task_state.progress_message = f"Error: {error_msg}"
     
-    def submit_task(self, flight_plan: FlightPlan, output: str, details: set[str], aircraft: Aircraft | None = None, revision: KneeboardRevision | None = None) -> str:
+    def submit_task(self, flight_plan: FlightPlan, output: str, details: set[str], aircraft: Aircraft | None = None, revision: KneeboardRevision | None = None, map_id: str | None = None) -> str:
         """
         Submit a new task to the queue.
 
@@ -191,6 +192,7 @@ class TaskQueue:
             output: Output type ("zip" or leg number)
             details: Set of extra detail keys to display (e.g. {"coords", "efr"})
             revision: The plan version to stamp, for a signed-in plan
+            map_id: The theatre map to draw on (default map when None)
 
         Returns:
             Task ID
@@ -205,6 +207,7 @@ class TaskQueue:
             details=details,
             created_at=time.time(),
             revision=revision,
+            map_id=map_id,
             progress_message="In queue"
         )
         

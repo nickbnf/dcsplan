@@ -8,7 +8,7 @@ symbols, minute marks on legs, a north arrow, and a total distance/time summary.
 import io
 import math
 import logging
-from typing import Tuple
+from typing import Optional, Tuple
 from PIL import Image, ImageDraw
 
 from flight_plan import FlightPlan, FlightPlanData
@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 OVERVIEW_FILL_TARGET = 0.85
 
 
-def generate_overview_map_page(flight_plan: FlightPlan, flight_plan_data: FlightPlanData) -> bytes:
+def generate_overview_map_page(flight_plan: FlightPlan, flight_plan_data: FlightPlanData, map_id: Optional[str] = None) -> bytes:
     """
     Generate a 768x1024 PNG overview map showing the entire route.
 
@@ -50,7 +50,7 @@ def generate_overview_map_page(flight_plan: FlightPlan, flight_plan_data: Flight
     Returns:
         PNG image bytes (768 x 1024, RGB).
     """
-    map_info = _get_map_info(flight_plan.theatre)
+    map_info = _get_map_info(flight_plan.theatre, map_id)
     transformer = _transformer_for_projection(map_info)
 
     # ── Step 1: Compute route bounding box in projected coordinates ──────────

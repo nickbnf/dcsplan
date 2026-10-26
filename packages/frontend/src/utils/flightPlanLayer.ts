@@ -6,10 +6,14 @@ import { Stroke, Style, Circle, Fill, Text, RegularShape, Icon } from "ol/style"
 import Feature from "ol/Feature";
 import { transform } from "ol/proj";
 import { calculateAllLegDrawData, generateArcPoints } from "./legCalculations";
+import type { TheatreNavigation } from "../hooks/useTheatreNavigation";
 
 // Create a vector layer from the flight plan
+// Leg geometry (turns, straightening points) comes from the theatre's navigation
+// settings; `projection` is the displayed map's and only places the resulting
+// lat/lon, so each straight part of a leg is a straight segment on any map.
 // excludeWaypointIndex is the index of the waypoint to exclude (i.e. because it is being dragged)
-export const createFlightPlanLayer = (flightPlan: FlightPlan, projection: any, navigationMode: string, excludedWaypointIndex?: number, selectedWaypointIndex?: number) => {
+export const createFlightPlanLayer = (flightPlan: FlightPlan, projection: any, navigation: TheatreNavigation, excludedWaypointIndex?: number, selectedWaypointIndex?: number) => {
     const source = new VectorSource();
     
     // Add point features for turn points
@@ -39,7 +43,7 @@ export const createFlightPlanLayer = (flightPlan: FlightPlan, projection: any, n
     }
 
     // Calculate all leg data once (sequential calculation)
-    const legDrawData = calculateAllLegDrawData(flightPlan, projection, navigationMode);
+    const legDrawData = calculateAllLegDrawData(flightPlan, navigation.projection, navigation.navigationMode);
 
     // Add line features for every pair of points in the flight plan
     // Skip lines that involve the excluded waypoint
@@ -68,7 +72,7 @@ export const createFlightPlanLayer = (flightPlan: FlightPlan, projection: any, n
                     leg.straighteningLat,
                     leg.straighteningLon,
                     leg.turnDirection,
-                    projection,
+                    navigation.projection,
                     30
                 );
 

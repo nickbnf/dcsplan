@@ -1,7 +1,7 @@
 # Architecture Decisions — Centralized Flight Plans
 
-**Status:** Accepted (product discovery complete, implementation not started)
-**Date:** 2026-08-13
+**Status:** Accepted. In implementation: Phases 0 and 1 are delivered, Phase 2 is next (see *Programme status*)
+**Date:** 2026-08-13 (status last updated 2026-10-26)
 **Sources:** `docs/plans/2026-07-27-centralized-flightplans-product-brief.md` (the *what*), `docs/plans/2026-07-27-centralized-flightplans-pressure-test.md` (the edge cases that produced these decisions)
 
 ---
@@ -110,6 +110,7 @@ The split we follow:
 - Restore creates a **new current version**, which pins a fresh snapshot of today's dependencies.
 - If a dependency was **deleted** since, it renders as a *missing object* placeholder, with a one-click **"recover into the library"** sourced from the chosen version's pinned snapshot (read-time use, per AD-3).
 - Restoring a shared plan updates the current plan for all members, consistent with AD-6.
+- **Library and profile histories are deferred** (2026-10-26). Only the plan history is built (`add-version-history`). For libraries and profiles, deletion is already recoverable (Trash, then the copies pinned in plan versions) and a plan's kneeboard is reproducible from its own versions (AD-3). What remains unprotected is a bad *edit* to a live entry, which matters mainly when other members make it — see *Deferred*. If built, the history is **per entry**, not a snapshot of the whole library: restoring a whole library would roll back other members' unrelated edits, which is the problem this decision exists to avoid.
 
 **Spans:** `version-history`, `theatre-library`, `aircraft-performance`
 
@@ -436,27 +437,50 @@ Neither touches entry ids, entry routes, or any stored plan. Uniqueness per spac
 
 ---
 
+## Programme status
+
+*As of 2026-10-26.* Phases are those of the product brief (§6).
+
+**Delivered** (archived in `openspec/changes/archive/`):
+
+| Phase | Changes |
+|---|---|
+| Client-side preparation | `add-edit-undo`, `add-new-plan-flow`, `extract-performance-profiles`, `add-yjs-flightplan` |
+| Phase 0 — Foundations | `add-user-accounts`, `add-cloud-sync` (incl. the wire-format reshape), `unify-plan-name`, `add-library-profile-sync`, `add-local-data-import` |
+| Phase 1 — Solo sync + versioning (complete) | `add-trash-and-soft-delete`, `split-deletion-requirements`, `add-version-history` (plan versions, restore, kneeboard stamp) |
+
+**Remaining:**
+
+| Phase | Work | Decisions |
+|---|---|---|
+| Phase 2 | Squadrons change, not yet proposed: squadron creation, invite links, membership and roles, the space switcher, space-scoped addresses (`/s/:space/…`), squadron trash and deletion, change awareness ("changed since") | AD-1, AD-7, AD-15, AD-16 |
+| Phase 2 | `add-plan-sharing`: revocable links, anonymous view and copy-out | AD-10 |
+| Later | Kneeboard regenerated from a past version; presence and cursors (Yjs awareness); undo for library and profile edits | AD-3, AD-6, AD-12 |
+| Phase 3 | Plan families | *Deferred* below |
+
+---
+
 ## Decision → capability → change map
 
 > Changes are referenced by name, not by number — the sequence has already shifted once and names match the `openspec/changes/` directories.
 
 | AD | Decision | Primary capabilities | First change that needs it |
 |---|---|---|---|
-| AD-1 | Space is the unit of ownership | `space` | `add-user-accounts` |
+| AD-1 | Space is the unit of ownership | `space` | `add-user-accounts` (Personal space); squadron spaces in the squadrons change, not yet proposed |
 | AD-2 | Profile as a first-class entity | `aircraft-performance`, `performance-regime` | `extract-performance-profiles` |
 | AD-3 | Reference vs pinned snapshot | `version-history`, `theatre-library` | `add-version-history` (delivered for plan versions) |
-| AD-4 | Three independent histories | `version-history` | `add-version-history` (plan history delivered; library and profile histories to follow) |
+| AD-4 | Three independent histories | `version-history` | `add-version-history` (plan history delivered; library and profile histories deferred) |
 | AD-5 | Autosave ≠ version | `plan-sync`, `version-history` | `add-yjs-flightplan` (plan persistence), then `add-cloud-sync`; versions in `add-version-history` |
 | AD-6 | Yjs CRDT for flight plans; LWW for library/profiles | `plan-sync`, `edit-undo` | `add-yjs-flightplan` (client prep), then `add-cloud-sync` |
-| AD-7 | Soft delete + integrity at delete time | `soft-delete`, `space` | `add-trash-and-soft-delete` (delivered for the Personal space, profile rule amended) |
+| AD-7 | Soft delete + integrity at delete time | `soft-delete`, `space` | `add-trash-and-soft-delete` (delivered for the Personal space, profile rule amended); squadron deletion, admin restore and auto-promotion in the squadrons change |
 | AD-8 | Additive migration that moves local work; per-item chooser | `local-data-migration`, `user-identity`, `plan-sync` | `add-local-data-import` |
 | AD-9 | Anonymous tier is permanent (library included) | `user-identity`, `map-objects`, `theatre-library` | `add-user-accounts`, amended by `add-local-data-import` |
-| AD-10 | Link-based sharing only | `plan-sharing` | `add-plan-sharing` |
+| AD-10 | Link-based sharing only | `plan-sharing` | `add-plan-sharing` (not yet proposed) |
 | AD-11 | Discord OAuth only | `user-identity` | `add-user-accounts` |
 | AD-12 | Action undo ≠ version restore | `edit-undo` | `add-edit-undo` (ships first) |
 | AD-13 | Server state is SQLite + hand-written SQL | `user-identity` | `add-user-accounts` |
 | AD-14 | Yjs sync served by FastAPI via `pycrdt` | `plan-sync`, `space` | `add-cloud-sync` |
-| AD-15 | Space→plan selection on a Home screen | `space`, `plan-sync`, `plan-lifecycle` | `add-cloud-sync` |
+| AD-15 | Space→plan selection on a Home screen | `space`, `plan-sync`, `plan-lifecycle` | `add-cloud-sync` (space pinned to Personal); the space switcher in the squadrons change |
 | AD-16 | Plans addressed by short id at `/p/:id/:slug` | `plan-addressing`, `space`, `plan-sync` | `unify-plan-name` |
 | AD-17 | A library is a container; entries unique per space | `theatre-library`, `space`, `space-asset-sync` | `add-library-profile-sync` |
 
@@ -476,4 +500,5 @@ Tracked risks, not oversights. Revisit when the trigger fires.
 | **Approval-based squadron joining** | Auto-join via revocable link; a per-squadron approval toggle is a later option | A squadron reports link leakage |
 | **Pinning a share link to a specific Rev** | Links track latest (AD-10) | Someone needs a stable briefing URL |
 | **Folders / tags for plans** | Flat list + sort, scoped per space | Plans reach the hundreds |
+| **Library and profile version history** | Deferred out of Phase 1 (AD-4). Deletion is already recoverable, and kneeboards are reproducible from plan versions. If built: per-entry revisions (entry, data, editor, time) grouped per editing session, restored one entry at a time. A cheaper first step reverts a referenced entry to the copy pinned in a plan version. | Squadron spaces ship and a member hits a bad shared edit they could not recover |
 | **Transactional (cross-entity) undo** | Cross-entity operations are excluded from undo and clear the history instead (AD-12) | The library and profile undo stacks exist, and reverting to an older state proves insufficient |

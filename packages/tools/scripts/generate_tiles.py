@@ -7,9 +7,16 @@ using the XYZ tile server naming convention.
 
 Usage:
     python generate_tiles.py <input_image> <output_directory> [--zoom-levels ZOOM_LEVELS]
+    python generate_tiles.py <input_image> --theatre THEATRE --map MAP
 
 Example:
     python generate_tiles.py map.png ./tiles --zoom-levels 0,1,2,3,4,5
+    python generate_tiles.py vfr.png --theatre germany --map vfr
+
+With --theatre and --map, tiles are written to the backend's tile directory for
+that map (tiles/<theatre>/<map>/) and the tile grid is merged into the map's
+config, backend/theatres/<theatre>/maps/<map>.json. The theatre's own
+theatre.json (with its navigation settings) is never written.
 """
 
 import argparse
@@ -243,7 +250,38 @@ def generate_tiles(
 
     print(json.dumps({"zoom_info": zoom_info}, indent=4))
 
-    return True
+    return zoom_info
+
+
+BACKEND_DIR = Path(__file__).resolve().parent.parent.parent / "backend"
+# Display fields a map config needs besides its tile grid; they describe how the
+# source image is georeferenced, so they are entered by hand.
+MAP_GEOREFERENCE_FIELDS = (
+    "projection", "central_meridian", "origin_lat", "origin_lon",
+    "ref_corner_ne_lat", "ref_corner_ne_lon", "bounds",
+)
+
+
+def write_map_config(theatres_dir, theatre, map_id, zoom_info):
+    """
+    Merge the generated tile grid into theatres/<theatre>/maps/<map>.json,
+    creating it if needed and keeping every hand-entered field.
+
+    Returns the config path and the georeference fields still missing.
+    """
+    theatre_dir = Path(theatres_dir) / theatre
+    if not (theatre_dir / "theatre.json").is_file():
+        raise SystemExit(
+            f"Error: {theatre_dir / 'theatre.json'} not found. Create the theatre "
+            "(name, default_map, navigation) by hand before generating its maps."
+        )
+    map_path = theatre_dir / "maps" / f"{map_id}.json"
+    config = json.loads(map_path.read_text()) if map_path.exists() else {"map_name": map_id}
+    config["zoom_info"] = zoom_info
+    map_path.parent.mkdir(parents=True, exist_ok=True)
+    map_path.write_text(json.dumps(config, indent=4) + "\n")
+    missing = [f for f in MAP_GEOREFERENCE_FIELDS if f not in config]
+    return map_path, missing
 
 
 def main():
@@ -269,6 +307,16 @@ Examples:
     )
     parser.add_argument(
         "--zoom-levels", help="Comma-separated list of zoom levels (e.g., 0,1,2,3,4,5)"
+    )
+    parser.add_argument(
+        "--theatre",
+        help="Theatre id: with --map, write tiles and the map config into the backend",
+    )
+    parser.add_argument("--map", dest="map_id", help="Map id within the theatre (with --theatre)")
+    parser.add_argument(
+        "--theatres-dir",
+        default=str(BACKEND_DIR / "theatres"),
+        help="Theatre configs directory (default: backend/theatres)",
     )
     parser.add_argument(
         "--max-zoom",
@@ -303,6 +351,18 @@ Examples:
 
     args = parser.parse_args()
 
+    if bool(args.theatre) != bool(args.map_id):
+        parser.error("--theatre and --map must be given together")
+    output_directory = args.output_directory
+    if args.theatre and output_directory == "./tiles":
+        output_directory = str(BACKEND_DIR / "config" / "static" / "tiles" / args.theatre / args.map_id)
+    if args.theatre and not (Path(args.theatres_dir) / args.theatre / "theatre.json").is_file():
+        print(
+            f"Error: theatre '{args.theatre}' has no theatre.json in {args.theatres_dir}. Create the "
+            "theatre (name, default_map, navigation) by hand before generating its maps."
+        )
+        sys.exit(1)
+
     # Validate input image
     if not os.path.exists(args.input_image):
         print(f"Error: Input image '{args.input_image}' not found")
@@ -326,9 +386,9 @@ Examples:
         zoom_levels = None
 
     # Generate tiles
-    success = generate_tiles(
+    zoom_info = generate_tiles(
         args.input_image,
-        args.output_directory,
+        output_directory,
         zoom_levels,
         args.tile_size,
         gaussian_sigma=args.gaussian_sigma,
@@ -336,8 +396,17 @@ Examples:
         unsharp_threshold=args.unsharp_threshold,
     )
 
-    if not success:
+    if zoom_info is False:
         sys.exit(1)
+
+    if args.theatre:
+        map_path, missing = write_map_config(args.theatres_dir, args.theatre, args.map_id, zoom_info)
+        print(f"Map config written: {map_path}", file=sys.stderr)
+        if missing:
+            print(
+                f"Still to fill in by hand in {map_path}: {', '.join(missing)}",
+                file=sys.stderr,
+            )
 
 
 if __name__ == "__main__":

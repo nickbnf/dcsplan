@@ -20,15 +20,47 @@ Store the static directory at one of these locations:
 
 ### Directory Structure Requirements
 
+Tiles are stored per theatre, then per map (`tiles/<theatre>/<map>/{z}/{x}/{y}.png`).
+The theatre and map ids match the configs in `backend/theatres/<theatre>/maps/<map>.json`,
+which ship inside the image.
+
 ```
 static/
 └── tiles/
-    ├── tiles_info.json
-    ├── 0/
-    │   └── ...
-    ├── 1/
-    │   └── ...
-    └── ...
+    ├── caucasus/
+    │   └── default/
+    │       ├── 0/
+    │       │   └── ...
+    │       └── ...
+    ├── germany/
+    │   └── default/
+    │       └── ...
+    └── syria/
+        └── default/
+            └── ...
+```
+
+### Migrating to per-map tiles (add-theatre-maps)
+
+Releases before add-theatre-maps stored tiles directly under `tiles/<theatre>/{z}/`.
+Before deploying a release with theatre maps, move each theatre's zoom levels into
+its `default` map:
+
+```bash
+cd /opt/dcsplan/static/tiles
+for theatre in caucasus germany syria; do
+  mkdir "$theatre/default"
+  find "$theatre" -mindepth 1 -maxdepth 1 ! -name default -exec mv {} "$theatre/default/" \;
+done
+```
+
+To roll back to an earlier release, move them back:
+
+```bash
+cd /opt/dcsplan/static/tiles
+for theatre in caucasus germany syria; do
+  mv "$theatre"/default/* "$theatre"/ && rmdir "$theatre/default"
+done
 ```
 
 ### Permissions
@@ -187,7 +219,7 @@ To update tiles without rebuilding the container:
 
 1. Copy new tiles to the host directory:
    ```bash
-   rsync -av /path/to/new/tiles/ /opt/dcsplan/static/tiles/
+   rsync -av /path/to/new/tiles/ /opt/dcsplan/static/tiles/<theatre>/<map>/
    ```
 
 2. Restart the container:
@@ -195,7 +227,9 @@ To update tiles without rebuilding the container:
    podman restart dcsplan-backend
    ```
 
-No container rebuild is required since tiles are mounted as a volume.
+No container rebuild is required since tiles are mounted as a volume. A new map also
+needs its `backend/theatres/<theatre>/maps/<map>.json` config, which does require a new
+image.
 
 ## Networking Setup
 

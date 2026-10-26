@@ -13,13 +13,13 @@ from PIL import Image
 import math
 import io
 import os
-import json
 import logging
 from pydantic import BaseModel, Field
 from pyproj import Transformer
 from map_annotations import annotate_map, draw_info_box, draw_comment_strip
 from flight_plan import FlightPlan, FlightPlanData
 from waypoint_list_page import generate_waypoint_list_page
+import theatres
 
 # Set up logger (logging configuration is handled centrally in main.py)
 logger = logging.getLogger(__name__)
@@ -45,7 +45,8 @@ class MapBounds(BaseModel):
 class MapInfo(BaseModel):
     """Complete map information including zoom levels and bounds."""
     theatre: str = Field(..., description="Theatre code")
-    theatre_name: str = Field(..., description="Theatre full name")
+    map_id: str = Field(..., description="Map id within the theatre")
+    map_name: Optional[str] = Field(default=None, description="Map display name")
     zoom_info: List[ZoomLevelInfo]
     projection: str = Field(..., description="Projection type")
     central_meridian: float = Field(..., description="Central meridian for Transverse Mercator projection")
@@ -59,7 +60,7 @@ class MapInfo(BaseModel):
     tileSize: Optional[int] = 256
 
 
-def generate_kneeboard_single_png(flight_plan: FlightPlan, leg_index: int, details: set[str] = None, aircraft=None) -> bytes:
+def generate_kneeboard_single_png(flight_plan: FlightPlan, leg_index: int, details: set[str] = None, aircraft=None, map_id: Optional[str] = None) -> bytes:
     """
     Generate a 768x1024 PNG image with the map for the given leg of the flight plan.
     
@@ -80,18 +81,19 @@ def generate_kneeboard_single_png(flight_plan: FlightPlan, leg_index: int, detai
     # Generate map for the given leg
     flightPlanData = FlightPlanData(flight_plan, aircraft)
     logger.info(f"Flight plan data: {pprint.pformat(flightPlanData)}")
-    leg_map_png = generate_leg_map(flight_plan, flightPlanData, leg_index, details or set())
+    leg_map_png = generate_leg_map(flight_plan, flightPlanData, leg_index, details or set(), map_id)
     logger.info(f"Kneeboard PNG generated: {len(leg_map_png)} bytes")
 
     return leg_map_png
 
-def generate_kneeboard_zip(flight_plan: FlightPlan, progress_callback: Optional[Callable[[str], None]] = None, details: set[str] = None, aircraft=None, revision=None) -> bytes:
+def generate_kneeboard_zip(flight_plan: FlightPlan, progress_callback: Optional[Callable[[str], None]] = None, details: set[str] = None, aircraft=None, revision=None, map_id: Optional[str] = None) -> bytes:
     """
     Generate a ZIP file containing all the leg maps for the flight plan.
     
     Args:
         flight_plan: The flight plan
         revision: The plan version stamped on the waypoint list page (add-version-history D8)
+        map_id: The theatre map to draw on (default map when None)
     Returns:
         ZIP file data as bytes
     """
@@ -108,7 +110,7 @@ def generate_kneeboard_zip(flight_plan: FlightPlan, progress_callback: Optional[
 
         if progress_callback:
             progress_callback(f"Generating leg {i+1}/{len(flightPlanData.legData)} map...")
-        leg_map = generate_leg_map(flight_plan, flightPlanData, i, details or set())
+        leg_map = generate_leg_map(flight_plan, flightPlanData, i, details or set(), map_id)
         leg_maps.append(leg_map)
         logger.info(f"Leg {i+1}/{len(flightPlanData.legData)} completed: {len(leg_map)} bytes")
 
@@ -124,7 +126,7 @@ def generate_kneeboard_zip(flight_plan: FlightPlan, progress_callback: Optional[
     from overview_map_page import generate_overview_map_page
     if progress_callback:
         progress_callback("Generating overview map page...")
-    overview_page = generate_overview_map_page(flight_plan, flightPlanData)
+    overview_page = generate_overview_map_page(flight_plan, flightPlanData, map_id)
     logger.info(f"Overview map page generated: {len(overview_page)} bytes")
 
     # Create ZIP file
@@ -142,23 +144,19 @@ def generate_kneeboard_zip(flight_plan: FlightPlan, progress_callback: Optional[
 TILES_DIR = os.path.join(os.path.dirname(__file__), "config", "static", "tiles")
 BLANK_TILE_PATH = os.path.join(os.path.dirname(__file__), "config", "blank.png")
 TILES_INFO_PATH = os.path.join(TILES_DIR, "tiles_info.json") # Alias for backward compatibility with tests
-THEATRES_DIR = os.path.join(os.path.dirname(__file__), "theatres")
 MAP_WIDTH = 768
 MAP_HEIGHT = 1024
 LEG_HEIGHT_TARGET = 0.70  # Leg should occupy 70% of height
 TILE_SIZE = 256  # Standard tile size in pixels
 
 
-def _get_map_info(theatre: str) -> MapInfo:
-    """Load and return tile info from JSON file."""
-    map_info_path = os.path.join(THEATRES_DIR, f"{theatre}.json")
-    logger.info(f"Loading map info from {map_info_path}")
-    if not os.path.exists(map_info_path):
-        logger.error(f"Map info file not found at {map_info_path}")
-        raise FileNotFoundError(f"Map info file not found at {map_info_path}")
-    with open(map_info_path, 'r') as f:
-        data = json.load(f)
-        data['theatre'] = theatre
+def _get_map_info(theatre: str, map_id: Optional[str] = None) -> MapInfo:
+    """Load a map's tile info; the theatre's default map when `map_id` is None."""
+    map_id = theatres.resolve_map_id(theatre, map_id)
+    logger.info(f"Loading map info for {theatre}/{map_id}")
+    data = theatres.load_map(theatre, map_id)
+    data['theatre'] = theatre
+    data['map_id'] = map_id
     map_info = MapInfo.model_validate(data)
     logger.info(f"Map info loaded: {len(map_info.zoom_info)} zoom levels")
     return map_info
@@ -278,7 +276,7 @@ def _select_zoom_level(map_info: MapInfo, leg_distance_meters: float) -> Tuple[i
     return selected_zoom, selected_leg_height
 
 
-def _fetch_tile(theatre_name: str, z: int, x: int, y: int) -> Optional[Image.Image]:
+def _fetch_tile(theatre_name: str, map_id: str, z: int, x: int, y: int) -> Optional[Image.Image]:
     """
     Fetch a tile from the file system.
     
@@ -288,7 +286,7 @@ def _fetch_tile(theatre_name: str, z: int, x: int, y: int) -> Optional[Image.Ima
     Returns:
         PIL Image or None if tile doesn't exist
     """
-    tile_path = os.path.join(TILES_DIR, theatre_name, str(z), str(x), f"{y}.png")
+    tile_path = os.path.join(TILES_DIR, theatre_name, map_id, str(z), str(x), f"{y}.png")
     # logger.debug(f"Fetching tile z={z}, x={x}, y={y} from {tile_path}")
     
     if os.path.exists(tile_path):
@@ -452,7 +450,7 @@ def _assemble_tiles(
     tiles_fetched = 0
     for ty in range(min_tile_y, max_tile_y + 1):
         for tx in range(min_tile_x, max_tile_x + 1):
-            tile_img = _fetch_tile(map_info.theatre, zoom, tx, ty)
+            tile_img = _fetch_tile(map_info.theatre, map_info.map_id, zoom, tx, ty)
             x_pos = (tx - min_tile_x) * TILE_SIZE
             y_pos = (ty - min_tile_y) * TILE_SIZE
             composite.paste(tile_img, (x_pos, y_pos))
@@ -669,7 +667,8 @@ def generate_leg_map(
     flight_plan: FlightPlan,
     flight_plan_data: FlightPlanData,
     leg_index: int,
-    details: set[str] = None
+    details: set[str] = None,
+    map_id: Optional[str] = None
 ) -> bytes:
     """
     Generate a map image for a single leg of the flight plan.
@@ -678,13 +677,14 @@ def generate_leg_map(
         flight_plan: The flight plan
         flight_plan_data: The flight plan data
         leg_index: Index of the leg to generate the map for
+        map_id: The theatre map to draw on (default map when None)
         
     Returns:
         PNG image data as bytes (768x1024)
     """
     start_time = time.time()
 
-    map_info = _get_map_info(flight_plan.theatre)
+    map_info = _get_map_info(flight_plan.theatre, map_id)
     
     leg_data = flight_plan_data.legData[leg_index]
     origin = leg_data.origin

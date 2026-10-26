@@ -18,9 +18,20 @@ export const getApiUrl = (endpoint: string): string => {
 };
 
 /**
- * Get the tiles base URL
+ * Get the tiles base URL of one map of a theatre
  */
-export const getTilesBaseUrl = (theatre: string): string => {
-  return `${API_URL}/tiles/${theatre}/{z}/{x}/{y}.png`;
+export const getTilesBaseUrl = (theatre: string, mapId: string): string => {
+  return `${API_URL}/tiles/${theatre}/${mapId}/{z}/{x}/{y}.png`;
 };
+
+/**
+ * Get the URL of a theatre's config (name, default map, navigation settings)
+ */
+export const getTheatreInfoUrl = (theatre: string): string => getApiUrl(`theatres/${theatre}/theatre.json`);
+
+/**
+ * Get the URL of a map's config (display projection, tile grid, bounds)
+ */
+export const getMapInfoUrl = (theatre: string, mapId: string): string =>
+  getApiUrl(`theatres/${theatre}/maps/${mapId}.json`);
 

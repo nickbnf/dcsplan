@@ -14,7 +14,8 @@ import { createMapProjection, transformBoundsToTransverseMercator, calculateTran
 import { createTileLayer, calculateResolutions } from '../utils/tileLayer';
 import type { MapInfo } from '../utils/tileLayer';
 import { createGridLayer } from '../utils/latLonGrid';
-import { getApiUrl, getTilesBaseUrl } from '../config/api';
+import { getMapInfoUrl, getTilesBaseUrl } from '../config/api';
+import { useSelectedMap } from '../hooks/useSelectedMap';
 import { MapCoordinatesOverlay } from './MapCoordinatesOverlay';
 import { useLibrarySelection } from '../contexts/LibrarySelectionContext';
 import { initCoordEntry, applyKey, parseCoordEntry, formatTemplate } from '../utils/coordEntryUtils';
@@ -46,6 +47,8 @@ const LibraryMap: React.FC<LibraryMapProps> = ({
   fitTrigger = 0,
 }) => {
   const { selectedId, setSelectedId, coordEntry, setCoordEntry } = useLibrarySelection();
+  // Same per-device map choice as the planner for this theatre (add-theatre-maps D5).
+  const { mapId } = useSelectedMap(theatre);
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<OlMap | null>(null);
   const pictogramLayerRef = useRef<VectorLayer<any> | null>(null);
@@ -68,15 +71,19 @@ const LibraryMap: React.FC<LibraryMapProps> = ({
 
   // ── Fetch map info ────────────────────────────────────────────────────────
   useEffect(() => {
+    if (!mapId) return;
     let cancelled = false;
     setIsLoading(true);
-    fetch(getApiUrl(`theatres/${theatre}.json`), { signal: AbortSignal.timeout(10000) })
+    fetch(getMapInfoUrl(theatre, mapId), { signal: AbortSignal.timeout(10000) })
       .then(r => r.json())
-      .then(data => { if (!cancelled) setMapInfo(data as MapInfo); })
-      .catch(() => {})
-      .finally(() => { if (!cancelled) setIsLoading(false); });
+      .then(data => {
+        if (cancelled) return;
+        setMapInfo({ ...(data as MapInfo), theatre, mapId });
+        setIsLoading(false);
+      })
+      .catch(() => { if (!cancelled) setIsLoading(false); });
     return () => { cancelled = true; };
-  }, [theatre]);
+  }, [theatre, mapId]);
 
   // ── Build pictogram layer ─────────────────────────────────────────────────
   const buildPictogramSource = useCallback((projection: any) => {
@@ -144,7 +151,7 @@ const LibraryMap: React.FC<LibraryMapProps> = ({
     const center = calculateTransverseMercatorCenter(regionBounds, mapProjection);
     const resolutions = calculateResolutions(mapInfo, mapProjection);
 
-    const tileLayer = createTileLayer(mapInfo, mapProjection, getTilesBaseUrl(theatre));
+    const tileLayer = createTileLayer(mapInfo, mapProjection, getTilesBaseUrl(mapInfo.theatre, mapInfo.mapId));
     const gridLayer = createGridLayer(regionBounds, mapProjection);
     gridLayer.set('name', 'grid');
     gridLayerRef.current = gridLayer;
@@ -155,7 +162,8 @@ const LibraryMap: React.FC<LibraryMapProps> = ({
     pictogramLayer.set('name', 'pictograms');
     pictogramLayerRef.current = pictogramLayer;
 
-    const savedState = getMapViewState(`library_${theatre}`);
+    const viewKey = `library_${mapInfo.theatre}`;
+    const savedState = getMapViewState(viewKey, mapProjection, resolutions);
 
     const map = new OlMap({
       target: mapRef.current,
@@ -164,7 +172,7 @@ const LibraryMap: React.FC<LibraryMapProps> = ({
       view: new View({
         projection: mapProjection as any,
         center: savedState ? savedState.center : center,
-        zoom: savedState ? savedState.zoom : 2,
+        ...(savedState ? { resolution: savedState.resolution } : { zoom: 2 }),
         resolutions,
         constrainResolution: true,
         multiWorld: false,
@@ -178,11 +186,7 @@ const LibraryMap: React.FC<LibraryMapProps> = ({
     }
 
     // Save view state on move
-    map.getView().on('change', () => {
-      const c = map.getView().getCenter();
-      const z = map.getView().getZoom();
-      if (c && z !== undefined) saveMapViewState(c as [number, number], z, `library_${theatre}`);
-    });
+    map.getView().on('change', () => saveMapViewState(map.getView(), viewKey));
 
     // Hover tracking
     map.on('pointermove', (e) => {
@@ -366,6 +370,7 @@ const LibraryMap: React.FC<LibraryMapProps> = ({
       )}
       <div ref={mapRef} className="w-full h-full" />
       <DisplayButton
+        theatreId={theatre}
         gridEnabled={gridEnabled}
         measureEnabled={measureEnabled}
         onGridChange={setGridEnabled}

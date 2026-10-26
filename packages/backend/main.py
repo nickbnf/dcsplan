@@ -6,7 +6,7 @@ import truststore
 truststore.inject_into_ssl()
 
 from fastapi import FastAPI, HTTPException, Query, Path, WebSocket
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 from flight_plan import FlightPlan, ImportFlightPlanRequest, KneeboardRequest
@@ -16,6 +16,7 @@ import asset_routes
 import auth_routes
 import space_routes
 import sync
+import theatres
 import trash
 import version_routes
 import os
@@ -90,7 +91,6 @@ async def sync_ws(websocket: WebSocket, plan_id: str):
 # Path to the static directory
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "config", "static")
 TILES_DIR = os.path.join(STATIC_DIR, "tiles")
-THEATRES_DIR = os.path.join(os.path.dirname(__file__), "theatres")
 
 # Path to the blank tile
 BLANK_TILE_PATH = os.path.join(os.path.dirname(__file__), "config", "blank.png")
@@ -100,7 +100,8 @@ BLANK_TILE_PATH = os.path.join(os.path.dirname(__file__), "config", "blank.png")
 async def generate_kneeboard(
     request: KneeboardRequest,
     output: str = Query(default="zip", description="Output type: 'zip' or leg number"),
-    details: str = Query(default="", description="Comma-separated list of extra details to show (e.g. 'coords,efr')")
+    details: str = Query(default="", description="Comma-separated list of extra details to show (e.g. 'coords,efr')"),
+    map: Optional[str] = Query(default=None, description="Theatre map to draw on; the theatre's default map when omitted")
 ):
     """Submit a kneeboard generation task and return task ID."""
     flight_plan = request.flightPlan  # aircraft is a sibling on the wire (AD-2)
@@ -126,10 +127,17 @@ async def generate_kneeboard(
                 )
         except ValueError:
             raise HTTPException(status_code=400, detail=f"Invalid leg number: {output}")
+
+    try:
+        map_id = theatres.resolve_map_id(flight_plan.theatre, map)
+    except theatres.UnknownTheatreError:
+        raise HTTPException(status_code=400, detail=f"Unknown theatre: {flight_plan.theatre}")
+    except theatres.UnknownMapError:
+        raise HTTPException(status_code=400, detail=f"Unknown map for theatre {flight_plan.theatre}: {map}")
     
     # Submit task to queue
     task_queue = get_task_queue()
-    task_id = task_queue.submit_task(flight_plan, output, details_set, aircraft=request.aircraft, revision=request.revision)
+    task_id = task_queue.submit_task(flight_plan, output, details_set, aircraft=request.aircraft, revision=request.revision, map_id=map_id)
     
     logger.info(f"Task {task_id} submitted to queue")
     return {"task_id": task_id}
@@ -172,10 +180,14 @@ def read_root():
     # so the backend serves this at the root (D6).
     return {"message": "Hello from the backend!"}
 
-@app.get("/tiles/{theatre_name}/{z}/{x}/{y}.png")
-async def get_tile(theatre_name: str, z: int, x: int, y: int):
+@app.get("/tiles/{theatre}/{map_id}/{z}/{x}/{y}.png")
+async def get_tile(theatre: str, map_id: str, z: int, x: int, y: int):
+    try:
+        map_id = theatres.resolve_map_id(theatre, map_id)
+    except (theatres.UnknownTheatreError, theatres.UnknownMapError):
+        raise HTTPException(status_code=404, detail="Map not found")
     # Try to serve the actual tile from static directory first
-    tile_path = os.path.join(TILES_DIR, theatre_name, str(z), str(x), f"{y}.png")
+    tile_path = os.path.join(TILES_DIR, theatre, map_id, str(z), str(x), f"{y}.png")
     
     if os.path.exists(tile_path):
         return FileResponse(tile_path)
@@ -184,22 +196,35 @@ async def get_tile(theatre_name: str, z: int, x: int, y: int):
         logger.warning(f"Tile not found at {tile_path}")
         return FileResponse(BLANK_TILE_PATH)
 
-@app.get("/theatres/{theatre_name}.json")
-async def get_theatre_info(theatre_name: str):
-    theatre_info_path = os.path.join(THEATRES_DIR, f"{theatre_name}.json")
-    
-    if os.path.exists(theatre_info_path):
-        return FileResponse(theatre_info_path)
-    else:
-        logger.error(f"Theatre info file not found at {theatre_info_path}")
+# Theatre and map configs change with releases; make browsers revalidate them
+# rather than reuse a heuristically cached copy.
+CONFIG_CACHE_HEADERS = {"Cache-Control": "no-cache"}
+
+# Not /theatres/{theatre}.json: that URL served the pre-add-theatre-maps flat
+# config, which browsers may still hold in their HTTP cache.
+@app.get("/theatres/{theatre}/theatre.json")
+async def get_theatre_info(theatre: str):
+    """The theatre's name, default map and navigation settings."""
+    try:
+        return JSONResponse(theatres.load_theatre(theatre), headers=CONFIG_CACHE_HEADERS)
+    except theatres.UnknownTheatreError:
+        logger.error(f"Theatre not found: {theatre}")
         raise HTTPException(status_code=404, detail="Theatre not found")
+
+@app.get("/theatres/{theatre}/maps/{map_id}.json")
+async def get_map_info(theatre: str, map_id: str):
+    """A map's display projection, tile grid and bounds."""
+    try:
+        return FileResponse(theatres.map_path(theatre, map_id), headers=CONFIG_CACHE_HEADERS)
+    except (theatres.UnknownTheatreError, theatres.UnknownMapError):
+        logger.error(f"Map not found: {theatre}/{map_id}")
+        raise HTTPException(status_code=404, detail="Map not found")
 
 @app.get("/theatres")
 async def list_theatres():
-    """List all available theatre IDs."""
+    """Every theatre with its name, default map and maps (add-theatre-maps)."""
     try:
-        theatres = [f[:-5] for f in os.listdir(THEATRES_DIR) if f.endswith(".json")]
-        return {"theatres": theatres}
+        return JSONResponse({"theatres": theatres.catalogue()}, headers=CONFIG_CACHE_HEADERS)
     except Exception as e:
         logger.error(f"Error listing theatres: {e}")
         raise HTTPException(status_code=500, detail="Could not list theatres")

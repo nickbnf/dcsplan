@@ -15,8 +15,8 @@ const plan: FlightPlan = {
 };
 
 const theatres = [
-  { id: 'caucasus', name: 'Caucasus' },
-  { id: 'syria', name: 'Syria' },
+  { id: 'caucasus', name: 'Caucasus', defaultMap: 'default', maps: [{ id: 'default', name: 'Default' }] },
+  { id: 'syria', name: 'Syria', defaultMap: 'default', maps: [{ id: 'default', name: 'Default' }] },
 ];
 
 function renderZone(overrides: Partial<React.ComponentProps<typeof ButtonZone>> = {}) {

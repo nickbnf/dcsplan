@@ -7,16 +7,14 @@ This module defines the Pydantic models for flight plan validation and data stru
 import math
 import pprint
 import logging
-import os
-import json
 from pydantic import BaseModel, Field
 from typing import Any, List, Tuple, Optional
 from pyproj import Transformer
 
+import theatres
+
 # Set up logger (logging configuration is handled centrally in main.py)
 logger = logging.getLogger(__name__)
-
-THEATRES_DIR = os.path.join(os.path.dirname(__file__), "theatres")
 
 class RegimeCruise(BaseModel):
     tas: float = Field(..., gt=0, description="Cruise TAS (knots)")
@@ -188,19 +186,15 @@ class TurnData:
         self.center = Point(center_lat, center_lon)
 
 
-def _load_theatre_config(theatre: str) -> dict:
-    """Load theatre configuration from JSON file."""
-    map_info_path = os.path.join(THEATRES_DIR, f"{theatre}.json")
-    if not os.path.exists(map_info_path):
-        raise FileNotFoundError(f"Theatre config not found at {map_info_path}")
-    with open(map_info_path, 'r') as f:
-        return json.load(f)
+def _load_navigation_config(theatre: str) -> dict:
+    """Load the theatre's navigation settings (never those of a display map)."""
+    return theatres.load_theatre(theatre)["navigation"]
 
 
-def _create_transformer(theatre_config: dict) -> Transformer:
-    """Create a pyproj Transformer from theatre configuration."""
-    projection = theatre_config.get("projection", "transverse_mercator")
-    central_meridian = theatre_config.get("central_meridian", 39)
+def _create_transformer(navigation_config: dict) -> Transformer:
+    """Create a pyproj Transformer from navigation settings."""
+    projection = navigation_config.get("projection", "transverse_mercator")
+    central_meridian = navigation_config.get("central_meridian", 39)
 
     if projection == "transverse_mercator":
         return Transformer.from_crs(
@@ -697,10 +691,10 @@ class FlightPlanData:
         self.totalFuel = 0
         self.fuelReserve = 0
 
-        # Load theatre config and create transformer
-        theatre_config = _load_theatre_config(flightPlan.theatre)
-        transformer = _create_transformer(theatre_config)
-        navigation_mode = theatre_config.get("navigation_mode", "geographic")
+        # Load the theatre's navigation settings and create transformer
+        navigation_config = _load_navigation_config(flightPlan.theatre)
+        transformer = _create_transformer(navigation_config)
+        navigation_mode = navigation_config.get("mode", "geographic")
 
         hackOffsetSec: int | None = None
         previousEta = flightPlan.initTimeSec

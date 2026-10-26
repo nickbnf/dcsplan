@@ -1,0 +1,9 @@
+{
+    "theatre_name": "Caucasus",
+    "default_map": "default",
+    "navigation": {
+        "mode": "geographic",
+        "projection": "mercator",
+        "central_meridian": 42
+    }
+}

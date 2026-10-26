@@ -42,6 +42,37 @@ python generate_tiles.py map.png ./tiles --max-zoom 6
 python generate_tiles.py map.png ./tiles --tile-size 512
 ```
 
+### Adding a map to a theatre
+
+A theatre can offer several maps (tile sets, possibly with different projections).
+The backend reads them from this layout:
+
+```
+backend/theatres/<theatre>/
+├── theatre.json        # name, default_map, navigation — hand-maintained
+└── maps/
+    └── <map>.json      # map_name, projection, georeference, bounds, zoom_info
+backend/config/static/tiles/<theatre>/<map>/{z}/{x}/{y}.png
+```
+
+`theatre.json`'s `navigation` block (mode and projection) drives every leg
+heading, distance and turn, on every map of the theatre. It is written by hand
+and never by this script, so generating or regenerating a map can never change
+computed flight plan values.
+
+To add a map, with the theatre already set up:
+
+```bash
+python generate_tiles.py vfr.png --theatre germany --map vfr --max-zoom 8
+```
+
+This writes the tiles to `backend/config/static/tiles/germany/vfr/` and merges the
+tile grid (`zoom_info`) into `backend/theatres/germany/maps/vfr.json`, creating it if
+needed and keeping fields already there. On a new map, fill in by hand what the
+script cannot know (it lists them when missing): `map_name`, `projection`,
+`central_meridian` (plus `std_parallel1/2` for a conic projection), `origin_lat`,
+`origin_lon`, `ref_corner_ne_lat`, `ref_corner_ne_lon` and `bounds`.
+
 ### Output Structure
 
 The script generates tiles in the following structure:
@@ -75,6 +106,8 @@ tiles/
 - `--zoom-levels`: Comma-separated list of zoom levels (e.g., 0,1,2,3,4,5)
 - `--max-zoom`: Maximum zoom level to generate (default: 5)
 - `--tile-size`: Size of each tile in pixels (default: 256)
+- `--theatre`, `--map`: Write tiles and the map config into the backend for that map (see above)
+- `--theatres-dir`: Theatre configs directory (default: `backend/theatres`)
 
 ### Examples
 

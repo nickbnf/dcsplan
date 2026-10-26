@@ -589,6 +589,54 @@ def test_kneeboard_request_revision_is_optional(valid_flight_plan):
     assert stamped.revision.rev == 5
 
 
+# --- add-theatre-maps (D7): the kneeboard draws on the requested map ---
+
+def test_map_info_defaults_to_theatre_default_map():
+    from kneeboard import _get_map_info
+    map_info = _get_map_info("syria")
+    assert map_info.theatre == "syria"
+    assert map_info.map_id == "default"
+
+
+def test_fetch_tile_reads_map_directory(tmp_path, monkeypatch):
+    from PIL import Image
+    import kneeboard
+    tile_dir = tmp_path / "syria" / "alt" / "2" / "1"
+    tile_dir.mkdir(parents=True)
+    Image.new("RGB", (256, 256), (10, 20, 30)).save(tile_dir / "0.png")
+    monkeypatch.setattr(kneeboard, "TILES_DIR", str(tmp_path))
+    tile = kneeboard._fetch_tile("syria", "alt", 2, 1, 0)
+    assert tile.getpixel((0, 0)) == (10, 20, 30)
+
+
+@pytest.fixture
+def kneeboard_client():
+    from fastapi.testclient import TestClient
+    from main import app
+    from task_queue import get_task_queue
+    return TestClient(app), get_task_queue()
+
+
+def _kneeboard_body(flight_plan):
+    return {"flightPlan": flight_plan, "aircraft": {"model": "", "takeoffConfiguration": "", "regimes": []}}
+
+
+def test_kneeboard_request_without_map_uses_default(kneeboard_client, valid_flight_plan):
+    client, queue = kneeboard_client
+    response = client.post("/kneeboard?output=1", json=_kneeboard_body(valid_flight_plan))
+    assert response.status_code == 200
+    assert queue._tasks[response.json()["task_id"]].map_id == "default"
+
+
+def test_kneeboard_request_with_unknown_map_is_rejected(kneeboard_client, valid_flight_plan):
+    client, queue = kneeboard_client
+    tasks_before = set(queue._tasks)
+    response = client.post("/kneeboard?output=1&map=nope", json=_kneeboard_body(valid_flight_plan))
+    assert response.status_code == 400
+    assert "nope" in response.json()["detail"]
+    assert set(queue._tasks) == tasks_before
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
 

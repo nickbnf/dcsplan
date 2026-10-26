@@ -22,8 +22,16 @@ vi.mock('../../contexts/FlightPlanContext', () => ({
   useOptionalFlightPlan: () => flightPlanContext,
 }));
 vi.mock('../../utils/plausible', () => ({ trackEvent: vi.fn() }));
+vi.mock('../../hooks/useTheatres', () => ({
+  useTheatres: () => ({
+    theatres: [{ id: 'caucasus', name: 'Caucasus', defaultMap: 'default', maps: [{ id: 'default', name: 'Default' }, { id: 'vfr', name: 'VFR' }] }],
+    isLoading: false,
+    error: null,
+  }),
+}));
 
 import { GenerateDialog } from './GenerateDialog';
+import { setMapChoice } from '../../utils/mapChoice';
 
 const point = { lat: 42, lon: 41, tas: 400, alt: 3000, fuelFlow: 6000, windSpeed: 0, windDir: 0 };
 const plan: FlightPlan = {
@@ -81,5 +89,22 @@ describe('GenerateDialog version stamp', () => {
     await waitFor(() => expect(kneeboardPosts()).toHaveLength(1));
     const body = JSON.parse(kneeboardPosts()[0][1].body);
     expect(body.revision).toBeUndefined();
+  });
+});
+
+describe('GenerateDialog map (add-theatre-maps D7)', () => {
+  afterEach(() => setMapChoice('caucasus', 'default'));
+
+  it("sends the theatre's default map when none was chosen", async () => {
+    generate();
+    await waitFor(() => expect(kneeboardPosts()).toHaveLength(1));
+    expect(new URL(String(kneeboardPosts()[0][0]), 'http://x').searchParams.get('map')).toBe('default');
+  });
+
+  it('sends the map selected for the theatre', async () => {
+    setMapChoice('caucasus', 'vfr');
+    generate();
+    await waitFor(() => expect(kneeboardPosts()).toHaveLength(1));
+    expect(new URL(String(kneeboardPosts()[0][0]), 'http://x').searchParams.get('map')).toBe('vfr');
   });
 });

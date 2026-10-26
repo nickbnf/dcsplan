@@ -16,7 +16,9 @@ import { createFlightPlanLayer } from '../utils/flightPlanLayer';
 import type { DrawingState } from '../hooks/useDrawing';
 import VectorLayer from 'ol/layer/Vector';
 import VectorSource from 'ol/source/Vector';
-import { getApiUrl, getTilesBaseUrl } from '../config/api';
+import { getMapInfoUrl, getTilesBaseUrl } from '../config/api';
+import { useTheatreNavigation } from '../hooks/useTheatreNavigation';
+import { useSelectedMap } from '../hooks/useSelectedMap';
 import { DisplayButton } from './map/DisplayButton';
 import { MapCoordinatesOverlay } from './MapCoordinatesOverlay';
 import { saveMapViewState, getMapViewState, fitMapToFlightPlan } from '../utils/mapViewState';
@@ -42,7 +44,6 @@ interface MapComponentProps {
   addPoint: (coordinate: [number, number]) => void;
   confirmKeyboardWaypoint: (lat: number, lon: number) => void;
   updatePreviewLine: (coordinate: [number, number]) => void;
-  onMapNavInfoChange?: (info: { projection: any; navigationMode: string }) => void;
   fitToFlightPlanTrigger?: number;
   /** When provided, overrides the default waypoint commit logic for coord-entry. */
   onCoordEntryCommit?: (lat: number, lon: number) => void;
@@ -65,7 +66,6 @@ const MapComponent: React.FC<MapComponentProps> = ({
   addPoint,
   confirmKeyboardWaypoint,
   updatePreviewLine,
-  onMapNavInfoChange,
   fitToFlightPlanTrigger = 0,
   onCoordEntryCommit,
   library = [],
@@ -96,7 +96,13 @@ const MapComponent: React.FC<MapComponentProps> = ({
   const [mapInfo, setMapInfo] = useState<MapInfo | null>(null);
   const [gridEnabled, setGridEnabled] = useState(false);
   const [measureEnabled, setMeasureEnabled] = useState(false);
-  const navigationModeRef = useRef<string>("geographic");
+  // Leg geometry uses the theatre's navigation settings, never the displayed map's.
+  const theatreId = flightPlan.theatre || "syria";
+  const navigation = useTheatreNavigation(theatreId);
+  // The map to draw on: this device's choice for the theatre (add-theatre-maps D5).
+  const { mapId } = useSelectedMap(theatreId);
+  const navigationRef = useRef(navigation);
+  navigationRef.current = navigation;
   const lastFitTriggerRef = useRef<number>(fitToFlightPlanTrigger);
 
   const markerModifyRef = useRef<Modify | null>(null);
@@ -117,78 +123,75 @@ const MapComponent: React.FC<MapComponentProps> = ({
   const selectedObjectIdRef = useRef(selectedObjectId);
   selectedObjectIdRef.current = selectedObjectId;
 
-  // Safe function to fetch and parse tile info JSON
-  const fetchMapInfo = async (): Promise<MapInfo | null> => {
-    try {
-      setIsLoading(true);
-      setError(null);
+  // Safe function to fetch and parse the selected map's tile info JSON
+  const fetchMapInfo = async (theatre: string, selectedMapId: string): Promise<MapInfo> => {
+    const response = await fetch(getMapInfoUrl(theatre, selectedMapId), {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+      },
+      signal: AbortSignal.timeout(10000),
+    });
 
-      const theatre = flightPlan.theatre || "syria";
-      const response = await fetch(getApiUrl(`theatres/${theatre}.json`), {
-        method: 'GET',
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
-        },
-        signal: AbortSignal.timeout(10000),
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const contentType = response.headers.get('content-type');
-      if (!contentType || !contentType.includes('application/json')) {
-        throw new Error('Response is not JSON');
-      }
-
-      const data = await response.json();
-
-      if (typeof data !== 'object' || data === null) {
-        throw new Error('Invalid JSON structure');
-      }
-
-      console.log('Successfully fetched map info:', data);
-      return data as MapInfo;
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
-      console.error('Failed to fetch tile info:', errorMessage);
-      setError(errorMessage);
-      return null;
-    } finally {
-      setIsLoading(false);
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
     }
+
+    const contentType = response.headers.get('content-type');
+    if (!contentType || !contentType.includes('application/json')) {
+      throw new Error('Response is not JSON');
+    }
+
+    const data = await response.json();
+
+    if (typeof data !== 'object' || data === null) {
+      throw new Error('Invalid JSON structure');
+    }
+
+    console.log('Successfully fetched map info:', data);
+    return data as MapInfo;
   };
 
+  // Reload the map config whenever the theatre or the selected map changes;
+  // the map-building effect then rebuilds the view on the new map.
   useEffect(() => {
-    const loadMapInfo = async () => {
-      const info = await fetchMapInfo();
-      setMapInfo(info);
-    };
-    loadMapInfo();
-  }, [flightPlan.theatre]);
+    if (!mapId) return;
+    let cancelled = false;
+    setIsLoading(true);
+    setError(null);
+    fetchMapInfo(theatreId, mapId)
+      .then((info) => {
+        if (cancelled) return;
+        setMapInfo({ ...info, theatre: theatreId, mapId });
+        setIsLoading(false);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
+        console.error('Failed to fetch tile info:', errorMessage);
+        setError(errorMessage);
+        setMapInfo(null);
+        setIsLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [theatreId, mapId]);
 
   // Initialize map when map info is loaded and ref is available
   useEffect(() => {
-    if (!mapInfo || !mapRef.current || isLoading) {
+    if (!mapInfo || !navigation || !mapRef.current || isLoading) {
       return;
     }
 
     const regionBounds = mapInfo?.bounds;
     const { projection: mapProjection } = createMapProjection(mapInfo?.projection, mapInfo?.central_meridian, mapInfo?.std_parallel1, mapInfo?.std_parallel2);
-    const navigationMode = mapInfo?.navigation_mode || "geographic";
-    navigationModeRef.current = navigationMode;
-
-    if (onMapNavInfoChange) {
-      onMapNavInfoChange({ projection: mapProjection, navigationMode });
-    }
 
     const mapProjectionExtent = transformBoundsToTransverseMercator(regionBounds, mapProjection);
     (mapProjection as any).setExtent(mapProjectionExtent);
     const mapProjectionCenter = calculateTransverseMercatorCenter(regionBounds, mapProjection);
     const tileResolutions = calculateResolutions(mapInfo, mapProjection);
 
-    const tileLayer = createTileLayer(mapInfo, mapProjection, getTilesBaseUrl(flightPlan.theatre || "syria"));
+    const tileLayer = createTileLayer(mapInfo, mapProjection, getTilesBaseUrl(mapInfo.theatre, mapInfo.mapId));
     const gridLayer = createGridLayer(regionBounds, mapProjection);
     gridLayer.set('name', 'grid');
     gridLayerRef.current = gridLayer;
@@ -212,7 +215,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
     libGhostsLayer.setVisible(activeTabRef.current === 'objects');
     libGhostsLayerRef.current = libGhostsLayer;
 
-    const flightPlanLayer = createFlightPlanLayer(flightPlanRef.current, mapProjection, navigationMode);
+    const flightPlanLayer = createFlightPlanLayer(flightPlanRef.current, mapProjection, navigation);
     flightPlanLayer.set('name', 'flightplan');
 
     const drawingLayer = new VectorLayer({
@@ -220,7 +223,8 @@ const MapComponent: React.FC<MapComponentProps> = ({
     });
     drawingLayer.set('name', 'drawing');
 
-    const savedState = getMapViewState(flightPlan.theatre);
+    // A view saved on another map of the theatre restores at the same place and scale (D6).
+    const savedState = getMapViewState(mapInfo.theatre, mapProjection, tileResolutions);
 
     mapInstanceRef.current = new Map({
       target: mapRef.current,
@@ -237,7 +241,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
       view: new View({
         projection: mapProjection as any,
         center: savedState ? savedState.center : mapProjectionCenter,
-        zoom: savedState ? savedState.zoom : 2,
+        ...(savedState ? { resolution: savedState.resolution } : { zoom: 2 }),
         resolutions: tileResolutions,
         minZoom: 1,
         constrainResolution: true,
@@ -265,12 +269,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
 
     return () => {
       if (mapInstanceRef.current) {
-        const view = mapInstanceRef.current.getView();
-        const center = view.getCenter();
-        const zoom = view.getZoom();
-        if (center && zoom !== undefined) {
-          saveMapViewState(center as [number, number], zoom, flightPlan.theatre);
-        }
+        saveMapViewState(mapInstanceRef.current.getView(), mapInfo.theatre);
 
         const clickHandler = (mapInstanceRef.current as any).__clickHandler;
         if (clickHandler) {
@@ -290,7 +289,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
         mapInstanceRef.current = null;
       }
     };
-  }, [mapInfo, isLoading]);
+  }, [mapInfo, navigation, isLoading]);
 
   // Update click handler when drawing state changes
   useEffect(() => {
@@ -508,7 +507,8 @@ const MapComponent: React.FC<MapComponentProps> = ({
       mapInstanceRef.current.removeLayer(existingFlightPlanLayer);
     }
 
-    const newFlightPlanLayer = createFlightPlanLayer(flightPlan, mapInstanceRef.current.getView().getProjection(), navigationModeRef.current, drawingState.draggedWaypointIndex ?? undefined, selectedIndex ?? undefined);
+    if (!navigationRef.current) return;
+    const newFlightPlanLayer = createFlightPlanLayer(flightPlan, mapInstanceRef.current.getView().getProjection(), navigationRef.current, drawingState.draggedWaypointIndex ?? undefined, selectedIndex ?? undefined);
     newFlightPlanLayer.set('name', 'flightplan');
 
     mapInstanceRef.current.addLayer(newFlightPlanLayer);
@@ -797,6 +797,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
     <div className="w-full h-full relative">
       <div ref={mapRef} className="w-full h-full" />
       <DisplayButton
+        theatreId={theatreId}
         gridEnabled={gridEnabled}
         measureEnabled={measureEnabled}
         onGridChange={setGridEnabled}
