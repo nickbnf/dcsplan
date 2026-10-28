@@ -111,7 +111,7 @@ jobs:
             [ "$i" = 45 ] && fail "backend did not answer on / within 90s"
             sleep 2
           done
-          curl -sf http://localhost:5001/theatres | grep -q '"theatres":\["' \
+          curl -sf http://localhost:5001/theatres | grep -q '"theatres":\[{"id":"' \
             || fail "/theatres did not return a non-empty list"
           # A missing migrations/ dir is not an error for yoyo: compare counts instead
           expected=$(ls packages/backend/migrations/*.sql | grep -vc '\.rollback\.sql$')
