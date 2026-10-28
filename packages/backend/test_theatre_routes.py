@@ -1,6 +1,4 @@
 """Theatre, map and tile routes (add-theatre-maps D2)."""
-import os
-
 import pytest
 from fastapi.testclient import TestClient
 
@@ -63,9 +61,11 @@ def test_tile_served_from_map_directory(tmp_path, monkeypatch):
 
 
 def test_missing_tile_falls_back_to_blank(tmp_path, monkeypatch):
-    monkeypatch.setattr(main, "TILES_DIR", str(tmp_path))
+    # config/ is not in the repo (it is mounted in deployments), so bring our own blank tile
+    blank = tmp_path / "blank.png"
+    blank.write_bytes(b"blank-bytes")
+    monkeypatch.setattr(main, "BLANK_TILE_PATH", str(blank))
+    monkeypatch.setattr(main, "TILES_DIR", str(tmp_path / "tiles"))
     response = client.get("/tiles/syria/default/3/2/1.png")
     assert response.status_code == 200
-    if os.path.exists(main.BLANK_TILE_PATH):
-        with open(main.BLANK_TILE_PATH, "rb") as f:
-            assert response.content == f.read()
+    assert response.content == b"blank-bytes"

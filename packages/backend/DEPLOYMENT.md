@@ -8,15 +8,40 @@ This guide covers deploying the DCSPlan FastAPI backend using Podman.
 - Static tiles directory prepared on the host
 - GitHub Container Registry access (if pulling pre-built images)
 
+## Config Directory Setup
+
+The image ships the code and the theatre/map configs, but not the `config/`
+directory: it is not in the repository and must be prepared on the host, then
+mounted read-only at `/app/config`.
+
+```
+config/
+├── blank.png        # served for tiles that do not exist
+├── fonts/
+│   ├── default.ttf  # kneeboard annotations
+│   └── fixed.ttf    # kneeboard waypoint list
+└── static/
+    └── tiles/       # see below
+```
+
+- `blank.png` is **required**: `/tiles/...` answers every request for a missing
+  tile (e.g. beyond a map's edges, which the map view asks for routinely) with
+  this file, and fails with a 500 when it is absent. Any small PNG works, a
+  256×256 transparent one is the usual choice.
+- `fonts/` is optional: without it, kneeboard annotations fall back to the
+  system fonts (DejaVu/Liberation), then to Pillow's built-in font; the
+  waypoint list goes straight to Pillow's built-in font.
+- `static/tiles/` holds the map tiles, see below. Without them maps are blank.
+
 ## Static Directory Setup
 
-The static tiles directory must be managed separately and mounted as a volume.
+The static tiles directory (`config/static/`) must be managed separately and
+mounted as a volume, as part of the config directory.
 
-### Recommended Directory Structure
+### Location
 
-Store the static directory at one of these locations:
-- `/opt/dcsplan/static` (recommended)
-- `/var/lib/dcsplan/static`
+The static directory lives inside the config directory, at
+`/var/lib/dcsplan/config/static` on the host (`/app/config/static` in the container).
 
 ### Directory Structure Requirements
 
@@ -47,7 +72,7 @@ Before deploying a release with theatre maps, move each theatre's zoom levels in
 its `default` map:
 
 ```bash
-cd /opt/dcsplan/static/tiles
+cd /var/lib/dcsplan/config/static/tiles
 for theatre in caucasus germany syria; do
   mkdir "$theatre/default"
   find "$theatre" -mindepth 1 -maxdepth 1 ! -name default -exec mv {} "$theatre/default/" \;
@@ -57,7 +82,7 @@ done
 To roll back to an earlier release, move them back:
 
 ```bash
-cd /opt/dcsplan/static/tiles
+cd /var/lib/dcsplan/config/static/tiles
 for theatre in caucasus germany syria; do
   mv "$theatre"/default/* "$theatre"/ && rmdir "$theatre/default"
 done
@@ -65,10 +90,10 @@ done
 
 ### Permissions
 
-Ensure the directory is readable by the container user:
+Ensure the config directory is readable by the container user:
 ```bash
-sudo chown -R 1000:1000 /opt/dcsplan/static
-sudo chmod -R 755 /opt/dcsplan/static
+sudo chown -R 1000:1000 /var/lib/dcsplan/config
+sudo chmod -R 755 /var/lib/dcsplan/config
 ```
 
 ## Image Sources
@@ -147,10 +172,11 @@ podman run -d \
 
 ### Volume Mounts
 
-The static tiles directory must be mounted read-only:
+The config directory (blank tile, fonts and static tiles, see
+[Config Directory Setup](#config-directory-setup)) must be mounted read-only:
 
 ```bash
--v /opt/dcsplan/static:/app/static:ro
+-v /var/lib/dcsplan/config:/app/config:ro
 ```
 
 The runtime data directory (SQLite database) must be mounted read-write so it
@@ -219,7 +245,7 @@ To update tiles without rebuilding the container:
 
 1. Copy new tiles to the host directory:
    ```bash
-   rsync -av /path/to/new/tiles/ /opt/dcsplan/static/tiles/<theatre>/<map>/
+   rsync -av /path/to/new/tiles/ /var/lib/dcsplan/config/static/tiles/<theatre>/<map>/
    ```
 
 2. Restart the container:
@@ -262,18 +288,18 @@ to the frontend. The exact Caddy block is in
    podman logs dcsplan-backend
    ```
 
-2. Verify static directory exists and has correct permissions:
+2. Verify the config directory (including `blank.png`) and its static directory exist and have correct permissions:
    ```bash
-   ls -la /opt/dcsplan/static
+   ls -la /var/lib/dcsplan/config /var/lib/dcsplan/config/static
    ```
 
 ### Permission Errors
 
-If you see permission errors, ensure the static directory is readable:
+If you see permission errors, ensure the config directory is readable:
 
 ```bash
-sudo chown -R 1000:1000 /opt/dcsplan/static
-sudo chmod -R 755 /opt/dcsplan/static
+sudo chown -R 1000:1000 /var/lib/dcsplan/config
+sudo chmod -R 755 /var/lib/dcsplan/config
 ```
 
 ### Auth Not Working
