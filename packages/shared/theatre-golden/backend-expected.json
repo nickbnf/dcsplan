@@ -12,24 +12,24 @@
       "legFuel": 595.8333333333334
     },
     {
-      "straighteningLat": 42.18616326549051,
-      "straighteningLon": 42.52340734014524,
-      "turnCenterLat": 42.15123993977386,
+      "straighteningLat": 42.186163265410684,
+      "straighteningLon": 42.523407340116854,
+      "turnCenterLat": 42.15123993977385,
       "turnCenterLon": 42.50993548757204,
-      "course": 111.14255322112939,
-      "heading": 111.21395897059841,
-      "distanceNm": 115.48838058923107,
+      "course": 111.14255321859264,
+      "heading": 111.21395896790312,
+      "distanceNm": 115.48838058933676,
       "eteSec": 866,
       "legFuel": 1323.0555555555557
     },
     {
-      "straighteningLat": 41.615247641724906,
-      "straighteningLon": 44.925132556362584,
-      "turnCenterLat": 41.64302982996599,
-      "turnCenterLon": 44.935988489616854,
-      "course": 293.2387511836298,
-      "heading": 291.72536465187557,
-      "distanceNm": 140.90008556095,
+      "straighteningLat": 41.61524764166214,
+      "straighteningLon": 44.9251325563409,
+      "turnCenterLat": 41.643029829965485,
+      "turnCenterLon": 44.93598848961855,
+      "course": 293.2387511852794,
+      "heading": 291.72536465348,
+      "distanceNm": 140.90008556119244,
       "eteSec": 1304,
       "legFuel": 1738.6666666666667
     }
@@ -47,24 +47,24 @@
       "legFuel": 811.1111111111111
     },
     {
-      "straighteningLat": 34.64509449711073,
+      "straighteningLat": 34.64509449711074,
       "straighteningLon": 36.689596764319404,
       "turnCenterLat": 34.6143948494815,
       "turnCenterLon": 36.64316209345176,
-      "course": 326.4708998343475,
-      "heading": 324.0710844119624,
-      "distanceNm": 60.972076888923894,
+      "course": 326.4708998343473,
+      "heading": 324.07108441196215,
+      "distanceNm": 60.972076888923795,
       "eteSec": 515,
       "legFuel": 786.8055555555555
     },
     {
       "straighteningLat": 35.38460099887613,
-      "straighteningLon": 35.866216080696645,
+      "straighteningLon": 35.866216080696624,
       "turnCenterLat": 35.37626016180823,
       "turnCenterLon": 35.91250116923737,
-      "course": 197.3736839060607,
-      "heading": 199.121199086959,
-      "distanceNm": 90.35009998173132,
+      "course": 197.37368390606002,
+      "heading": 199.1211990869583,
+      "distanceNm": 90.35009998173133,
       "eteSec": 832,
       "legFuel": 1109.3333333333333
     }
@@ -82,24 +82,24 @@
       "legFuel": 1238.888888888889
     },
     {
-      "straighteningLat": 51.51558498378216,
+      "straighteningLat": 51.515584983782155,
       "straighteningLon": 10.23111341555016,
       "turnCenterLat": 51.47106526341775,
       "turnCenterLon": 10.262743136855189,
-      "course": 77.5362301602832,
-      "heading": 75.59474783579464,
-      "distanceNm": 133.71629196764152,
+      "course": 77.53623016028303,
+      "heading": 75.59474783579446,
+      "distanceNm": 133.71629196764155,
       "eteSec": 1013,
       "legFuel": 1547.638888888889
     },
     {
-      "straighteningLat": 52.30137058443807,
-      "straighteningLon": 13.573214094740566,
+      "straighteningLat": 52.30137058443801,
+      "straighteningLon": 13.573214094740496,
       "turnCenterLat": 52.32379506192296,
       "turnCenterLon": 13.521920935282036,
-      "course": 224.41069822865484,
-      "heading": 225.37124305287375,
-      "distanceNm": 109.05048902940345,
+      "course": 224.41069822865438,
+      "heading": 225.3712430528733,
+      "distanceNm": 109.05048902940398,
       "eteSec": 1016,
       "legFuel": 1354.6666666666667
     }

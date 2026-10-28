@@ -13,6 +13,7 @@
         { "label": "Chojna lake", "px": 18738.5, "py": 7701.5, "lat": "N 52° 56.360", "lon": "E 14° 19.336" },
         { "label": "Konz confluent", "px": 1864.5, "py": 18911.4, "lat": "N 49° 42.115", "lon": "E 6° 34.178" }
     ],
+    "alignment_tolerance_px": 15,
     "zoom_info": [
         {
             "zoom": 0,
