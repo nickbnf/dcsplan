@@ -1,0 +1,84 @@
+{
+    "map_name": "vfr_1976",
+    "crs": "+proj=lcc +lat_1=50.0 +lat_2=54.0 +lat_0=52.0 +lon_0=10.5 +ellps=bessel +units=m +no_defs",
+    "image_width_px": 21719,
+    "image_height_px": 28562,
+    "control_points": [
+        { "label": "Ratzeburg bridge", "px": 11193.5, "py": 5253.1, "lat": "N 53° 42.082", "lon": "E 10° 43.915" },
+        { "label": "Rostock RR bridge", "px": 14161.8, "py": 3992.5, "lat": "N 54° 03.437", "lon": "E 12° 10.567" },
+        { "label": "Szczecin RR bridge", "px": 19115.7, "py": 6124.5, "lat": "N 53° 22.974", "lon": "E 14° 32.161" },
+        { "label": "Dusseldorf bridge", "px": 2577.7, "py": 13573.7, "lat": "N 51° 14.805", "lon": "E 6° 45.541" },
+        { "label": "Dam", "px": 3342.5, "py": 18737.5, "lat": "N 49° 46.545", "lon": "E 7° 13.452" },
+        { "label": "Falkenberg bridge", "px": 16568.5, "py": 13017.6, "lat": "N 51° 26.324", "lon": "E 13° 11.508" },
+        { "label": "Chojna lake", "px": 18738.5, "py": 7701.5, "lat": "N 52° 56.360", "lon": "E 14° 19.336" },
+        { "label": "Konz confluent", "px": 1864.5, "py": 18911.4, "lat": "N 49° 42.115", "lon": "E 6° 34.178" }
+    ],
+    "zoom_info": [
+        {
+            "zoom": 0,
+            "nb_tiles_w": 1,
+            "nb_tiles_h": 1,
+            "width_px": 169,
+            "height_px": 223
+        },
+        {
+            "zoom": 1,
+            "nb_tiles_w": 2,
+            "nb_tiles_h": 2,
+            "width_px": 339,
+            "height_px": 446
+        },
+        {
+            "zoom": 2,
+            "nb_tiles_w": 3,
+            "nb_tiles_h": 4,
+            "width_px": 678,
+            "height_px": 892
+        },
+        {
+            "zoom": 3,
+            "nb_tiles_w": 6,
+            "nb_tiles_h": 7,
+            "width_px": 1357,
+            "height_px": 1785
+        },
+        {
+            "zoom": 4,
+            "nb_tiles_w": 11,
+            "nb_tiles_h": 14,
+            "width_px": 2714,
+            "height_px": 3570
+        },
+        {
+            "zoom": 5,
+            "nb_tiles_w": 22,
+            "nb_tiles_h": 28,
+            "width_px": 5429,
+            "height_px": 7140
+        },
+        {
+            "zoom": 6,
+            "nb_tiles_w": 43,
+            "nb_tiles_h": 56,
+            "width_px": 10859,
+            "height_px": 14281
+        },
+        {
+            "zoom": 7,
+            "nb_tiles_w": 85,
+            "nb_tiles_h": 112,
+            "width_px": 21719,
+            "height_px": 28562
+        },
+        {
+            "zoom": 8,
+            "nb_tiles_w": 170,
+            "nb_tiles_h": 224,
+            "width_px": 43438,
+            "height_px": 57124
+        }
+    ],
+    "origin_x": -343140.201,
+    "origin_y": 357485.065,
+    "resolution": 31.999581
+}
