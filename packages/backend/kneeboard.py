@@ -69,6 +69,10 @@ class MapInfo(BaseModel):
     minZoom: Optional[int] = None
     maxZoom: Optional[int] = None
     tileSize: Optional[int] = 256
+    tile_pixel_ratio: int = Field(default=1, description="Tile image pixels per tile grid pixel (2: high-DPI tiles)")
+    max_tile_zoom: Optional[int] = Field(
+        default=None, description="Highest zoom level with tiles, when not the last zoom_info level"
+    )
 
 
 def generate_kneeboard_single_png(flight_plan: FlightPlan, leg_index: int, details: set[str] = None, aircraft=None, map_id: Optional[str] = None) -> bytes:
@@ -303,6 +307,26 @@ def _fetch_tile(theatre_name: str, map_id: str, z: int, x: int, y: int) -> Optio
     return Image.new('RGB', (TILE_SIZE, TILE_SIZE), color='white')
 
 
+def _fetch_level_tile(map_info: MapInfo, z: int, x: int, y: int) -> Image.Image:
+    """
+    The TILE_SIZE tile (x, y) of zoom level z, whatever the map's tile files.
+
+    A high-DPI tile file holds tile_pixel_ratio times more pixels; a zoom level
+    above max_tile_zoom has no tile files and is cut from the tile of the highest
+    level that has them, as the planner shows it.
+    """
+    source_z = z if map_info.max_tile_zoom is None else min(z, map_info.max_tile_zoom)
+    span = 2 ** (z - source_z)
+    tile_img = _fetch_tile(map_info.theatre, map_info.map_id, source_z, x // span, y // span)
+    if span == 1 and tile_img.size == (TILE_SIZE, TILE_SIZE):
+        return tile_img
+    sub_w, sub_h = tile_img.width / span, tile_img.height / span
+    left, top = (x % span) * sub_w, (y % span) * sub_h
+    return tile_img.resize(
+        (TILE_SIZE, TILE_SIZE), Image.LANCZOS, box=(left, top, left + sub_w, top + sub_h)
+    )
+
+
 def _bbox_tm_to_tile_bounds(
     bbox_tm: Tuple[float, float, float, float],
     map_info: MapInfo,
@@ -440,7 +464,7 @@ def _assemble_tiles(
     tiles_fetched = 0
     for ty in range(min_tile_y, max_tile_y + 1):
         for tx in range(min_tile_x, max_tile_x + 1):
-            tile_img = _fetch_tile(map_info.theatre, map_info.map_id, zoom, tx, ty)
+            tile_img = _fetch_level_tile(map_info, zoom, tx, ty)
             x_pos = (tx - min_tile_x) * TILE_SIZE
             y_pos = (ty - min_tile_y) * TILE_SIZE
             composite.paste(tile_img, (x_pos, y_pos))

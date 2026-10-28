@@ -40,6 +40,11 @@ export interface MapInfo {
   minZoom?: number;
   maxZoom?: number;
   tileSize?: number;
+  // Tile image pixels per tile grid pixel: 2 for high-DPI tiles, 1 when absent
+  tile_pixel_ratio?: number;
+  // Highest zoom level with tiles, the last zoom_info level when absent; the view
+  // shows the levels above by scaling up its tiles
+  max_tile_zoom?: number;
   [key: string]: any; // Allow for additional properties
 }
 
@@ -100,13 +105,25 @@ export const projectedToNativePixel = (mapInfo: MapInfo, x: number, y: number) =
 });
 
 /**
- * Creates the map's tile grid, anchored at the image's top-left corner
+ * The map's pixel ratio: the device's for high-DPI tiles, so that each tile
+ * pixel lands on one screen pixel, and 1 otherwise, so that standard tiles are
+ * not resampled.
+ */
+export const mapPixelRatio = (mapInfo: MapInfo): number =>
+  (mapInfo?.tile_pixel_ratio ?? 1) > 1 ? window.devicePixelRatio || 1 : 1;
+
+/**
+ * Creates the map's tile grid, anchored at the image's top-left corner.
+ * It stops at max_tile_zoom, while the view keeps every zoom_info level.
  */
 export const createTileGrid = (mapInfo: MapInfo) => {
   const tileSize = mapInfo?.tileSize ?? 256;
 
-  const resolutions = calculateResolutions(mapInfo);
-  const sizes: Size[] = (mapInfo?.zoom_info || []).map(
+  const tiledLevels = (mapInfo?.zoom_info || []).filter(
+    (zoomInfo) => mapInfo.max_tile_zoom === undefined || zoomInfo.zoom <= mapInfo.max_tile_zoom
+  );
+  const resolutions = calculateResolutions(mapInfo).slice(0, tiledLevels.length);
+  const sizes: Size[] = tiledLevels.map(
     (zoomInfo) => [zoomInfo.nb_tiles_w, zoomInfo.nb_tiles_h] as Size
   );
 
@@ -130,12 +147,14 @@ export const createTileLayer = (
   // Default to localhost for development if not provided
   const defaultBaseUrl = baseUrl || 'http://localhost:8000/tiles/{z}/{x}/{y}.png';
   const tileGrid = createTileGrid(mapInfo);
-  
+  const tileSize = (mapInfo?.tileSize ?? 256) * (mapInfo?.tile_pixel_ratio ?? 1);
+
   return new TileLayer({
     source: new ImageTileSource({
       url: defaultBaseUrl,
       projection: projection,
       tileGrid: tileGrid,
+      tileSize: tileSize,
       wrapX: false
     })
   });

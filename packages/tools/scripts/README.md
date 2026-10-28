@@ -7,9 +7,13 @@ A Python script that takes a large PNG image and divides it into 256x256 tiles u
 ### Features
 
 - **XYZ Tile Format**: Generates tiles in the standard `z/x/y.png` format
-- **Automatic Zoom Calculation**: Automatically calculates appropriate zoom levels based on image size
+- **Automatic Zoom Calculation**: By default, generates zoom levels 0 to the natural
+  zoom level (one image pixel per tile grid pixel), from the image size
 - **Custom Zoom Levels**: Option to specify exact zoom levels to generate
-- **High Quality**: Uses LANCZOS resampling for high-quality tile resizing
+- **High Quality**: Resizes each zoom level straight from the original image
+  (Lanczos, then a light unsharp mask), never from the previous level
+- **High-DPI Tiles**: By default, writes 2x tiles that are drawn one tile pixel
+  per screen pixel on high-DPI (Retina) displays
 - **Progress Tracking**: Shows progress during tile generation
 
 ### Installation
@@ -30,11 +34,6 @@ python generate_tiles.py map.png ./tiles
 #### Specify Zoom Levels
 ```bash
 python generate_tiles.py map.png ./tiles --zoom-levels 0,1,2,3,4,5
-```
-
-#### Set Maximum Zoom Level
-```bash
-python generate_tiles.py map.png ./tiles --max-zoom 6
 ```
 
 #### Custom Tile Size
@@ -65,14 +64,14 @@ Adding a map takes four steps: tile, enter control points, fit, check.
 **1. Tile.** With the theatre already set up:
 
 ```bash
-python generate_tiles.py vfr.png --theatre germany --map vfr --max-zoom 8
+python generate_tiles.py vfr.png --theatre germany --map vfr --zoom-levels 0,1,2,3,4,5,6,7,8
 ```
 
 This writes the tiles to `backend/config/static/tiles/germany/vfr/` and merges the
-tile grid (`zoom_info`) and the native image size (`image_width_px`,
+tile grid (`zoom_info`, `tile_pixel_ratio`, `max_tile_zoom`) and the native image size (`image_width_px`,
 `image_height_px`) into `backend/theatres/germany/maps/vfr.json`, creating it if
 needed and keeping every other field. It never changes the georeference, so a map
-can be re-tiled (for instance with another `--max-zoom`) without refitting. It
+can be re-tiled (for instance with other `--zoom-levels`) without refitting. It
 lists the georeference fields still missing.
 
 **2. Enter the CRS and control points** by hand in the map config:
@@ -184,13 +183,33 @@ tiles/
 └── ...
 ```
 
+### High-DPI tiles
+
+By default (`--hidpi`) the tile `z/x/y.png` covers the same area of the map as
+a standard tile but is 512x512: its pixels are those of zoom level z+1. With
+the map's pixel ratio set to the device's, the planner draws each tile pixel on
+one screen pixel of a 2x display, so low zoom levels stay as sharp as the
+image viewed at the same scale in an image editor.
+
+The natural zoom level (one image pixel per tile grid pixel) gets no tiles:
+they would only be the original upscaled. The map config says so with
+`"max_tile_zoom"`, the last zoom level with tiles, and `"tile_pixel_ratio": 2`.
+The planner and the kneeboard show the zoom levels above `max_tile_zoom` by
+scaling up its tiles, so the tile tree is about the size of a standard one.
+
+`--no-hidpi` writes standard 256x256 tiles (`"tile_pixel_ratio": 1`), drawn at
+a pixel ratio of 1. A map config without `tile_pixel_ratio` is a standard one,
+so existing maps keep working until they are re-tiled.
+
 ### Command Line Options
 
 - `input_image`: Path to the input PNG image (required)
 - `output_directory`: Directory to save the generated tiles (required)
-- `--zoom-levels`: Comma-separated list of zoom levels (e.g., 0,1,2,3,4,5)
-- `--max-zoom`: Maximum zoom level to generate (default: 5)
-- `--tile-size`: Size of each tile in pixels (default: 256)
+- `--zoom-levels`: Comma-separated list of zoom levels (e.g., 0,1,2,3,4,5; default: 0 to the natural zoom level). Levels above the natural one are shown by scaling up the last tiles, without tiles of their own
+- `--tile-size`: Size of each tile on the map grid in pixels (default: 256)
+- `--hidpi` / `--no-hidpi`: Write 2x high-DPI tiles, or standard ones (default: `--hidpi`)
+- `--unsharp-radius`, `--unsharp-percent`, `--unsharp-threshold`: Unsharp mask
+  applied to each resized zoom level (default: 0.6, 60, 1)
 - `--theatre`, `--map`: Write tiles and the map config into the backend for that map (see above)
 - `--theatres-dir`: Theatre configs directory (default: `backend/theatres`)
 
@@ -208,7 +227,7 @@ tiles/
 
 3. **Generate high-resolution tiles**:
    ```bash
-   python generate_tiles.py map.png ./tiles --tile-size 512 --max-zoom 7
+   python generate_tiles.py map.png ./tiles --tile-size 512
    ```
 
 ### Integration with Tile Servers

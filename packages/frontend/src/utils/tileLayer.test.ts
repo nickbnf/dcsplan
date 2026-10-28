@@ -5,6 +5,7 @@ import {
   createTileGrid,
   imageExtent,
   imageGeographicBounds,
+  mapPixelRatio,
   projectedToNativePixel,
 } from './tileLayer';
 import type { MapInfo } from './tileLayer';
@@ -82,6 +83,37 @@ describe('tile grid from the projected georeference', () => {
       zoom_info: [{ zoom: 0, nb_tiles_w: 1, nb_tiles_h: 1, width_px: 144, height_px: 96 }],
     } as MapInfo;
     expect(calculateResolutions(map)[0]).toBeCloseTo((germany.resolution * 18535) / 144, 9);
+  });
+
+  it('stops the grid at max_tile_zoom, the view keeps every level', () => {
+    const hidpi = { ...germany, tile_pixel_ratio: 2, max_tile_zoom: 7 } as MapInfo;
+    const grid = createTileGrid(hidpi);
+    expect(grid.getResolutions()).toEqual(calculateResolutions(germany).slice(0, 8));
+    expect(grid.getMaxZoom()).toBe(7);
+    expect(calculateResolutions(hidpi)).toHaveLength(9);
+  });
+});
+
+describe('map pixel ratio', () => {
+  const withDevicePixelRatio = (ratio: number, run: () => void) => {
+    const original = window.devicePixelRatio;
+    Object.defineProperty(window, 'devicePixelRatio', { value: ratio, configurable: true });
+    try {
+      run();
+    } finally {
+      Object.defineProperty(window, 'devicePixelRatio', { value: original, configurable: true });
+    }
+  };
+
+  it('follows the device for high-DPI tiles', () => {
+    withDevicePixelRatio(2, () => expect(mapPixelRatio({ tile_pixel_ratio: 2 } as MapInfo)).toBe(2));
+  });
+
+  it('stays at 1 for standard tiles, so they are not resampled', () => {
+    withDevicePixelRatio(2, () => {
+      expect(mapPixelRatio({} as MapInfo)).toBe(1);
+      expect(mapPixelRatio({ tile_pixel_ratio: 1 } as MapInfo)).toBe(1);
+    });
   });
 });
 

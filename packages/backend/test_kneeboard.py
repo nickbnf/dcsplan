@@ -609,6 +609,45 @@ def test_fetch_tile_reads_map_directory(tmp_path, monkeypatch):
     assert tile.getpixel((0, 0)) == (10, 20, 30)
 
 
+@pytest.fixture
+def hidpi_map(tmp_path, monkeypatch):
+    """A map with one 512px high-DPI tile at zoom 1 (2x2 tiles), its quadrants in four colours."""
+    from PIL import Image
+    import kneeboard
+    tile_dir = tmp_path / "syria" / "hidpi" / "1" / "1"
+    tile_dir.mkdir(parents=True)
+    tile = Image.new("RGB", (512, 512))
+    for i, colour in enumerate([(255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 0)]):
+        tile.paste(colour, ((i % 2) * 256, (i // 2) * 256, (i % 2) * 256 + 256, (i // 2) * 256 + 256))
+    tile.save(tile_dir / "0.png")
+    monkeypatch.setattr(kneeboard, "TILES_DIR", str(tmp_path))
+    zoom_info = [
+        {"zoom": z, "nb_tiles_w": 2 ** z, "nb_tiles_h": 2 ** z, "width_px": 256 * 2 ** z, "height_px": 256 * 2 ** z}
+        for z in range(3)
+    ]
+    return kneeboard.MapInfo(
+        theatre="syria", map_id="hidpi", zoom_info=zoom_info, crs="+proj=merc", origin_x=0, origin_y=0,
+        resolution=1, image_width_px=1024, image_height_px=1024, tile_pixel_ratio=2, max_tile_zoom=1,
+    )
+
+
+def test_level_tile_scales_hidpi_tiles_down(hidpi_map):
+    import kneeboard
+    tile = kneeboard._fetch_level_tile(hidpi_map, 1, 1, 0)
+    assert tile.size == (256, 256)
+    assert tile.getpixel((64, 64)) == (255, 0, 0)
+    assert tile.getpixel((192, 192)) == (255, 255, 0)
+
+
+def test_level_tile_above_max_tile_zoom_is_cut_from_the_last_tiled_level(hidpi_map):
+    import kneeboard
+    # Zoom 2 tile (3, 1) is the bottom-right quadrant of zoom 1 tile (1, 0)
+    tile = kneeboard._fetch_level_tile(hidpi_map, 2, 3, 1)
+    assert tile.size == (256, 256)
+    assert tile.getpixel((0, 0)) == (255, 255, 0)
+    assert tile.getpixel((255, 255)) == (255, 255, 0)
+
+
 # --- georeference-control-points: any proj CRS, Lambert conformal conic included ---
 
 LCC_CRS = "+proj=lcc +lat_0=0 +lon_0=10.5 +lat_1=50 +lat_2=54 +ellps=WGS84 +units=m +no_defs"

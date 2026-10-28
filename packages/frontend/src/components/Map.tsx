@@ -9,7 +9,7 @@ import Collection from 'ol/Collection';
 import { createProjectionFromCrs } from '../utils/projectionUtils';
 import { getCenter } from 'ol/extent';
 import { createGridLayer } from '../utils/latLonGrid';
-import { createTileLayer, calculateResolutions, projectedToNativePixel, imageExtent, imageGeographicBounds } from '../utils/tileLayer';
+import { createTileLayer, calculateResolutions, mapPixelRatio, projectedToNativePixel, imageExtent, imageGeographicBounds } from '../utils/tileLayer';
 import type { MapInfo } from '../utils/tileLayer';
 import type { FlightPlan, LibraryObject, PictogramType } from '../types/flightPlan';
 import { flightPlanUtils } from '../utils/flightPlanUtils';
@@ -228,7 +228,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
 
     mapInstanceRef.current = new Map({
       target: mapRef.current,
-      pixelRatio: 1,
+      pixelRatio: mapPixelRatio(mapInfo),
       layers: [
         tileLayer,
         gridLayer,

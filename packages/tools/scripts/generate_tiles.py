@@ -26,51 +26,43 @@ import sys
 from pathlib import Path
 from PIL import Image, ImageFilter
 import math
-import cv2
-import numpy as np
 
 
-def calculate_zoom_levels(image_width, image_height, max_zoom=5):
+def calculate_zoom_levels(image_width, image_height, tile_size=256):
     """
-    Calculate appropriate zoom levels based on image dimensions.
+    Calculate the default zoom levels based on image dimensions.
 
     Args:
         image_width: Width of the input image
         image_height: Height of the input image
-        max_zoom: Maximum zoom level to generate
+        tile_size: Size of each tile on the map grid
 
     Returns:
-        List of zoom levels to generate
+        Zoom levels from 0 to the natural zoom level, where pixels are one to one
+        with the original image
     """
-    # Calculate the minimum zoom level needed to fit the image
     max_dimension = max(image_width, image_height)
-    min_zoom = math.ceil(math.log2(max_dimension / 256))
-
-    # Generate zoom levels from min_zoom to max_zoom
-    return list(range(min_zoom, max_zoom + 1))
+    natural_zoom = math.ceil(math.log2(max_dimension / tile_size))
+    return list(range(0, natural_zoom + 1))
 
 
-def pil_to_cv2(pil_image):
-    """Convert a PIL Image to a numpy array suitable for OpenCV."""
-    arr = np.array(pil_image)
-    if pil_image.mode == "RGBA":
-        # PIL is RGBA, OpenCV expects BGRA
-        return cv2.cvtColor(arr, cv2.COLOR_RGBA2BGRA)
-    elif pil_image.mode == "RGB":
-        return cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
-    else:
-        return arr
+def resize_level(image, width, height, unsharp_radius, unsharp_percent, unsharp_threshold):
+    """
+    One pyramid level, resized straight from the original image.
 
-
-def cv2_to_pil(cv2_array, mode):
-    """Convert an OpenCV numpy array back to a PIL Image."""
-    if mode == "RGBA":
-        arr = cv2.cvtColor(cv2_array, cv2.COLOR_BGRA2RGBA)
-    elif mode == "RGB":
-        arr = cv2.cvtColor(cv2_array, cv2.COLOR_BGR2RGB)
-    else:
-        arr = cv2_array
-    return Image.fromarray(arr)
+    Resizing from the original rather than from the previous level avoids stacking
+    one resampling (and its softening) per level. Pillow's LANCZOS widens its kernel
+    with the scale factor, so it antialiases without a pre-blur; reducing_gap first
+    box-reduces the image to about 3x the target size, which is much faster and
+    indistinguishable from a full Lanczos. A light unsharp mask then restores the
+    contrast of fine details (text, thin lines).
+    """
+    if (width, height) == image.size:
+        return image
+    level = image.resize((width, height), Image.LANCZOS, reducing_gap=3.0)
+    return level.filter(
+        ImageFilter.UnsharpMask(radius=unsharp_radius, percent=unsharp_percent, threshold=unsharp_threshold)
+    )
 
 
 def generate_tiles(
@@ -78,40 +70,53 @@ def generate_tiles(
     output_dir,
     zoom_levels=None,
     tile_size=256,
-    gaussian_sigma=0.6,
-    unsharp_percent=30,
-    unsharp_threshold=2,
+    hidpi=True,
+    unsharp_radius=0.6,
+    unsharp_percent=60,
+    unsharp_threshold=1,
 ):
     """
-    Generate XYZ tiles from a large image using an image pyramid for quality.
+    Generate XYZ tiles from a large image, each zoom level resized from the original.
+
+    With hidpi, the tile z/x/y covers the same area as a standard tile but has twice
+    the pixels in each direction (2*tile_size): its content is the next zoom level.
+    The browser then draws it one tile pixel per screen pixel on a 2x display. The
+    natural zoom level gets no tiles (they would only be the original upscaled): the
+    planner shows it by scaling up the level below.
 
     Args:
         image_path: Path to the input image
         output_dir: Directory to save tiles
         zoom_levels: List of zoom levels to generate (auto-calculated if None)
-        tile_size: Size of each tile (default: 256x256)
-        gaussian_sigma: Sigma for the GaussianBlur pre-blur (default: 0.6)
-        unsharp_percent: Strength of the UnsharpMask pass (default: 30)
-        unsharp_threshold: Threshold for the UnsharpMask pass (default: 2)
+        tile_size: Size of each tile on the map grid (default: 256x256)
+        hidpi: Generate 2x tiles (default: True)
+        unsharp_radius: Radius of the UnsharpMask pass (default: 0.6)
+        unsharp_percent: Strength of the UnsharpMask pass (default: 60)
+        unsharp_threshold: Threshold of the UnsharpMask pass (default: 1)
+
+    Returns:
+        The tiling fields of the map config (zoom_info, tile_pixel_ratio,
+        max_tile_zoom), or False on error.
     """
     Image.MAX_IMAGE_PIXELS = 5000000000
     # Open the image
     try:
         image = Image.open(image_path)
         print(f"Loaded image: {image.size[0]}x{image.size[1]} pixels, mode={image.mode}", file=sys.stderr)
-        # Indexed/palette images must be converted before any pixel manipulation —
-        # numpy/OpenCV would otherwise see raw palette indices (0-255) as grayscale.
+        # Indexed/palette images must be converted before any resampling, which
+        # would otherwise blend raw palette indices.
         if image.mode == "P":
             target_mode = "RGBA" if image.info.get("transparency") is not None else "RGB"
             image = image.convert(target_mode)
             print(f"  Converted indexed image to {target_mode}", file=sys.stderr)
+        image.load()
     except Exception as e:
         print(f"Error opening image: {e}", file=sys.stderr)
         return False
 
     # Calculate zoom levels if not provided
     if zoom_levels is None:
-        zoom_levels = calculate_zoom_levels(image.size[0], image.size[1])
+        zoom_levels = calculate_zoom_levels(image.size[0], image.size[1], tile_size)
         print(f"Auto-calculated zoom levels: {zoom_levels}", file=sys.stderr)
 
     # Create output directory
@@ -126,9 +131,15 @@ def generate_tiles(
     # "Natural" zoom level is the zoom level where pixels are one to one with the original map
     natural_zoom = math.ceil(math.log2(max_dimension / tile_size))
 
+    tile_pixel_ratio = 2 if hidpi else 1
+    # A 2x tile holds the next zoom level, so the last level with tiles is one below natural
+    max_tile_zoom = min(max(zoom_levels), natural_zoom - (tile_pixel_ratio - 1))
+    tile_px = tile_size * tile_pixel_ratio
+
     zoom_info = []
 
     print(f"\nNatural zoom level is {natural_zoom}", file=sys.stderr)
+    print(f"Tile pixel ratio {tile_pixel_ratio}, tiles up to zoom {max_tile_zoom}", file=sys.stderr)
 
     # --- Pass 1: Build zoom_info metadata (ascending order, unchanged) ---
     for zoom in zoom_levels:
@@ -152,57 +163,26 @@ def generate_tiles(
             }
         )
 
-    # --- Pass 2: Pyramid tile generation (descending from natural_zoom) ---
-    zoom_level_set = set(zoom_levels)
-    min_zoom = min(zoom_levels)
-    image_mode = image.mode
-    working_image = None  # PIL Image at current pyramid level
+    # --- Pass 2: Tile generation (descending from the last level with tiles) ---
+    for zoom in sorted((z for z in zoom_levels if z <= max_tile_zoom), reverse=True):
+        # The pyramid level the tile pixels come from: the next one for 2x tiles
+        source_zoom = zoom + (tile_pixel_ratio - 1)
+        level_width = math.floor(original_width / (2 ** (natural_zoom - source_zoom)))
+        level_height = math.floor(original_height / (2 ** (natural_zoom - source_zoom)))
 
-    for zoom in range(natural_zoom, min_zoom - 1, -1):
-        level_width = math.floor(original_width / (2 ** (natural_zoom - zoom)))
-        level_height = math.floor(original_height / (2 ** (natural_zoom - zoom)))
-
-        if zoom == natural_zoom:
-            # Start of pyramid: use the original image as-is
-            working_image = image
-            print(
-                f"\nPyramid level {zoom} (natural): {level_width}x{level_height}",
-                file=sys.stderr,
-            )
-        else:
-            # Gaussian pyramid step:
-            # - sigma=0.5 pre-blur removes the highest-frequency aliasing that causes
-            #   staircase on diagonals, without visible softening (unlike sigma=1.0)
-            # - INTER_LANCZOS4 then resamples sharply with its 8-tap sinc kernel
-            # - No UnsharpMask needed: Lanczos4 is already sharp; adding USM on top
-            #   was causing over-sharpening
-            cv2_img = pil_to_cv2(working_image)
-            cv2_img = cv2.GaussianBlur(cv2_img, (0, 0), sigmaX=gaussian_sigma, sigmaY=gaussian_sigma)
-            cv2_img = cv2.resize(
-                cv2_img,
-                (level_width, level_height),
-                interpolation=cv2.INTER_LANCZOS4,
-            )
-            working_image = cv2_to_pil(cv2_img, image_mode)
-            # Restore local contrast lost to the Gaussian pre-blur, targeting fine
-            # details (text, thin lines) with a small radius
-            working_image = working_image.filter(
-                ImageFilter.UnsharpMask(radius=0.8, percent=unsharp_percent, threshold=unsharp_threshold)
-            )
-            print(
-                f"\nPyramid level {zoom}: {level_width}x{level_height}", file=sys.stderr
-            )
+        working_image = resize_level(
+            image, level_width, level_height, unsharp_radius, unsharp_percent, unsharp_threshold
+        )
+        print(
+            f"\nPyramid level {source_zoom}: {level_width}x{level_height}", file=sys.stderr
+        )
 
         # Save the full pyramid image for debugging/quality inspection
-        debug_path = Path.cwd() / f"pyramid_zoom_{zoom}.png"
+        debug_path = Path.cwd() / f"pyramid_zoom_{source_zoom}.png"
         working_image.save(debug_path, "PNG")
         print(f"  Saved debug image: {debug_path}", file=sys.stderr)
 
-        # Skip tile output if this zoom level was not requested
-        if zoom not in zoom_level_set:
-            continue
-
-        print(f"  Generating tiles for zoom level {zoom}...", file=sys.stderr)
+        print(f"  Generating {tile_px}px tiles for zoom level {zoom}...", file=sys.stderr)
 
         nb_tiles_w = math.ceil(
             original_width / (tile_size * 2 ** (natural_zoom - zoom))
@@ -221,16 +201,16 @@ def generate_tiles(
 
             for y in range(nb_tiles_h):
                 # Tile coordinates within the working image (already at correct resolution)
-                left = x * tile_size
-                top = y * tile_size
-                right = min((x + 1) * tile_size, level_width)
-                bottom = min((y + 1) * tile_size, level_height)
+                left = x * tile_px
+                top = y * tile_px
+                right = min((x + 1) * tile_px, level_width)
+                bottom = min((y + 1) * tile_px, level_height)
 
                 tile = working_image.crop((left, top, right, bottom))
 
-                # Pad edge tiles to full tile_size x tile_size with black
-                if tile.size != (tile_size, tile_size):
-                    padded = Image.new(tile.mode, (tile_size, tile_size), 0)
+                # Pad edge tiles to full tile_px x tile_px with black
+                if tile.size != (tile_px, tile_px):
+                    padded = Image.new(tile.mode, (tile_px, tile_px), 0)
                     padded.paste(tile, (0, 0))
                     tile = padded
 
@@ -248,9 +228,14 @@ def generate_tiles(
         file=sys.stderr,
     )
 
-    print(json.dumps({"zoom_info": zoom_info}, indent=4))
+    tiling = {
+        "zoom_info": zoom_info,
+        "tile_pixel_ratio": tile_pixel_ratio,
+        "max_tile_zoom": max_tile_zoom,
+    }
+    print(json.dumps(tiling, indent=4))
 
-    return zoom_info
+    return tiling
 
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent.parent / "backend"
@@ -266,9 +251,10 @@ MAP_GEOREFERENCE_FIELDS = (
 )
 
 
-def write_map_config(theatres_dir, theatre, map_id, zoom_info, image_size):
+def write_map_config(theatres_dir, theatre, map_id, tiling, image_size):
     """
-    Merge the generated tile grid and the native image size into
+    Merge the generated tile grid (the tiling fields returned by generate_tiles)
+    and the native image size into
     theatres/<theatre>/maps/<map>.json, creating it if needed and keeping every
     other field (the georeference in particular).
 
@@ -283,7 +269,7 @@ def write_map_config(theatres_dir, theatre, map_id, zoom_info, image_size):
     map_path = theatre_dir / "maps" / f"{map_id}.json"
     config = json.loads(map_path.read_text(encoding="utf-8")) if map_path.exists() else {"map_name": map_id}
     config["image_width_px"], config["image_height_px"] = image_size
-    config["zoom_info"] = zoom_info
+    config.update(tiling)
     map_path.parent.mkdir(parents=True, exist_ok=True)
     map_path.write_text(map_georeference.dumps_map_config(config), encoding="utf-8")
     missing = [f for f in MAP_GEOREFERENCE_FIELDS if f not in config]
@@ -299,8 +285,8 @@ Examples:
   python generate_tiles.py map.png
   python generate_tiles.py map.png ./custom_tiles
   python generate_tiles.py map.png --zoom-levels 0,1,2,3,4,5
-  python generate_tiles.py map.png --max-zoom 6
-  python generate_tiles.py map.png --gaussian-sigma 0.8 --unsharp-percent 50 --unsharp-threshold 3
+  python generate_tiles.py map.png --no-hidpi
+  python generate_tiles.py map.png --unsharp-radius 0.8 --unsharp-percent 50 --unsharp-threshold 3
         """,
     )
 
@@ -312,7 +298,8 @@ Examples:
         help="Directory to save the generated tiles (default: ../../backend/static/tiles)",
     )
     parser.add_argument(
-        "--zoom-levels", help="Comma-separated list of zoom levels (e.g., 0,1,2,3,4,5)"
+        "--zoom-levels",
+        help="Comma-separated list of zoom levels (e.g., 0,1,2,3,4,5; default: 0 to the natural zoom level)",
     )
     parser.add_argument(
         "--theatre",
@@ -325,34 +312,34 @@ Examples:
         help="Theatre configs directory (default: backend/theatres)",
     )
     parser.add_argument(
-        "--max-zoom",
-        type=int,
-        default=5,
-        help="Maximum zoom level to generate (default: 5)",
-    )
-    parser.add_argument(
         "--tile-size",
         type=int,
         default=256,
         help="Size of each tile in pixels (default: 256)",
     )
     parser.add_argument(
-        "--gaussian-sigma",
+        "--hidpi",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Generate 2x tiles for high-DPI displays (default: on; --no-hidpi for standard tiles)",
+    )
+    parser.add_argument(
+        "--unsharp-radius",
         type=float,
         default=0.6,
-        help="Sigma for the Gaussian pre-blur applied before each pyramid downscale (default: 0.6)",
+        help="Radius of the UnsharpMask pass applied after downscaling (default: 0.6)",
     )
     parser.add_argument(
         "--unsharp-percent",
         type=int,
-        default=30,
-        help="Strength of the UnsharpMask pass applied after downscaling (default: 30)",
+        default=60,
+        help="Strength of the UnsharpMask pass applied after downscaling (default: 60)",
     )
     parser.add_argument(
         "--unsharp-threshold",
         type=int,
-        default=2,
-        help="Threshold of the UnsharpMask pass applied after downscaling (default: 2)",
+        default=1,
+        help="Threshold of the UnsharpMask pass applied after downscaling (default: 1)",
     )
 
     args = parser.parse_args()
@@ -387,29 +374,27 @@ Examples:
                 "Error: Invalid zoom levels format. Use comma-separated integers (e.g., 0,1,2,3)"
             )
             sys.exit(1)
-    else:
-        # Use max_zoom to calculate zoom levels
-        zoom_levels = None
 
     # Generate tiles
-    zoom_info = generate_tiles(
+    tiling = generate_tiles(
         args.input_image,
         output_directory,
         zoom_levels,
         args.tile_size,
-        gaussian_sigma=args.gaussian_sigma,
+        hidpi=args.hidpi,
+        unsharp_radius=args.unsharp_radius,
         unsharp_percent=args.unsharp_percent,
         unsharp_threshold=args.unsharp_threshold,
     )
 
-    if zoom_info is False:
+    if tiling is False:
         sys.exit(1)
 
     if args.theatre:
         with Image.open(args.input_image) as image:
             image_size = image.size
         map_path, missing = write_map_config(
-            args.theatres_dir, args.theatre, args.map_id, zoom_info, image_size
+            args.theatres_dir, args.theatre, args.map_id, tiling, image_size
         )
         print(f"Map config written: {map_path}", file=sys.stderr)
         if missing:

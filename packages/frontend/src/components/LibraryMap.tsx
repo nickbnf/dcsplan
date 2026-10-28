@@ -12,7 +12,7 @@ import Modify from 'ol/interaction/Modify';
 import Collection from 'ol/Collection';
 import { createProjectionFromCrs } from '../utils/projectionUtils';
 import { getCenter } from 'ol/extent';
-import { createTileLayer, calculateResolutions, imageExtent, imageGeographicBounds } from '../utils/tileLayer';
+import { createTileLayer, calculateResolutions, mapPixelRatio, imageExtent, imageGeographicBounds } from '../utils/tileLayer';
 import type { MapInfo } from '../utils/tileLayer';
 import { createGridLayer } from '../utils/latLonGrid';
 import { getMapInfoUrl, getTilesBaseUrl } from '../config/api';
@@ -162,7 +162,7 @@ const LibraryMap: React.FC<LibraryMapProps> = ({
 
     const map = new OlMap({
       target: mapRef.current,
-      pixelRatio: 1,
+      pixelRatio: mapPixelRatio(mapInfo),
       layers: [tileLayer, gridLayer, pictogramLayer],
       view: new View({
         projection: mapProjection as any,
