@@ -1,5 +1,5 @@
 {
-    "map_name": "vfr_1976",
+    "map_name": "VFR 1976",
     "crs": "+proj=lcc +lat_1=50.0 +lat_2=54.0 +lat_0=52.0 +lon_0=10.5 +ellps=bessel +units=m +no_defs",
     "image_width_px": 21719,
     "image_height_px": 28562,
@@ -69,16 +69,11 @@
             "nb_tiles_h": 112,
             "width_px": 21719,
             "height_px": 28562
-        },
-        {
-            "zoom": 8,
-            "nb_tiles_w": 170,
-            "nb_tiles_h": 224,
-            "width_px": 43438,
-            "height_px": 57124
         }
     ],
     "origin_x": -343140.201,
     "origin_y": 357485.065,
-    "resolution": 31.999581
+    "resolution": 31.999581,
+    "tile_pixel_ratio": 2,
+    "max_tile_zoom": 6
 }
