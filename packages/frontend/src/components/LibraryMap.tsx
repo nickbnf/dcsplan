@@ -10,8 +10,9 @@ import { Point } from 'ol/geom';
 import { Style, Icon } from 'ol/style';
 import Modify from 'ol/interaction/Modify';
 import Collection from 'ol/Collection';
-import { createMapProjection, transformBoundsToTransverseMercator, calculateTransverseMercatorCenter } from '../utils/projectionUtils';
-import { createTileLayer, calculateResolutions } from '../utils/tileLayer';
+import { createProjectionFromCrs } from '../utils/projectionUtils';
+import { getCenter } from 'ol/extent';
+import { createTileLayer, calculateResolutions, imageExtent, imageGeographicBounds } from '../utils/tileLayer';
 import type { MapInfo } from '../utils/tileLayer';
 import { createGridLayer } from '../utils/latLonGrid';
 import { getMapInfoUrl, getTilesBaseUrl } from '../config/api';
@@ -139,20 +140,14 @@ const LibraryMap: React.FC<LibraryMapProps> = ({
   useEffect(() => {
     if (!mapInfo || !mapRef.current || isLoading) return;
 
-    const regionBounds = mapInfo.bounds;
-    const { projection: mapProjection } = createMapProjection(
-      mapInfo.projection,
-      mapInfo.central_meridian,
-      mapInfo.std_parallel1,
-      mapInfo.std_parallel2
-    );
-    const extent = transformBoundsToTransverseMercator(regionBounds, mapProjection);
-    (mapProjection as any).setExtent(extent);
-    const center = calculateTransverseMercatorCenter(regionBounds, mapProjection);
-    const resolutions = calculateResolutions(mapInfo, mapProjection);
+    const { projection: mapProjection } = createProjectionFromCrs(`map:${mapInfo.theatre}/${mapInfo.mapId}`, mapInfo.crs);
+    const extent = imageExtent(mapInfo);
+    mapProjection.setExtent(extent);
+    const center = getCenter(extent);
+    const resolutions = calculateResolutions(mapInfo);
 
     const tileLayer = createTileLayer(mapInfo, mapProjection, getTilesBaseUrl(mapInfo.theatre, mapInfo.mapId));
-    const gridLayer = createGridLayer(regionBounds, mapProjection);
+    const gridLayer = createGridLayer(imageGeographicBounds(mapInfo, mapProjection), mapProjection);
     gridLayer.set('name', 'grid');
     gridLayerRef.current = gridLayer;
     gridLayer.setVisible(gridEnabled);

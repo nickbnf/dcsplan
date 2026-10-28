@@ -15,7 +15,9 @@ Add your development scripts, build tools, and other utilities here.
 ## Theatre maps
 
 `scripts/generate_tiles.py --theatre <theatre> --map <map>` produces a map for a
-theatre: tiles plus `backend/theatres/<theatre>/maps/<map>.json`. A theatre's
+theatre: tiles plus `backend/theatres/<theatre>/maps/<map>.json`.
+`scripts/georeference.py --theatre <theatre> --map <map>` then fits the map's
+georeference from the control points recorded in that file. A theatre's
 `theatre.json` (including the `navigation` settings used for all leg
 calculations) is hand-maintained. See `scripts/README.md`.
 

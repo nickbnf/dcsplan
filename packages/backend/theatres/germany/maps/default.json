@@ -1,19 +1,23 @@
 {
     "map_name": "Default",
-    "projection": "transverse_mercator",
-    "central_meridian": 21,
-    "std_parallel1": 49.33,
-    "std_parallel2": 54.66,
-    "origin_lat": 55.176,
-    "origin_lon": -0.32,
-    "ref_corner_ne_lat": 57.05,
-    "ref_corner_ne_lon": 20.417,
-    "bounds": {
-        "minLon": -0.333,
-        "minLat": 46.283,
-        "maxLon": 20.533,
-        "maxLat": 57.05
-    },
+    "crs": "+proj=tmerc +lat_0=0 +lon_0=21 +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m +no_defs",
+    "origin_x": -1346963.547,
+    "origin_y": 6326430.768,
+    "resolution": 32.023531,
+    "image_width_px": 40960,
+    "image_height_px": 32768,
+    "control_points": [
+        { "label": "Bremen bridge", "px": 16466.3, "py": 11321.1, "lat": "N 53° 10.025", "lon": "E 8° 43.087" },
+        { "label": "Ratzeburg bridge", "px": 20924.0, "py": 10142.1, "lat": "N 53° 42.082", "lon": "E 10° 43.915" },
+        { "label": "Rostock RR bridge", "px": 24043.8, "py": 9312.0, "lat": "N 54° 03.437", "lon": "E 12° 10.567" },
+        { "label": "Szczecin RR bridge", "px": 28641.7, "py": 12158.3, "lat": "N 53° 22.974", "lon": "E 14° 32.161" },
+        { "label": "Dusseldorf bridge", "px": 11078.7, "py": 17166.7, "lat": "N 51° 14.805", "lon": "E 6° 45.541" },
+        { "label": "Dam", "px": 11126.1, "py": 22444.8, "lat": "N 49° 46.545", "lon": "E 7° 13.452" },
+        { "label": "Falkenberg bridge", "px": 25127.5, "py": 18640.6, "lat": "N 51° 26.324", "lon": "E 13° 11.508" },
+        { "label": "Chojna lake", "px": 28042.9, "py": 13672.1, "lat": "N 52° 56.360", "lon": "E 14° 19.336" },
+        { "label": "Konz confluent", "px": 9611.0, "py": 22404.4, "lat": "N 49° 42.115", "lon": "E 6° 34.178" }
+    ],
+    "alignment_tolerance_px": 16,
     "zoom_info": [
         {
             "zoom": 0,

@@ -6,9 +6,10 @@ import { transform } from 'ol/proj';
 import Modify from 'ol/interaction/Modify';
 import Snap from 'ol/interaction/Snap';
 import Collection from 'ol/Collection';
-import { createMapProjection, transformBoundsToTransverseMercator, calculateTransverseMercatorCenter } from '../utils/projectionUtils';
+import { createProjectionFromCrs } from '../utils/projectionUtils';
+import { getCenter } from 'ol/extent';
 import { createGridLayer } from '../utils/latLonGrid';
-import { createTileLayer, calculateResolutions } from '../utils/tileLayer';
+import { createTileLayer, calculateResolutions, projectedToNativePixel, imageExtent, imageGeographicBounds } from '../utils/tileLayer';
 import type { MapInfo } from '../utils/tileLayer';
 import type { FlightPlan, LibraryObject, PictogramType } from '../types/flightPlan';
 import { flightPlanUtils } from '../utils/flightPlanUtils';
@@ -183,16 +184,15 @@ const MapComponent: React.FC<MapComponentProps> = ({
       return;
     }
 
-    const regionBounds = mapInfo?.bounds;
-    const { projection: mapProjection } = createMapProjection(mapInfo?.projection, mapInfo?.central_meridian, mapInfo?.std_parallel1, mapInfo?.std_parallel2);
+    const { projection: mapProjection } = createProjectionFromCrs(`map:${mapInfo.theatre}/${mapInfo.mapId}`, mapInfo.crs);
 
-    const mapProjectionExtent = transformBoundsToTransverseMercator(regionBounds, mapProjection);
-    (mapProjection as any).setExtent(mapProjectionExtent);
-    const mapProjectionCenter = calculateTransverseMercatorCenter(regionBounds, mapProjection);
-    const tileResolutions = calculateResolutions(mapInfo, mapProjection);
+    const mapProjectionExtent = imageExtent(mapInfo);
+    mapProjection.setExtent(mapProjectionExtent);
+    const mapProjectionCenter = getCenter(mapProjectionExtent);
+    const tileResolutions = calculateResolutions(mapInfo);
 
     const tileLayer = createTileLayer(mapInfo, mapProjection, getTilesBaseUrl(mapInfo.theatre, mapInfo.mapId));
-    const gridLayer = createGridLayer(regionBounds, mapProjection);
+    const gridLayer = createGridLayer(imageGeographicBounds(mapInfo, mapProjection), mapProjection);
     gridLayer.set('name', 'grid');
     gridLayerRef.current = gridLayer;
     gridLayer.setVisible(gridEnabled);
@@ -742,6 +742,20 @@ const MapComponent: React.FC<MapComponentProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [objectCoordEntry, coordEntry, selectedIndex, selectedObjectId, flightPlan, drawingState.isDrawing, setCoordEntry, setObjectCoordEntry, setSelectedIndex, setSelectedObjectId, onFlightPlanUpdate, onCoordEntryCommit]);
 
+  // Dev builds: Shift+P copies the native pixel under the cursor as control point fields
+  useEffect(() => {
+    if (!import.meta.env.DEV || !mapInfo) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const el = document.activeElement;
+      if (e.key !== 'P' || !hoverCoordRef.current ||
+          el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) return;
+      const { px, py } = projectedToNativePixel(mapInfo, hoverCoordRef.current.raw_x, hoverCoordRef.current.raw_y);
+      navigator.clipboard?.writeText(`"px": ${px.toFixed(1)}, "py": ${py.toFixed(1)}`);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [mapInfo]);
+
   // Cancel coord entry when drag ends
   useEffect(() => {
     if (drawingState.isDrawing === 'NO_DRAWING' && coordEntry !== null) {
@@ -807,6 +821,9 @@ const MapComponent: React.FC<MapComponentProps> = ({
         coordinate={hoverCoord}
         entryTemplate={activeCoordEntry ? formatTemplate(activeCoordEntry) : null}
         entryHasError={activeCoordEntry?.hasError ?? false}
+        nativePixel={import.meta.env.DEV && mapInfo && hoverCoord
+          ? projectedToNativePixel(mapInfo, hoverCoord.raw_x, hoverCoord.raw_y)
+          : null}
       />
       {hoverTooltip && (
         <div

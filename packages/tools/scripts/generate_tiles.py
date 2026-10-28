@@ -254,18 +254,23 @@ def generate_tiles(
 
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent.parent / "backend"
-# Display fields a map config needs besides its tile grid; they describe how the
-# source image is georeferenced, so they are entered by hand.
+sys.path.insert(0, str(BACKEND_DIR))
+
+import map_georeference  # noqa: E402
+
+# Fields a map config needs besides its tile grid and image size; they describe
+# how the source image is georeferenced. `crs` and `control_points` are entered
+# by hand, the rest is fitted by georeference.py (see README.md).
 MAP_GEOREFERENCE_FIELDS = (
-    "projection", "central_meridian", "origin_lat", "origin_lon",
-    "ref_corner_ne_lat", "ref_corner_ne_lon", "bounds",
+    "crs", "control_points", "origin_x", "origin_y", "resolution",
 )
 
 
-def write_map_config(theatres_dir, theatre, map_id, zoom_info):
+def write_map_config(theatres_dir, theatre, map_id, zoom_info, image_size):
     """
-    Merge the generated tile grid into theatres/<theatre>/maps/<map>.json,
-    creating it if needed and keeping every hand-entered field.
+    Merge the generated tile grid and the native image size into
+    theatres/<theatre>/maps/<map>.json, creating it if needed and keeping every
+    other field (the georeference in particular).
 
     Returns the config path and the georeference fields still missing.
     """
@@ -276,10 +281,11 @@ def write_map_config(theatres_dir, theatre, map_id, zoom_info):
             "(name, default_map, navigation) by hand before generating its maps."
         )
     map_path = theatre_dir / "maps" / f"{map_id}.json"
-    config = json.loads(map_path.read_text()) if map_path.exists() else {"map_name": map_id}
+    config = json.loads(map_path.read_text(encoding="utf-8")) if map_path.exists() else {"map_name": map_id}
+    config["image_width_px"], config["image_height_px"] = image_size
     config["zoom_info"] = zoom_info
     map_path.parent.mkdir(parents=True, exist_ok=True)
-    map_path.write_text(json.dumps(config, indent=4) + "\n")
+    map_path.write_text(map_georeference.dumps_map_config(config), encoding="utf-8")
     missing = [f for f in MAP_GEOREFERENCE_FIELDS if f not in config]
     return map_path, missing
 
@@ -400,11 +406,16 @@ Examples:
         sys.exit(1)
 
     if args.theatre:
-        map_path, missing = write_map_config(args.theatres_dir, args.theatre, args.map_id, zoom_info)
+        with Image.open(args.input_image) as image:
+            image_size = image.size
+        map_path, missing = write_map_config(
+            args.theatres_dir, args.theatre, args.map_id, zoom_info, image_size
+        )
         print(f"Map config written: {map_path}", file=sys.stderr)
         if missing:
             print(
-                f"Still to fill in by hand in {map_path}: {', '.join(missing)}",
+                f"Still missing in {map_path}: {', '.join(missing)}. Enter crs and "
+                "control_points by hand, then run georeference.py (see README.md).",
                 file=sys.stderr,
             )
 

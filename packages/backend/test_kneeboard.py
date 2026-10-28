@@ -609,6 +609,80 @@ def test_fetch_tile_reads_map_directory(tmp_path, monkeypatch):
     assert tile.getpixel((0, 0)) == (10, 20, 30)
 
 
+# --- georeference-control-points: any proj CRS, Lambert conformal conic included ---
+
+LCC_CRS = "+proj=lcc +lat_0=0 +lon_0=10.5 +lat_1=50 +lat_2=54 +ellps=WGS84 +units=m +no_defs"
+
+
+@pytest.fixture
+def lcc_theatre(tmp_path, monkeypatch):
+    """A theatre whose only map is drawn in a Lambert conformal conic projection."""
+    from pyproj import Transformer
+    import kneeboard
+    import theatres
+
+    width, height, resolution = 5120, 4096, 100.0
+    origin_x, origin_y = Transformer.from_crs("EPSG:4326", LCC_CRS, always_xy=True).transform(7.0, 52.0)
+    inverse = Transformer.from_crs(LCC_CRS, "EPSG:4326", always_xy=True)
+    control_points = []
+    for px, py in [(512.5, 409.5), (4608.5, 409.5), (2560.5, 2048.5), (512.5, 3686.5), (4608.5, 3686.5)]:
+        lon, lat = inverse.transform(origin_x + resolution * px, origin_y - resolution * py)
+        control_points.append({"label": f"P{len(control_points)}", "px": px, "py": py, "lat": lat, "lon": lon})
+    natural_zoom = 5
+    zoom_info = [
+        {
+            "zoom": z,
+            "nb_tiles_w": -(-width // (256 * 2 ** (natural_zoom - z))),
+            "nb_tiles_h": -(-height // (256 * 2 ** (natural_zoom - z))),
+            "width_px": width // 2 ** (natural_zoom - z),
+            "height_px": height // 2 ** (natural_zoom - z),
+        }
+        for z in range(natural_zoom + 1)
+    ]
+    map_cfg = {
+        "map_name": "LCC", "crs": LCC_CRS, "origin_x": origin_x, "origin_y": origin_y,
+        "resolution": resolution, "image_width_px": width, "image_height_px": height,
+        "control_points": control_points, "zoom_info": zoom_info,
+    }
+    theatre_dir = tmp_path / "theatres" / "lccdemo"
+    (theatre_dir / "maps").mkdir(parents=True)
+    (theatre_dir / "theatre.json").write_text(json.dumps({
+        "theatre_name": "LCC demo", "default_map": "default",
+        "navigation": {"mode": "projected", "projection": "transverse_mercator", "central_meridian": 10.5},
+    }))
+    (theatre_dir / "maps" / "default.json").write_text(json.dumps(map_cfg))
+    monkeypatch.setattr(theatres, "THEATRES_DIR", str(tmp_path / "theatres"))
+    monkeypatch.setattr(kneeboard, "TILES_DIR", str(tmp_path / "tiles"))
+    return map_cfg
+
+
+def test_lcc_map_places_control_points_on_their_pixels(lcc_theatre):
+    from kneeboard import _get_map_info, _get_resolution_for_zoom, _transformer_for_projection
+    map_info = _get_map_info("lccdemo")
+    transformer = _transformer_for_projection(map_info)
+    for zoom in (5, 3):
+        resolution = _get_resolution_for_zoom(map_info, zoom)
+        scale = map_info.image_width_px / next(z.width_px for z in map_info.zoom_info if z.zoom == zoom)
+        for cp in lcc_theatre["control_points"]:
+            x, y = transformer.transform(cp["lon"], cp["lat"])
+            assert (x - map_info.origin_x) / resolution == pytest.approx(cp["px"] / scale, abs=0.01)
+            assert (map_info.origin_y - y) / resolution == pytest.approx(cp["py"] / scale, abs=0.01)
+
+
+def test_kneeboard_renders_on_lcc_map(lcc_theatre):
+    from PIL import Image
+    points = [
+        {"lat": cp["lat"], "lon": cp["lon"], "tas": 400, "alt": 3000, "fuelFlow": 6000,
+         "windSpeed": 0, "windDir": 0}
+        for cp in lcc_theatre["control_points"][:3]
+    ]
+    flight_plan = FlightPlan(
+        theatre="lccdemo", points=points, declination=0, bankAngle=30, initTimeSec=0, initFob=10000,
+    )
+    image = Image.open(io.BytesIO(generate_kneeboard_single_png(flight_plan, 0)))
+    assert image.size == (768, 1024)
+
+
 @pytest.fixture
 def kneeboard_client():
     from fastapi.testclient import TestClient
@@ -640,3 +714,12 @@ def test_kneeboard_request_with_unknown_map_is_rejected(kneeboard_client, valid_
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
 
+
+
+def test_control_point_accepts_degrees_decimal_minutes():
+    from kneeboard import ControlPoint
+    cp = ControlPoint(label="Kutaisi", px=10.5, py=20.5, lat="N 42°10.770'", lon="E 042°28.932'")
+    assert cp.lat == pytest.approx(42 + 10.770 / 60)
+    assert cp.lon == pytest.approx(42 + 28.932 / 60)
+    with pytest.raises(ValueError, match="hemisphere"):
+        ControlPoint(px=0, py=0, lat="E 042°28.932'", lon=42.0)

@@ -14,11 +14,12 @@ import math
 import io
 import os
 import logging
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from pyproj import Transformer
 from map_annotations import annotate_map, draw_info_box, draw_comment_strip
 from flight_plan import FlightPlan, FlightPlanData
 from waypoint_list_page import generate_waypoint_list_page
+import map_georeference
 import theatres
 
 # Set up logger (logging configuration is handled centrally in main.py)
@@ -34,27 +35,37 @@ class ZoomLevelInfo(BaseModel):
     height_px: int
 
 
-class MapBounds(BaseModel):
-    """Bounding box for the map in geographic coordinates."""
-    minLon: float
-    minLat: float
-    maxLon: float
-    maxLat: float
+class ControlPoint(BaseModel):
+    """A feature located both on the native image and on the earth."""
+    label: Optional[str] = None
+    px: float
+    py: float
+    lat: float
+    lon: float
+
+    # Decimal degrees, or degrees and decimal minutes as DCS shows them ("N 41°55.678'")
+    @field_validator("lat", "lon", mode="before")
+    @classmethod
+    def _parse_coordinate(cls, value, info):
+        return map_georeference.parse_coordinate(value, info.field_name)
 
 
 class MapInfo(BaseModel):
-    """Complete map information including zoom levels and bounds."""
+    """Complete map information: georeference and zoom levels (see map_georeference)."""
     theatre: str = Field(..., description="Theatre code")
     map_id: str = Field(..., description="Map id within the theatre")
     map_name: Optional[str] = Field(default=None, description="Map display name")
     zoom_info: List[ZoomLevelInfo]
-    projection: str = Field(..., description="Projection type")
-    central_meridian: float = Field(..., description="Central meridian for Transverse Mercator projection")
-    origin_lat: float = Field(..., description="Origin latitude (NW corner) for tile grid")
-    origin_lon: float = Field(..., description="Origin longitude (NW corner) for tile grid")
-    ref_corner_ne_lat: float = Field(..., description="Reference corner latitude (NE) for resolution calculation")
-    ref_corner_ne_lon: float = Field(..., description="Reference corner longitude (NE) for resolution calculation")
-    bounds: Optional[MapBounds] = None
+    crs: str = Field(..., description="Proj string of the map's projection")
+    origin_x: float = Field(..., description="Projected x of the image's outer top-left corner (m)")
+    origin_y: float = Field(..., description="Projected y of the image's outer top-left corner (m)")
+    resolution: float = Field(..., description="Projected metres per native pixel")
+    image_width_px: int = Field(..., description="Native image width")
+    image_height_px: int = Field(..., description="Native image height")
+    control_points: List[ControlPoint] = Field(default_factory=list)
+    alignment_tolerance_px: Optional[float] = Field(
+        default=None, description="Largest accepted control point error (native pixels) when not the default"
+    )
     minZoom: Optional[int] = None
     maxZoom: Optional[int] = None
     tileSize: Optional[int] = 256
@@ -163,21 +174,8 @@ def _get_map_info(theatre: str, map_id: Optional[str] = None) -> MapInfo:
 
 
 def _transformer_for_projection(map_info: MapInfo) -> Transformer:
-    """Create a transformer for the projection."""
-    if map_info.projection == "transverse_mercator":
-        return Transformer.from_crs(
-            "EPSG:4326",  # WGS84
-            f"+proj=tmerc +lat_0=0 +lon_0={map_info.central_meridian} +k=1.0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs",
-            always_xy=True
-        )
-    elif map_info.projection == "mercator":
-        return Transformer.from_crs(
-            "EPSG:4326",  # WGS84
-            "EPSG:3857",  # Web Mercator
-            always_xy=True
-        )
-    else:
-        raise ValueError(f"Unsupported projection: {map_info.projection}")
+    """WGS84 lon/lat → the map's projected coordinates."""
+    return map_georeference.transformer_for_crs(map_info.crs)
 
 
 def _calculate_distance_meters(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -208,12 +206,6 @@ def _get_resolution_for_zoom(map_info: MapInfo, zoom: int) -> float:
     Returns:
         Resolution in meters per pixel
     """
-    # Calculate reference distance in the projection
-    transformer = _transformer_for_projection(map_info)
-    origin_x, origin_y = transformer.transform(map_info.origin_lon, map_info.origin_lat)
-    ref_x, ref_y = transformer.transform(map_info.ref_corner_ne_lon, map_info.ref_corner_ne_lat)
-    x_distance = math.sqrt((ref_x - origin_x)**2 + (ref_y - origin_y)**2)
-    
     # Find zoom info for this zoom level
     this_zoom = None
     for z_info in map_info.zoom_info:
@@ -224,9 +216,8 @@ def _get_resolution_for_zoom(map_info: MapInfo, zoom: int) -> float:
     if this_zoom is None:
         raise ValueError(f"Zoom level {zoom} not found in tile info")
     
-    # Resolution = distance / pixels
-    resolution = x_distance / this_zoom.width_px
-    return resolution
+    # Each level covers the whole native image, resized to width_px
+    return map_info.resolution * map_info.image_width_px / this_zoom.width_px
 
 
 def _select_zoom_level(map_info: MapInfo, leg_distance_meters: float) -> Tuple[int, float]:
@@ -349,10 +340,9 @@ def _bbox_tm_to_tile_bounds(
         ValueError: If the zoom level is not found in map_info
     """
     min_x_tm, min_y_tm, max_x_tm, max_y_tm = bbox_tm
-    transformer = _transformer_for_projection(map_info)
-    
-    # Get the tile grid origin (NW corner) in the projection
-    origin_x, origin_y = transformer.transform(map_info.origin_lon, map_info.origin_lat)
+
+    # The tile grid origin (NW corner) in the projection
+    origin_x, origin_y = map_info.origin_x, map_info.origin_y
     
     # Get resolution (meters per pixel) for this zoom level
     resolution = _get_resolution_for_zoom(map_info, zoom)
@@ -601,8 +591,7 @@ def _tm_to_pixel_on_rotated_image(
         Tuple of (x, y) pixel coordinates in the rotated image
     """
     # Step 1: Convert TM coordinates to pixel coordinates in the original composite
-    transformer = _transformer_for_projection(map_info)
-    grid_origin_x, grid_origin_y = transformer.transform(map_info.origin_lon, map_info.origin_lat)
+    grid_origin_x, grid_origin_y = map_info.origin_x, map_info.origin_y
     resolution = _get_resolution_for_zoom(map_info, zoom)
     # Account for scaling: effective resolution = resolution / scale_factor
     effective_resolution = resolution / scale_factor
@@ -741,7 +730,7 @@ def generate_leg_map(
     dest_x_tm, dest_y_tm = transformer.transform(destination.lon, destination.lat)
     
     # Convert to pixel coordinates in the scaled composite
-    grid_origin_x, grid_origin_y = transformer.transform(map_info.origin_lon, map_info.origin_lat)
+    grid_origin_x, grid_origin_y = map_info.origin_x, map_info.origin_y
     resolution = _get_resolution_for_zoom(map_info, zoom)
     # Account for scaling: effective resolution in scaled composite
     effective_resolution = resolution / scale_factor

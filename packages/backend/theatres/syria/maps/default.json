@@ -1,17 +1,18 @@
 {
     "map_name": "Default",
-    "projection": "transverse_mercator",
-    "central_meridian": 39,
-    "origin_lat": 37.50575,
-    "origin_lon": 29.9266,
-    "ref_corner_ne_lat": 37.8254,
-    "ref_corner_ne_lon": 41.695,
-    "bounds": {
-        "minLon": 29.9266,
-        "minLat": 31.3642,
-        "maxLon": 41.695,
-        "maxLat": 37.8254
-    },
+    "crs": "+proj=tmerc +lat_0=0 +lon_0=39 +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m +no_defs",
+    "origin_x": -803144.411,
+    "origin_y": 4191665.623,
+    "resolution": 56.129347,
+    "image_width_px": 18535,
+    "image_height_px": 12297,
+    "control_points": [
+        { "label": "Adana lake", "px": 8507.0, "py": 1517.0, "lat": "N 37° 02.061", "lon": "E 35° 20.632" },
+        { "label": "Malta cape", "px": 6311.2, "py": 5535.0, "lat": "N 34° 57.382", "lon": "E 34° 05.093" },
+        { "label": "Dead sea", "px": 8413.2, "py": 11947.3, "lat": "N 31° 45.919", "lon": "E 35° 30.452" },
+        { "label": "Palmyra lake", "px": 13031.6, "py": 6309.2, "lat": "N 34° 39.833", "lon": "E 38° 13.039" }
+    ],
+    "alignment_tolerance_px": 6,
     "zoom_info": [
         {
             "zoom": 0,

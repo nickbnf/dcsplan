@@ -3,11 +3,12 @@
 Static configuration, one directory per theatre:
 
     theatres/<theatre>/theatre.json       name, default map, navigation settings
-    theatres/<theatre>/maps/<map>.json    display projection, tile grid, bounds
+    theatres/<theatre>/maps/<map>.json    georeference (crs, origin, resolution,
+                                          control points) and tile grid
 
 The theatre owns the navigation settings used for leg calculations; a map only
-describes how the theatre is drawn. Ids are checked against the catalogue
-before they are used to build any path.
+describes how the theatre is drawn (see map_georeference). Ids are checked
+against the catalogue before they are used to build any path.
 """
 import json
 import os
@@ -49,7 +50,7 @@ def theatre_ids() -> list[str]:
 
 def load_theatre(theatre: str) -> dict:
     """The theatre config: `theatre_name`, `default_map`, `navigation`."""
-    with open(os.path.join(_theatre_dir(theatre), "theatre.json")) as f:
+    with open(os.path.join(_theatre_dir(theatre), "theatre.json"), encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -80,7 +81,7 @@ def map_path(theatre: str, map_id: Optional[str] = None) -> str:
 
 def load_map(theatre: str, map_id: Optional[str] = None) -> dict:
     """A map config; the theatre's default map when `map_id` is None."""
-    with open(map_path(theatre, map_id)) as f:
+    with open(map_path(theatre, map_id), encoding="utf-8") as f:
         return json.load(f)
 
 

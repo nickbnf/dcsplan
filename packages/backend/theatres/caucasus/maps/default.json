@@ -1,17 +1,18 @@
 {
     "map_name": "Default",
-    "projection": "mercator",
-    "central_meridian": 42,
-    "origin_lat": 45.612974,
-    "origin_lon": 36.247109,
-    "ref_corner_ne_lat": 45.612974,
-    "ref_corner_ne_lon": 45.481958,
-    "bounds": {
-        "minLon": 36.247109,
-        "minLat": 36.39918,
-        "maxLon": 45.481958,
-        "maxLat": 45.610888
-    },
+    "crs": "+proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +no_defs",
+    "origin_x": 4034993.28,
+    "origin_y": 5718628.716,
+    "resolution": 19.574315,
+    "image_width_px": 52518,
+    "image_height_px": 38754,
+    "control_points": [
+        { "label": "Black sea", "px": 2139.8, "py": 2439.3, "lat": "N 45° 18.749", "lon": "E 36° 37.393" },
+        { "label": "Vody lake", "px": 42985.0, "py": 10839.9, "lat": "N 44° 15.880", "lon": "E 43° 48.302" },
+        { "label": "Tbilisi lake", "px": 49166.2, "py": 30648.6, "lat": "N 41° 43.019", "lon": "E 44° 53.551" },
+        { "label": "Batumi cape", "px": 30273.4, "py": 31545.2, "lat": "N 41° 35.965", "lon": "E 41° 34.222" }
+    ],
+    "alignment_tolerance_px": 4,
     "zoom_info": [
         {
             "zoom": 0,

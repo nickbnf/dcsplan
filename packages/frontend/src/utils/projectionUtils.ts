@@ -1,11 +1,28 @@
-import { get, transform } from 'ol/proj';
+import { get } from 'ol/proj';
 import { register } from 'ol/proj/proj4';
 import proj4 from 'proj4';
-import type { Bounds } from './latLonGrid';
 import type Projection from 'proj4/dist/lib/Proj';
 
 /**
- * Creates a transverse Mercator projection with the specified central meridian
+ * Creates the projection of a displayed map from its `crs` proj string
+ * (georeference-control-points), registered under `code`. The backend uses the
+ * very same string, so both place a position on the same tile pixel.
+ */
+export const createProjectionFromCrs = (code: string, crs: string) => {
+  proj4.defs(code, crs);
+  register(proj4);
+
+  const projection = get(code);
+  if (!projection) {
+    throw new Error(`Failed to get projection ${code}`);
+  }
+  projection.setExtent([-20000000, -20000000, 20000000, 20000000]);
+  return { projection };
+};
+
+/**
+ * Creates the projection of a theatre's navigation settings (projection type,
+ * central meridian, standard parallels). Displayed maps use createProjectionFromCrs.
  */
 export const createMapProjection = (projectionType: string, centralMeridian: number, stdParallel1: number, stdParallel2: number) => {
   const falseEasting = 0;
@@ -55,33 +72,4 @@ export const createMapProjection = (projectionType: string, centralMeridian: num
   } else {
     throw new Error(`Failed to create projection ${projectionType}`);
   }
-};
-
-/**
- * Transforms geographic bounds to transverse Mercator coordinates
- */
-export const transformBoundsToTransverseMercator = (
-  bounds: Bounds,
-  projection: any
-) => {
-  const transformedMin = transform([bounds.minLon, bounds.minLat], 'EPSG:4326', projection.getCode());
-  const transformedMax = transform([bounds.maxLon, bounds.maxLat], 'EPSG:4326', projection.getCode());
-  
-  return [
-    transformedMin[0],  // minX in meters
-    transformedMin[1],  // minY in meters
-    transformedMax[0],  // maxX in meters
-    transformedMax[1]   // maxY in meters
-  ];
-};
-
-/**
- * Calculates the center point in transverse Mercator coordinates
- */
-export const calculateTransverseMercatorCenter = (
-  bounds: { minLon: number; minLat: number; maxLon: number; maxLat: number },
-  projection: any
-) => {
-  const geographicCenter = [(bounds.minLon + bounds.maxLon) / 2, (bounds.minLat + bounds.maxLat) / 2];
-  return transform(geographicCenter, 'EPSG:4326', projection.getCode());
 };

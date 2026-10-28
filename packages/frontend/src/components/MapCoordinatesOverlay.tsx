@@ -5,12 +5,15 @@ interface MapCoordinatesOverlayProps {
   coordinate: { lat: number; lon: number; raw_x: number; raw_y: number } | null;
   entryTemplate?: string | null;
   entryHasError?: boolean;
+  // Native image pixel under the cursor, for entering map control points (dev builds only)
+  nativePixel?: { px: number; py: number } | null;
 }
 
 export const MapCoordinatesOverlay: React.FC<MapCoordinatesOverlayProps> = ({
   coordinate,
   entryTemplate,
   entryHasError,
+  nativePixel,
 }) => {
   if (entryTemplate) {
     // § is inserted by formatTemplate at the cursor position
@@ -36,6 +39,12 @@ export const MapCoordinatesOverlay: React.FC<MapCoordinatesOverlayProps> = ({
         <span className="font-aero-mono">{formatCoordinate(coordinate.lat, 'lat')}</span>
         <span className="font-aero-mono">{formatCoordinate(coordinate.lon, 'lon')}</span>
       </div>
+      {nativePixel && (
+        <div className="flex gap-4 text-xs text-white/70" title="Native image pixel (Shift+P copies)">
+          <span className="font-aero-mono">px {nativePixel.px.toFixed(1)}</span>
+          <span className="font-aero-mono">py {nativePixel.py.toFixed(1)}</span>
+        </div>
+      )}
     </div>
   );
 };

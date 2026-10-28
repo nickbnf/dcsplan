@@ -213,7 +213,7 @@ async def get_theatre_info(theatre: str):
 
 @app.get("/theatres/{theatre}/maps/{map_id}.json")
 async def get_map_info(theatre: str, map_id: str):
-    """A map's display projection, tile grid and bounds."""
+    """A map's georeference (crs, origin, resolution, control points) and tile grid."""
     try:
         return FileResponse(theatres.map_path(theatre, map_id), headers=CONFIG_CACHE_HEADERS)
     except (theatres.UnknownTheatreError, theatres.UnknownMapError):

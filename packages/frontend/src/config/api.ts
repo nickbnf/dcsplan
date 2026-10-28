@@ -30,7 +30,7 @@ export const getTilesBaseUrl = (theatre: string, mapId: string): string => {
 export const getTheatreInfoUrl = (theatre: string): string => getApiUrl(`theatres/${theatre}/theatre.json`);
 
 /**
- * Get the URL of a map's config (display projection, tile grid, bounds)
+ * Get the URL of a map's config (georeference and tile grid)
  */
 export const getMapInfoUrl = (theatre: string, mapId: string): string =>
   getApiUrl(`theatres/${theatre}/maps/${mapId}.json`);
