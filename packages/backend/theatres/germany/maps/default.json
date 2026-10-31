@@ -82,5 +82,7 @@
             "width_px": 40960,
             "height_px": 32768
         }
-    ]
+    ],
+    "tile_pixel_ratio": 2,
+    "max_tile_zoom": 7
 }
