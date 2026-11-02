@@ -1,5 +1,6 @@
 import type { FlightPlan, Aircraft, LegData, Regime, Wind, LegSegmentsResult, TakeoffPerformance } from "../types/flightPlan";
 import { getEffectiveExitTime } from "./flightPlanUtils";
+import { effectiveTas } from "./regimeUtils";
 import { transform } from "ol/proj";
 
 /**
@@ -311,12 +312,11 @@ function calculateHeading(
 ): number {
   const windAngleRad =
     ((((windDir + 180) % 360) - course + 360) % 360) * (Math.PI / 180);
-  const tailComponent = windSpeed * Math.cos(windAngleRad);
   const crossComponent = windSpeed * Math.sin(windAngleRad);
 
-  const groundSpeed = tas + tailComponent;
+  // Wind triangle: sin(WCA) = crosswind / TAS
   let heading =
-    course - (Math.asin(crossComponent / groundSpeed) * 180) / Math.PI;
+    course - (Math.asin(crossComponent / tas) * 180) / Math.PI;
   if (heading < 0) {
     heading += 360;
   }
@@ -347,7 +347,7 @@ export function computeLegSegments(
     prevAlt: number;
     legAlt: number;
     distance: number; // nm
-    course: number;   // degrees magnetic
+    course: number;   // degrees true (wind directions are true)
     windA: Wind;      // wind at origin (used for transition segment)
     windB: Wind;      // wind at destination (used for cruise segment)
     tas: number;      // fallback TAS (waypoint value, used for level path)
@@ -503,9 +503,9 @@ export function intermediatePointOnLeg(
 }
 
 /**
- * Leg calculation result for drawing.
+ * Geometry and navigation values of one leg, shared by the map and the leg table.
  */
-export interface LegDrawDataResult {
+export interface LegGeometry {
   originLat: number;
   originLon: number;
   destinationLat: number;
@@ -519,17 +519,26 @@ export interface LegDrawDataResult {
   outboundBearing: number;
   heading: number;
   turnDirection: number;
+  turnAngleRad: number;
+  course: number;
+  distanceNm: number;
 }
 
 /**
- * Calculate all leg data sequentially (each leg depends on previous leg's heading).
+ * Leg calculation result for drawing.
  */
-export function calculateAllLegDrawData(
+export type LegDrawDataResult = Omit<LegGeometry, 'turnAngleRad' | 'course' | 'distanceNm'>;
+
+/**
+ * Compute the geometry of every leg sequentially (each leg's turn depends on the previous leg).
+ */
+export function computeLegGeometries(
   flightPlan: FlightPlan,
   projection: any,
-  navigationMode: string
-): LegDrawDataResult[] {
-  const results: LegDrawDataResult[] = [];
+  navigationMode: string,
+  aircraft: Aircraft
+): LegGeometry[] {
+  const results: LegGeometry[] = [];
 
   if (flightPlan.points.length < 2) {
     return results;
@@ -541,8 +550,9 @@ export function calculateAllLegDrawData(
     const origin = flightPlan.points[i];
     const destination = flightPlan.points[i + 1];
 
-    // Calculate turn radius based on TAS at destination turnpoint
-    const turnRadiusM = calculateTurnRadius(destination.tas, flightPlan.bankAngle);
+    // A leg is flown at its destination's effective TAS (regime cruise TAS when bound)
+    const tas = effectiveTas(destination, aircraft);
+    const turnRadiusM = calculateTurnRadius(tas, flightPlan.bankAngle);
 
     let turnCenterLat: number;
     let turnCenterLon: number;
@@ -595,16 +605,33 @@ export function calculateAllLegDrawData(
       projection
     );
 
-    // Calculate course (magnetic) for the straight portion of the leg
-    const course = (outboundBearing + flightPlan.declination + 360) % 360;
+    // Calculate turn angle
+    const startAngleRad = (90 - inboundBearing) * Math.PI / 180;
+    const endAngleRad = (90 - outboundBearing) * Math.PI / 180;
+    const turnAngleRad = (i === 0 ? 0 : angleDiff(startAngleRad, endAngleRad, turnDirection));
 
-    // Calculate heading (corrected for wind) for the straight portion of the leg
-    const heading = calculateHeading(
-      course,
+    // Calculate course (magnetic) for the straight portion of the leg.
+    // Declination is East-positive: magnetic = true - declination.
+    const course = (outboundBearing - flightPlan.declination + 360) % 360;
+
+    // Calculate heading (corrected for wind) for the straight portion of the leg.
+    // Wind direction is true, so the correction is computed on the true course.
+    const trueHeading = calculateHeading(
+      outboundBearing,
       destination.windSpeed,
       destination.windDir,
-      destination.tas
+      tas
     );
+    const heading = (trueHeading - flightPlan.declination + 360) % 360;
+
+    // Calculate distance to the destination
+    const turnDistanceM = Math.abs(turnRadiusM * turnAngleRad);
+    const straightDistanceM = calculateDistanceM(
+      straighteningLat, straighteningLon,
+      destination.lat, destination.lon,
+      navigationMode, projection
+    );
+    const distanceNm = (turnDistanceM + straightDistanceM) / 1852;
 
     results.push({
       originLat: origin.lat,
@@ -620,13 +647,30 @@ export function calculateAllLegDrawData(
       outboundBearing,
       heading,
       turnDirection,
+      turnAngleRad,
+      course,
+      distanceNm,
     });
 
-    // Update inbound bearing for next leg
-    inboundBearing = heading;
+    // The next turn starts along this leg's true ground track (leg-geometry)
+    inboundBearing = outboundBearing;
   }
 
   return results;
+}
+
+/**
+ * Calculate all leg data for drawing.
+ */
+export function calculateAllLegDrawData(
+  flightPlan: FlightPlan,
+  projection: any,
+  navigationMode: string,
+  aircraft: Aircraft
+): LegDrawDataResult[] {
+  return computeLegGeometries(flightPlan, projection, navigationMode, aircraft).map(
+    ({ turnAngleRad: _turnAngleRad, course: _course, distanceNm: _distanceNm, ...draw }) => draw
+  );
 }
 
 export function calculateAllLegData(
@@ -641,7 +685,7 @@ export function calculateAllLegData(
     return results;
   }
 
-  let inboundBearing = 0; // First leg has no inbound bearing
+  const geometries = computeLegGeometries(flightPlan, projection, navigationMode, aircraft);
   let previousEta = flightPlan.initTimeSec;
   let previousEfr = flightPlan.initFob - (aircraft.taxiFuel ?? 0);
   let hackOffsetSec: number | undefined = undefined;
@@ -652,79 +696,7 @@ export function calculateAllLegData(
   for (let i = 0; i < flightPlan.points.length - 1; i++) {
     const origin = flightPlan.points[i];
     const destination = flightPlan.points[i + 1];
-
-    // Calculate turn radius based on TAS at destination turnpoint
-    const turnRadiusM = calculateTurnRadius(destination.tas, flightPlan.bankAngle);
-
-    let straighteningLat: number;
-    let straighteningLon: number;
-    let turnDirection: number;
-
-    if (i === 0) {
-      // First leg: no turning arc, use origin as straightening point
-      straighteningLat = origin.lat;
-      straighteningLon = origin.lon;
-      inboundBearing = 0;
-      turnDirection = 1;
-    } else {
-      try {
-        [, , straighteningLat, straighteningLon, turnDirection] =
-          calculateStraighteningPoint(
-            inboundBearing,
-            origin.lat,
-            origin.lon,
-            destination.lat,
-            destination.lon,
-            turnRadiusM,
-            projection,
-            navigationMode
-          );
-      } catch (error) {
-        // Fallback: use origin as straightening point if calculation fails
-        console.warn(
-          `Failed to calculate straightening point for leg ${i}:`,
-          error
-        );
-        straighteningLat = origin.lat;
-        straighteningLon = origin.lon;
-        turnDirection = 1;
-      }
-    }
-
-    // Calculate outbound bearing (from straightening point to destination)
-    const outboundBearing = calculateBearing(
-      straighteningLat,
-      straighteningLon,
-      destination.lat,
-      destination.lon,
-      navigationMode,
-      projection
-    );
-
-    // Calculate turn angle
-    const startAngleRad = (90 - inboundBearing) * Math.PI / 180;
-    const endAngleRad = (90 - outboundBearing) * Math.PI / 180;
-    const turnAngleRad = (i === 0 ? 0 : angleDiff(startAngleRad, endAngleRad, turnDirection));
-
-    // Calculate course (magnetic) for the straight portion of the leg
-    const course = (outboundBearing + flightPlan.declination + 360) % 360;
-
-    // Calculate heading (corrected for wind) for the straight portion of the leg
-    const heading = calculateHeading(
-      course,
-      destination.windSpeed,
-      destination.windDir,
-      destination.tas
-    );
-
-    // Calculate distance and time to the destination
-    const turnDistanceM = Math.abs(turnRadiusM * turnAngleRad);
-    const straightDistanceM = calculateDistanceM(
-      straighteningLat, straighteningLon,
-      destination.lat, destination.lon,
-      navigationMode, projection
-    );
-    const distanceNm = (turnDistanceM + straightDistanceM) / 1852;
+    const { course, heading, distanceNm, outboundBearing } = geometries[i];
 
     // Regime-aware ETE and fuel computation
     const regime = destination.regimeId
@@ -735,7 +707,7 @@ export function calculateAllLegData(
         prevAlt: i === 0 ? (origin.groundAlt ?? 0) : origin.alt,
         legAlt: destination.alt,
         distance: distanceNm,
-        course,
+        course: outboundBearing,
         windA: { windSpeed: origin.windSpeed, windDir: origin.windDir },
         windB: { windSpeed: destination.windSpeed, windDir: destination.windDir },
         tas: destination.tas,
@@ -749,7 +721,7 @@ export function calculateAllLegData(
     let eteSec: number;
     let legFuelBase: number;
     if (segResult.kind === 'level') {
-      eteSec = Math.round(distanceNm / applyWind(segResult.tas, destination.windSpeed, destination.windDir, course) * 3600);
+      eteSec = Math.round(distanceNm / applyWind(segResult.tas, destination.windSpeed, destination.windDir, outboundBearing) * 3600);
       legFuelBase = eteSec * (segResult.ff / 3600);
     } else if (segResult.kind === 'segmented') {
       const takeoffTime = segResult.takeoff?.time ?? 0;
@@ -791,9 +763,6 @@ export function calculateAllLegData(
       hackEta,
       segmentsResult: segResult,
     });
-
-    // Update inbound bearing for next leg
-    inboundBearing = heading;
 
     // For next leg: if this destination is a Push point, depart from exit time
     if (destination.waypointType === 'push') {

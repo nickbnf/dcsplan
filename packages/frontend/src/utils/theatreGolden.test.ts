@@ -27,7 +27,7 @@ function loadNavigation(theatre: string) {
 function compute(plan: FlightPlan) {
   const { projection, mode } = loadNavigation(plan.theatre);
   const legs = calculateAllLegData(plan, projection, mode, defaultAircraft());
-  const draw = calculateAllLegDrawData(plan, projection, mode);
+  const draw = calculateAllLegDrawData(plan, projection, mode, defaultAircraft());
   return {
     legs: legs.map(l => ({ course: l.course, heading: l.heading, distance: l.distance, ete: l.ete, legFuel: l.legFuel })),
     draw: draw.map(d => ({

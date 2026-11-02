@@ -26,6 +26,13 @@ export function clearRegimeFromAllWaypoints(plan: FlightPlan, regimeId: string):
   return { ...plan, points: newPoints };
 }
 
+/** The TAS a leg is flown at: the bound regime's cruise TAS, or the waypoint's
+ * stored `tas` for a Manual leg or an orphan `regimeId` (leg-geometry). */
+export function effectiveTas(destination: FlightPlanTurnPoint, aircraft: Aircraft): number {
+  const regime = destination.regimeId ? aircraft.regimes.find(r => r.id === destination.regimeId) : undefined;
+  return regime?.cruise.tas ?? destination.tas;
+}
+
 /** The number of legs bound to a regime of `aircraft`. A `regimeId` that does
  * not resolve in it (an orphan) is not bound (performance-regime). */
 export function countBoundLegs(plan: FlightPlan, aircraft: Aircraft): number {

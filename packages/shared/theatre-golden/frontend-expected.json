@@ -2,25 +2,25 @@
   "caucasus": {
     "legs": [
       {
-        "course": 54.67808211726771,
-        "heading": 52.34978679390667,
+        "course": 42.67808211726771,
+        "heading": 40.01467840991654,
         "distance": 52.133951773221526,
-        "ete": 429,
-        "legFuel": 595.8333333333333
+        "ete": 431,
+        "legFuel": 598.6111111111111
       },
       {
-        "course": 111.14255322112984,
-        "heading": 111.2139589705989,
-        "distance": 115.44656978427162,
-        "ete": 866,
-        "legFuel": 1323.0555555555554
+        "course": 99.20211135029695,
+        "heading": 98.88262414047051,
+        "distance": 115.5553631406629,
+        "ete": 867,
+        "legFuel": 1324.5833333333333
       },
       {
-        "course": 293.23875118362935,
-        "heading": 291.7253646518751,
-        "distance": 140.93896832449437,
-        "ete": 1304,
-        "legFuel": 1738.6666666666665
+        "course": 278.299334768617,
+        "heading": 277.0884778367206,
+        "distance": 141.22625991781555,
+        "ete": 1312,
+        "legFuel": 1749.3333333333333
       }
     ],
     "draw": [
@@ -29,46 +29,46 @@
         "turnCenterLon": 0,
         "straighteningLat": 41.61,
         "straighteningLon": 41.6,
-        "heading": 52.34978679390667
+        "heading": 40.01467840991654
       },
       {
-        "turnCenterLat": 42.15123993977386,
-        "turnCenterLon": 42.50993548757203,
-        "straighteningLat": 42.18616326549056,
-        "straighteningLon": 42.523407340145,
-        "heading": 111.2139589705989
+        "turnCenterLat": 42.152720226926846,
+        "turnCenterLon": 42.51235887737021,
+        "straighteningLat": 42.18763248222439,
+        "straighteningLon": 42.52587903640729,
+        "heading": 98.88262414047051
       },
       {
-        "turnCenterLat": 41.643029829966,
-        "turnCenterLon": 44.935988489616854,
-        "straighteningLat": 41.615247641724864,
-        "straighteningLon": 44.92513255636288,
-        "heading": 291.7253646518751
+        "turnCenterLat": 41.69790636349322,
+        "turnCenterLon": 44.96015378577401,
+        "straighteningLat": 41.72603378890034,
+        "straighteningLon": 44.96907869690897,
+        "heading": 277.0884778367206
       }
     ]
   },
   "syria": {
     "legs": [
       {
-        "course": 21.655381324244843,
-        "heading": 18.35310139595638,
+        "course": 11.655381324244843,
+        "heading": 8.265924073586234,
         "distance": 68.97681453891134,
-        "ete": 584,
-        "legFuel": 811.1111111111111
+        "ete": 587,
+        "legFuel": 815.2777777777777
       },
       {
-        "course": 326.47089983434876,
-        "heading": 324.0710844119636,
-        "distance": 61.033867595348376,
-        "ete": 516,
-        "legFuel": 788.3333333333333
+        "course": 316.54087054114405,
+        "heading": 314.5423451199149,
+        "distance": 60.99721422385284,
+        "ete": 517,
+        "legFuel": 789.8611111111111
       },
       {
-        "course": 197.3736839060598,
-        "heading": 199.12119908695803,
-        "distance": 90.42476457759945,
-        "ete": 833,
-        "legFuel": 1110.6666666666665
+        "course": 187.42843809681085,
+        "heading": 189.24228541098466,
+        "distance": 90.25771675080732,
+        "ete": 829,
+        "legFuel": 1105.3333333333333
       }
     ],
     "draw": [
@@ -77,44 +77,44 @@
         "turnCenterLon": 0,
         "straighteningLat": 33.5,
         "straighteningLon": 36.3,
-        "heading": 18.35310139595638
+        "heading": 8.265924073586234
       },
       {
-        "turnCenterLat": 34.614394849481506,
-        "turnCenterLon": 36.64316209345175,
-        "straighteningLat": 34.645094497110726,
-        "straighteningLon": 36.68959676431938,
-        "heading": 324.0710844119636
+        "turnCenterLat": 34.61299614232162,
+        "turnCenterLon": 36.64267170729712,
+        "straighteningLat": 34.64364883850026,
+        "straighteningLon": 36.68915094743368,
+        "heading": 314.5423451199149
       },
       {
-        "turnCenterLat": 35.376260161808226,
-        "turnCenterLon": 35.91250116923737,
-        "straighteningLat": 35.384600998876145,
-        "straighteningLon": 35.866216080696624,
-        "heading": 199.12119908695803
+        "turnCenterLat": 35.37492787427037,
+        "turnCenterLon": 35.91381758659856,
+        "straighteningLat": 35.38330511471649,
+        "straighteningLon": 35.86754301184389,
+        "heading": 189.24228541098466
       }
     ]
   },
   "germany": {
     "legs": [
       {
-        "course": 47.52677053538662,
-        "heading": 44.915771486680256,
+        "course": 41.52677053538662,
+        "heading": 38.71589407731784,
         "distance": 107.83559553105805,
-        "ete": 892,
-        "legFuel": 1238.888888888889
+        "ete": 894,
+        "legFuel": 1241.6666666666665
       },
       {
-        "course": 77.53623016024142,
-        "heading": 75.59474783575058,
-        "distance": 133.71629196764607,
-        "ete": 1013,
-        "legFuel": 1547.6388888888887
+        "course": 71.5405405691788,
+        "heading": 69.32406674889137,
+        "distance": 133.71893958625887,
+        "ete": 1015,
+        "legFuel": 1550.6944444444443
       },
       {
-        "course": 224.41069822864938,
-        "heading": 225.37124305286846,
-        "distance": 109.0504890294043,
+        "course": 218.42387970275945,
+        "heading": 219.45166187630616,
+        "distance": 109.12896083197131,
         "ete": 1016,
         "legFuel": 1354.6666666666665
       }
@@ -125,21 +125,21 @@
         "turnCenterLon": 0,
         "straighteningLat": 50.05,
         "straighteningLon": 8.57,
-        "heading": 44.915771486680256
+        "heading": 38.71589407731784
       },
       {
-        "turnCenterLat": 51.47106526341774,
-        "turnCenterLon": 10.262743136855192,
-        "straighteningLat": 51.51558498378072,
-        "straighteningLon": 10.231113415551242,
-        "heading": 75.59474783575058
+        "turnCenterLat": 51.47133180657428,
+        "turnCenterLon": 10.263056449177997,
+        "straighteningLat": 51.51585310719595,
+        "straighteningLon": 10.231432166848206,
+        "heading": 69.32406674889137
       },
       {
-        "turnCenterLat": 52.323795061922965,
-        "turnCenterLon": 13.521920935282079,
-        "straighteningLat": 52.301370584438004,
-        "straighteningLon": 13.57321409474017,
-        "heading": 225.37124305286846
+        "turnCenterLat": 52.324048090782256,
+        "turnCenterLon": 13.523004424322245,
+        "straighteningLat": 52.301615900422476,
+        "straighteningLon": 13.574288965223497,
+        "heading": 219.45166187630616
       }
     ]
   }

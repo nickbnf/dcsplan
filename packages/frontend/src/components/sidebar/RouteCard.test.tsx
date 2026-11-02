@@ -204,7 +204,7 @@ describe('RouteCard', () => {
       });
       render(<RouteCard flightPlan={plan} legData={makeLegData()} index={0} onFlightPlanUpdate={onUpdate} />);
 
-      const windDirInput = screen.getByDisplayValue('270°');
+      const windDirInput = screen.getByDisplayValue('270°T');
       fireEvent.focus(windDirInput);
       fireEvent.change(windDirInput, { target: { value: '180' } });
       fireEvent.blur(windDirInput);
@@ -310,5 +310,17 @@ describe('RouteCard', () => {
       await userEvent.click(screen.getByText('⚠ Fix'));
       expect(onUpdate).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe('RouteCard wind direction (leg-geometry)', () => {
+  beforeEach(() => {
+    mockPerformance = defaultAircraft();
+  });
+
+  it('labels the wind direction as true', () => {
+    const plan = makePlan({ points: [makeWpt({ alt: 0 }), makeWpt({ alt: 10000, windDir: 270, windSpeed: 20 })] });
+    render(<RouteCard flightPlan={plan} legData={makeLegData()} index={0} onFlightPlanUpdate={vi.fn()} />);
+    expect(screen.getByDisplayValue('270°T')).toBeInTheDocument();
   });
 });

@@ -7,6 +7,7 @@ import { createFlightPlanLayer } from './flightPlanLayer';
 import { calculateAllLegDrawData, generateArcPoints } from './legCalculations';
 import { createNavigation } from '../hooks/useTheatreNavigation';
 import type { FlightPlan } from '../types/flightPlan';
+import { defaultAircraft } from '../types/flightPlan';
 
 // add-theatre-maps D4: geometry from the theatre's navigation settings,
 // placement on the displayed map's projection.
@@ -18,7 +19,7 @@ const display = getProjection('EPSG:3857')!;
 const toDisplay = ([lat, lon]: [number, number]) => transform([lon, lat], 'EPSG:4326', 'EPSG:3857');
 
 function flightLines() {
-  const layer = createFlightPlanLayer(germany, display, navigation);
+  const layer = createFlightPlanLayer(germany, display, navigation, defaultAircraft());
   return layer.getSource()!.getFeatures()
     .filter(f => f.get('type') === 'flightline')
     .sort((a, b) => a.get('startIndex') - b.get('startIndex'))
@@ -26,7 +27,7 @@ function flightLines() {
 }
 
 describe('createFlightPlanLayer with a display projection different from navigation', () => {
-  const draw = calculateAllLegDrawData(germany, navigation.projection, navigation.navigationMode);
+  const draw = calculateAllLegDrawData(germany, navigation.projection, navigation.navigationMode, defaultAircraft());
   const lines = flightLines();
 
   it('draws one line per leg', () => {
@@ -56,5 +57,27 @@ describe('createFlightPlanLayer with a display projection different from navigat
       expect(straightStart[1]).toBeCloseTo(expectedStart[1], 3);
       expect(destination).toEqual(toDisplay([leg.destinationLat, leg.destinationLon]));
     });
+  });
+});
+
+describe('createFlightPlanLayer with the resolved profile', () => {
+  // leg-geometry: a bound leg's turn is flown at the regime's cruise TAS
+  const bound: FlightPlan = {
+    ...germany,
+    points: germany.points.map((p, i) => (i === 2 ? { ...p, regimeId: 'fast' } : p)),
+  };
+  const lines = (aircraft: ReturnType<typeof defaultAircraft>) =>
+    createFlightPlanLayer(bound, display, navigation, aircraft).getSource()!.getFeatures()
+      .filter(f => f.get('type') === 'flightline')
+      .sort((a, b) => a.get('startIndex') - b.get('startIndex'))
+      .map(f => (f.getGeometry() as LineString).getCoordinates());
+
+  it("redraws a bound leg's turn when the regime's cruise TAS differs from the stored TAS", () => {
+    const withRegime = {
+      ...defaultAircraft(),
+      regimes: [{ id: 'fast', name: 'Fast', cruise: { tas: bound.points[2].tas + 150, ff: 5000 } }],
+    };
+    expect(lines(withRegime)[1]).not.toEqual(lines(defaultAircraft())[1]);
+    expect(lines(withRegime)[0]).toEqual(lines(defaultAircraft())[0]);
   });
 });

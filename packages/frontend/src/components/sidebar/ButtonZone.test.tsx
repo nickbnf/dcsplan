@@ -110,3 +110,14 @@ describe('ButtonZone file actions by tier (plan-import)', () => {
     expect(onExport).toHaveBeenCalled();
   });
 });
+
+describe('ButtonZone declination readout (leg-geometry)', () => {
+  it.each([
+    [6.5, '(+) 6.5°E'],
+    [-6.5, '(−) 6.5°W'],
+    [0, '0°'],
+  ])('declination %s reads %s', (declination, text) => {
+    renderZone({ isSettingsOpen: true, flightPlan: { ...plan, declination } });
+    expect(screen.getByText(text)).toBeInTheDocument();
+  });
+});

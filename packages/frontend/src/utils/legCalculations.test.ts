@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { calculateAllLegData, computeLegSegments, applyWind } from './legCalculations';
-import { get as getProjection } from 'ol/proj';
+import { calculateAllLegData, computeLegSegments, applyWind, computeLegGeometries, calculateTurnRadius } from './legCalculations';
+import { get as getProjection, transform } from 'ol/proj';
 import type { FlightPlan, Aircraft, Regime } from '../types/flightPlan';
 import { defaultAircraft } from '../types/flightPlan';
 // LegSegmentsResult types are in flightPlan.ts and re-exported from legCalculations.ts
@@ -650,5 +650,142 @@ describe('calculateAllLegData leg-0 groundAlt', () => {
     });
     const legs = calculateAllLegData(plan, projection, navigationMode, makeAircraft({ regimes: [fullRegime] }));
     expect(legs[1].segmentsResult?.kind).toBe('level');
+  });
+});
+
+describe('computeLegGeometries — effective TAS (leg-geometry)', () => {
+  const regime: Regime = { id: 'r480', name: 'Fast', cruise: { tas: 480, ff: 5000 } };
+  const plan = (bound: boolean) => makePlan({
+    points: [
+      makePoint(0, 0),
+      makePoint(0, 1),
+      makePoint(1, 1, { tas: 400, ...(bound ? { regimeId: 'r480' } : {}) }),
+    ],
+  });
+  const aircraft = makeAircraft({ regimes: [regime] });
+
+  it('flies the turn of a bound leg at the regime cruise TAS', () => {
+    const geoms = computeLegGeometries(plan(true), projection, navigationMode, aircraft);
+    expect(geoms[1].turnRadiusM).toBeCloseTo(calculateTurnRadius(480, 45), 6);
+  });
+
+  it('flies the turn of a Manual leg at the stored TAS', () => {
+    const geoms = computeLegGeometries(plan(false), projection, navigationMode, aircraft);
+    expect(geoms[1].turnRadiusM).toBeCloseTo(calculateTurnRadius(400, 45), 6);
+  });
+
+  it('flies the turn of an orphan-bound leg at the stored TAS', () => {
+    const geoms = computeLegGeometries(plan(true), projection, navigationMode, makeAircraft());
+    expect(geoms[1].turnRadiusM).toBeCloseTo(calculateTurnRadius(400, 45), 6);
+  });
+});
+
+describe('computeLegGeometries — turn starts tangent to the arrival track (leg-geometry)', () => {
+  // EPSG:3857 in projected mode: metres, so the turn radius and the plane geometry agree
+  const merc = getProjection('EPSG:3857')!;
+  const wind = { windSpeed: 40, windDir: 0 }; // 40 kt from the north: a crosswind on the eastbound leg
+
+  for (const declination of [0, 6, -6]) {
+    for (const withWind of [false, true]) {
+      it(`declination ${declination}, ${withWind ? '40 kt crosswind' : 'no wind'}`, () => {
+        const w = withWind ? wind : {};
+        const plan = makePlan({
+          declination,
+          points: [makePoint(42, 41, w), makePoint(42, 41.6, w), makePoint(42.5, 41.6, w)],
+        });
+        const [leg1, leg2] = computeLegGeometries(plan, merc, 'projected', makeAircraft());
+
+        expect(leg2.inboundBearing).toBeCloseTo(leg1.outboundBearing, 6);
+
+        // The turn centre sits one radius from the waypoint, perpendicular to the arrival track
+        const [ox, oy] = transform([leg2.originLon, leg2.originLat], 'EPSG:4326', 'EPSG:3857');
+        const [cx, cy] = transform([leg2.turnCenterLon, leg2.turnCenterLat], 'EPSG:4326', 'EPSG:3857');
+        const b = leg1.outboundBearing * Math.PI / 180;
+        const along = (cx - ox) * Math.sin(b) + (cy - oy) * Math.cos(b);
+        expect(Math.abs(along)).toBeLessThan(1e-6 * leg2.turnRadiusM);
+        expect(Math.hypot(cx - ox, cy - oy)).toBeCloseTo(leg2.turnRadiusM, 3);
+      });
+    }
+  }
+});
+
+describe('computeLegGeometries — magnetic course, East-positive declination (leg-geometry)', () => {
+  // EPSG:4326 in projected mode: bearing = atan2(dLon, dLat) exactly
+  const course = (declination: number, dLat: number, dLon: number) =>
+    computeLegGeometries(
+      makePlan({ declination, points: [makePoint(0, 0), makePoint(dLat, dLon)] }),
+      projection, navigationMode, makeAircraft(),
+    )[0].course;
+
+  it('subtracts an easterly declination: 090 true, 6°E → 084', () => {
+    expect(course(6, 0, 1)).toBeCloseTo(84, 9);
+  });
+
+  it('adds a westerly declination: 090 true, 6°W → 096', () => {
+    expect(course(-6, 0, 1)).toBeCloseTo(96, 9);
+  });
+
+  it('wraps around north: 002 true, 6°E → 356', () => {
+    expect(course(6, 1, Math.tan(2 * Math.PI / 180))).toBeCloseTo(356, 9);
+  });
+
+  it('leaves the route, distances, ETE and fuel unchanged when only the declination changes', () => {
+    // Wind directions are true, so even with wind nothing but course and heading moves
+    const w = { windSpeed: 35, windDir: 200 };
+    const plan = (declination: number) => makePlan({
+      declination,
+      points: [makePoint(0, 0, w), makePoint(0, 1, w), makePoint(1, 1, w), makePoint(1, 2, w)],
+    });
+    const merc = getProjection('EPSG:3857')!;
+    const geo = (d: number) => computeLegGeometries(plan(d), merc, 'projected', makeAircraft());
+    const legs = (d: number) => calculateAllLegData(plan(d), merc, 'projected', makeAircraft());
+    const [g0, g6] = [geo(0), geo(6)];
+    const [l0, l6] = [legs(0), legs(6)];
+    g0.forEach((g, i) => {
+      for (const key of ['turnCenterLat', 'turnCenterLon', 'straighteningLat', 'straighteningLon', 'distanceNm'] as const) {
+        expect(g6[i][key], `${key}[${i}]`).toBeCloseTo(g[key], 9);
+      }
+      expect(l6[i].ete).toBe(l0[i].ete);
+      expect(l6[i].legFuel).toBeCloseTo(l0[i].legFuel, 9);
+    });
+  });
+});
+
+describe('computeLegGeometries — heading wind correction uses TAS (leg-geometry)', () => {
+  const heading = (wind: { windSpeed: number; windDir: number }) =>
+    computeLegGeometries(
+      makePlan({ points: [makePoint(0, 0), makePoint(1, 0, { tas: 300, ...wind })] }),
+      projection, navigationMode, makeAircraft(),
+    )[0].heading;
+
+  it('TAS 300, course 360, wind 60 kt from 045 → heading ≈ 008.1°', () => {
+    const expected = Math.asin(60 * Math.sin(Math.PI / 4) / 300) * 180 / Math.PI;
+    expect(heading({ windSpeed: 60, windDir: 45 })).toBeCloseTo(expected, 9);
+    expect(expected).toBeCloseTo(8.13, 2);
+  });
+
+  it('no wind → heading equals course', () => {
+    expect(heading({ windSpeed: 0, windDir: 0 })).toBeCloseTo(0, 9);
+  });
+});
+
+describe('calculateAllLegData — wind direction is true (leg-geometry)', () => {
+  it('a 30 kt headwind on true 090 with 6°E declination gives ground speed TAS − 30', () => {
+    const plan = makePlan({
+      declination: 6,
+      points: [makePoint(0, 0), makePoint(0, 1, { tas: 400, windSpeed: 30, windDir: 90 })],
+    });
+    const [leg] = calculateAllLegData(plan, projection, navigationMode, makeAircraft());
+    expect(leg.course).toBeCloseTo(84, 9);
+    expect(leg.ete).toBe(Math.round(leg.distance / 370 * 3600));
+  });
+
+  it('heading equals the magnetic course for a pure headwind', () => {
+    const plan = makePlan({
+      declination: 6,
+      points: [makePoint(0, 0), makePoint(0, 1, { tas: 400, windSpeed: 30, windDir: 90 })],
+    });
+    const [leg] = calculateAllLegData(plan, projection, navigationMode, makeAircraft());
+    expect(leg.heading).toBeCloseTo(84, 9);
   });
 });

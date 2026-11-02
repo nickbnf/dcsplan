@@ -528,12 +528,19 @@ def compute_leg_segments(
     return result
 
 
+def _effective_tas(point: 'FlightPlanTurnPoint', aircraft: 'Aircraft') -> float:
+    """TAS a leg is flown at: the bound regime's cruise TAS, else the stored tas (leg-geometry)."""
+    regime = next((r for r in aircraft.regimes if r.id == point.regimeId), None) if point.regimeId else None
+    return regime.cruise.tas if regime else point.tas
+
+
 class LegData:
     """Represent a leg with all the data to display."""
     origin: Point               # Origin turnpoint (where the turn starts)
     destination: Point          # Destination turnpoint
     straigthening_point: Point  # Point where the turn is finished
     turn_data: TurnData         # Data for the turn (center point and radius)
+    outbound_bearing: float     # True course after the turn (the next turn starts along it)
     course: float               # Magnetic course after the turn
     distanceNm: float           # Distance of the leg in nautical miles
     eteSec: int                 # Estimated time of arrival in seconds
@@ -553,7 +560,9 @@ class LegData:
         self.origin = Point(flightPlan.points[indexWptFrom].lat, flightPlan.points[indexWptFrom].lon)
         self.destination = Point(flightPlan.points[indexWptTo].lat, flightPlan.points[indexWptTo].lon)
 
-        turn_radius_m = (flightPlan.points[indexWptTo].tas * 0.514)**2 / (9.80665 * math.tan(math.radians(flightPlan.bankAngle)))
+        # A leg is flown at its destination's effective TAS (regime cruise TAS when bound)
+        effective_tas = _effective_tas(flightPlan.points[indexWptTo], aircraft)
+        turn_radius_m = (effective_tas * 0.514)**2 / (9.80665 * math.tan(math.radians(flightPlan.bankAngle)))
         logger.info(f"Turn radius: {turn_radius_m:.2f} meters")
 
         # Calculate the straigthening point (point where the turn is finished).
@@ -571,7 +580,9 @@ class LegData:
 
         # Calculate the course and distance of the leg.
         bearing = calculate_bearing(self.straigthening_point, self.destination, navigation_mode, transformer)
-        self.course = (bearing + flightPlan.declination + 360) % 360
+        self.outbound_bearing = bearing
+        # Declination is East-positive: magnetic = true - declination
+        self.course = (bearing - flightPlan.declination + 360) % 360
         logger.info(f"Course: {self.course}")
 
         # Calculate the distance of the leg.
@@ -622,13 +633,15 @@ class LegData:
         distance = arc_distance + calculate_distance(self.straigthening_point, self.destination, navigation_mode, transformer)
         self.distanceNm = distance / 1852
 
-        # Calculate wind for heading and arc time (uses destination wind)
-        windAngleRad = ((((flightPlan.points[indexWptTo].windDir + 180) % 360) - self.course + 360) % 360) * (math.pi / 180)
+        # Calculate wind for heading and arc time (uses destination wind).
+        # Wind direction is true, so components are taken against the true course.
+        windAngleRad = ((((flightPlan.points[indexWptTo].windDir + 180) % 360) - bearing + 360) % 360) * (math.pi / 180)
         tailComponent = flightPlan.points[indexWptTo].windSpeed * math.cos(windAngleRad)
         crossComponent = flightPlan.points[indexWptTo].windSpeed * math.sin(windAngleRad)
-        cruiseGroundSpeed = flightPlan.points[indexWptTo].tas + tailComponent
+        cruiseGroundSpeed = effective_tas + tailComponent
         self.time_to_straightening_s = round((arc_distance / 1852) / cruiseGroundSpeed * 3600)
-        self.heading = (self.course - math.asin(crossComponent / cruiseGroundSpeed) * 180 / math.pi + 360) % 360
+        # Wind triangle: sin(WCA) = crosswind / TAS
+        self.heading = (self.course - math.asin(crossComponent / effective_tas) * 180 / math.pi + 360) % 360
 
         # Regime-aware ETE and fuel
         regime_id = flightPlan.points[indexWptTo].regimeId
@@ -640,7 +653,7 @@ class LegData:
             prev_alt=(origin_pt.groundAlt or 0) if leg_index == 0 else origin_pt.alt,
             leg_alt=dest_pt.alt,
             distance_nm=self.distanceNm,
-            course=self.course,
+            course=bearing,
             wind_a_speed=origin_pt.windSpeed, wind_a_dir=origin_pt.windDir,
             wind_b_speed=dest_pt.windSpeed, wind_b_dir=dest_pt.windDir,
             tas=dest_pt.tas,
@@ -650,7 +663,7 @@ class LegData:
             takeoff=aircraft.takeoff,
         )
         if seg['kind'] == 'level':
-            gs = apply_wind(seg['tas'], dest_pt.windSpeed, dest_pt.windDir, self.course)
+            gs = apply_wind(seg['tas'], dest_pt.windSpeed, dest_pt.windDir, bearing)
             self.eteSec = round(self.distanceNm / gs * 3600)
             self.legFuel = self.eteSec * seg['ff'] / 3600
         elif seg['kind'] == 'segmented':
@@ -662,7 +675,7 @@ class LegData:
             self.eteSec = seg['fallback_time_sec']
             self.legFuel = seg['fallback_fuel']
 
-        self.tas = seg['tas'] if seg['kind'] == 'level' else flightPlan.points[indexWptTo].tas
+        self.tas = seg['tas'] if seg['kind'] == 'level' else effective_tas
         self.prev_alt = (origin_pt.groundAlt or 0) if leg_index == 0 else origin_pt.alt
         self.alt = flightPlan.points[indexWptTo].alt
 
@@ -710,7 +723,7 @@ class FlightPlanData:
                 self.turnpointData.append(tp)
             else:
                 if i < len(flightPlan.points):
-                    inbound_bearing = self.legData[-1].heading if len(self.legData) > 0 else 0
+                    inbound_bearing = self.legData[-1].outbound_bearing if len(self.legData) > 0 else 0
                     leg = LegData(flightPlan, aircraft, i-1, i, inbound_bearing, transformer, navigation_mode)
                     self.legData.append(leg)
                 tp = TurnpointData()

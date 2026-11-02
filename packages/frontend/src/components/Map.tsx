@@ -25,6 +25,7 @@ import { MapCoordinatesOverlay } from './MapCoordinatesOverlay';
 import { saveMapViewState, getMapViewState, fitMapToFlightPlan } from '../utils/mapViewState';
 import { useWaypointSelection } from '../contexts/WaypointSelectionContext';
 import { useObjectSelection } from '../contexts/ObjectSelectionContext';
+import { usePerformance } from '../contexts/PerformanceContext';
 import { initCoordEntry, applyKey, parseCoordEntry, formatTemplate } from '../utils/coordEntryUtils';
 import {
   buildPlanObjectsSource,
@@ -113,6 +114,10 @@ const MapComponent: React.FC<MapComponentProps> = ({
   // Always-current refs so event handlers see fresh values without re-registering
   const flightPlanRef = useRef(flightPlan);
   flightPlanRef.current = flightPlan;
+  // The resolved profile: turns are flown at the regime TAS of bound legs (leg-geometry)
+  const { performance } = usePerformance();
+  const performanceRef = useRef(performance);
+  performanceRef.current = performance;
   const libraryRef = useRef(library);
   libraryRef.current = library;
   const activeTabRef = useRef(activeTab);
@@ -215,7 +220,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
     libGhostsLayer.setVisible(activeTabRef.current === 'objects');
     libGhostsLayerRef.current = libGhostsLayer;
 
-    const flightPlanLayer = createFlightPlanLayer(flightPlanRef.current, mapProjection, navigation);
+    const flightPlanLayer = createFlightPlanLayer(flightPlanRef.current, mapProjection, navigation, performanceRef.current);
     flightPlanLayer.set('name', 'flightplan');
 
     const drawingLayer = new VectorLayer({
@@ -508,7 +513,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
     }
 
     if (!navigationRef.current) return;
-    const newFlightPlanLayer = createFlightPlanLayer(flightPlan, mapInstanceRef.current.getView().getProjection(), navigationRef.current, drawingState.draggedWaypointIndex ?? undefined, selectedIndex ?? undefined);
+    const newFlightPlanLayer = createFlightPlanLayer(flightPlan, mapInstanceRef.current.getView().getProjection(), navigationRef.current, performance, drawingState.draggedWaypointIndex ?? undefined, selectedIndex ?? undefined);
     newFlightPlanLayer.set('name', 'flightplan');
 
     mapInstanceRef.current.addLayer(newFlightPlanLayer);
@@ -531,7 +536,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
         mapInstanceRef.current.removeInteraction(snapInteractionRef.current);
       }
     }
-  }, [flightPlan, isLoading, drawingState.isDrawing === 'DRAG_POINT', selectedIndex]);
+  }, [flightPlan, performance, isLoading, drawingState.isDrawing === 'DRAG_POINT', selectedIndex]);
 
   // Ensure interactions are properly installed when transitioning from drawing to normal mode
   useEffect(() => {

@@ -1,5 +1,5 @@
 import VectorSource from "ol/source/Vector";
-import type { FlightPlan } from "../types/flightPlan";
+import type { Aircraft, FlightPlan } from "../types/flightPlan";
 import VectorLayer from "ol/layer/Vector";
 import { Point, LineString } from "ol/geom";
 import { Stroke, Style, Circle, Fill, Text, RegularShape, Icon } from "ol/style";
@@ -13,7 +13,7 @@ import type { TheatreNavigation } from "../hooks/useTheatreNavigation";
 // settings; `projection` is the displayed map's and only places the resulting
 // lat/lon, so each straight part of a leg is a straight segment on any map.
 // excludeWaypointIndex is the index of the waypoint to exclude (i.e. because it is being dragged)
-export const createFlightPlanLayer = (flightPlan: FlightPlan, projection: any, navigation: TheatreNavigation, excludedWaypointIndex?: number, selectedWaypointIndex?: number) => {
+export const createFlightPlanLayer = (flightPlan: FlightPlan, projection: any, navigation: TheatreNavigation, aircraft: Aircraft, excludedWaypointIndex?: number, selectedWaypointIndex?: number) => {
     const source = new VectorSource();
     
     // Add point features for turn points
@@ -43,7 +43,7 @@ export const createFlightPlanLayer = (flightPlan: FlightPlan, projection: any, n
     }
 
     // Calculate all leg data once (sequential calculation)
-    const legDrawData = calculateAllLegDrawData(flightPlan, navigation.projection, navigation.navigationMode);
+    const legDrawData = calculateAllLegDrawData(flightPlan, navigation.projection, navigation.navigationMode, aircraft);
 
     // Add line features for every pair of points in the flight plan
     // Skip lines that involve the excluded waypoint

@@ -233,9 +233,8 @@ class TestFlightPlanDataDeclination:
         
         # Course should be adjusted by declination
         for leg in fp_data.legData:
-            # Course = bearing + declination
-            # With east declination, course should be higher than bearing
-            assert leg.course > 0
+            # Course = bearing - declination (East-positive, leg-geometry)
+            assert leg.course == pytest.approx((leg.outbound_bearing - 12.5 + 360) % 360)
         
         # All calculations should still work correctly
         for i in range(1, len(fp_data.turnpointData)):
@@ -644,3 +643,104 @@ class TestLeg0GroundAlt:
         level_ete = round(leg1.distanceNm / 400 * 3600)
         assert leg1.eteSec == level_ete
 
+
+
+class TestLegGeometry:
+    """leg-geometry: turn start, effective TAS, declination convention, true wind."""
+
+    def _navigation(self, theatre="syria"):
+        from flight_plan import _load_navigation_config, _create_transformer
+        return _create_transformer(_load_navigation_config(theatre))
+
+    @staticmethod
+    def _radius(tas, bank=30.0):
+        import math
+        return (tas * 0.514) ** 2 / (9.80665 * math.tan(math.radians(bank)))
+
+    def _turn_center_offset(self, leg):
+        """Vector from the leg origin to its turn centre, in the navigation projection."""
+        from flight_plan import _project
+        t = self._navigation()
+        ox, oy = _project(t, leg.origin.lat, leg.origin.lon)
+        cx, cy = _project(t, leg.turn_data.center.lat, leg.turn_data.center.lon)
+        return cx - ox, cy - oy
+
+    @pytest.mark.parametrize("declination", [0.0, 6.0, -6.0])
+    @pytest.mark.parametrize("wind_speed", [0, 40])
+    def test_turn_starts_tangent_to_arrival_track(self, declination, wind_speed):
+        import math
+        points_data = [
+            {"lat": 34.0, "lon": 36.0, "windSpeed": wind_speed, "windDir": 0},
+            {"lat": 34.0, "lon": 36.6, "windSpeed": wind_speed, "windDir": 0},
+            {"lat": 34.5, "lon": 36.6, "windSpeed": wind_speed, "windDir": 0},
+        ]
+        leg1, leg2 = FlightPlanData(create_flight_plan(points_data, declination=declination)).legData
+        dx, dy = self._turn_center_offset(leg2)
+        b = math.radians(leg1.outbound_bearing)
+        along = dx * math.sin(b) + dy * math.cos(b)
+        assert abs(along) < 1e-6 * self._radius(400)
+        assert math.hypot(dx, dy) == pytest.approx(self._radius(400), rel=1e-9)
+
+    def test_bound_leg_turns_at_regime_tas(self):
+        import math
+        from flight_plan import Aircraft, Regime, RegimeCruise
+        aircraft = Aircraft(regimes=[Regime(id="r480", name="Fast", cruise=RegimeCruise(tas=480, ff=5000))])
+        points = [
+            create_turnpoint(34.0, 36.0),
+            create_turnpoint(34.0, 36.6),
+            create_turnpoint(34.5, 36.6, tas=400),
+        ]
+        bound = points[:2] + [points[2].model_copy(update={"regimeId": "r480"})]
+        orphan = points[:2] + [points[2].model_copy(update={"regimeId": "gone"})]
+
+        def radius(pts):
+            plan = FlightPlan(theatre="syria", points=pts, declination=0, bankAngle=30, initTimeSec=43200, initFob=12000)
+            return math.hypot(*self._turn_center_offset(FlightPlanData(plan, aircraft).legData[1]))
+
+        assert radius(bound) == pytest.approx(self._radius(480), rel=1e-9)
+        assert radius(points) == pytest.approx(self._radius(400), rel=1e-9)
+        assert radius(orphan) == pytest.approx(self._radius(400), rel=1e-9)
+
+    @pytest.mark.parametrize("declination,expected_offset", [(6.0, -6.0), (-6.0, 6.0)])
+    def test_course_is_true_minus_declination(self, declination, expected_offset):
+        points_data = [{"lat": 34.0, "lon": 36.0, "windSpeed": 0}, {"lat": 34.0, "lon": 37.0, "windSpeed": 0}]
+        leg = FlightPlanData(create_flight_plan(points_data, declination=declination)).legData[0]
+        assert leg.course == pytest.approx((leg.outbound_bearing + expected_offset + 360) % 360)
+
+    def test_heading_wind_correction_uses_tas(self):
+        import math
+        # Northbound along a meridian: true course 000
+        points_data = [
+            {"lat": 34.0, "lon": 36.0, "windSpeed": 0},
+            {"lat": 35.0, "lon": 36.0, "tas": 300, "windSpeed": 60, "windDir": 45},
+        ]
+        leg = FlightPlanData(create_flight_plan(points_data)).legData[0]
+        expected = math.degrees(math.asin(60 * math.sin(math.radians(45)) / 300))
+        assert leg.heading == pytest.approx(expected, abs=1e-6)
+
+    def test_true_wind_headwind_is_independent_of_declination(self):
+        # Northbound, 30 kt from 000 true: a pure headwind whatever the declination
+        points_data = [
+            {"lat": 34.0, "lon": 36.0, "windSpeed": 0},
+            {"lat": 35.0, "lon": 36.0, "tas": 400, "windSpeed": 30, "windDir": 0},
+        ]
+        legs = [FlightPlanData(create_flight_plan(points_data, declination=d)).legData[0] for d in (0.0, 6.0)]
+        for leg in legs:
+            assert leg.eteSec == round(leg.distanceNm / 370 * 3600)
+        assert legs[1].heading == pytest.approx((legs[1].outbound_bearing - 6.0 + 360) % 360, abs=1e-6)
+
+    def test_declination_changes_only_course_and_heading(self):
+        points_data = [
+            {"lat": 34.0, "lon": 36.0, "windSpeed": 35, "windDir": 200},
+            {"lat": 34.0, "lon": 36.6, "windSpeed": 35, "windDir": 200},
+            {"lat": 34.5, "lon": 36.6, "windSpeed": 35, "windDir": 200},
+            {"lat": 34.5, "lon": 37.2, "windSpeed": 35, "windDir": 200},
+        ]
+        a = FlightPlanData(create_flight_plan(points_data, declination=0.0)).legData
+        b = FlightPlanData(create_flight_plan(points_data, declination=6.0)).legData
+        for la, lb in zip(a, b):
+            assert lb.turn_data.center.lat == pytest.approx(la.turn_data.center.lat, abs=1e-12)
+            assert lb.turn_data.center.lon == pytest.approx(la.turn_data.center.lon, abs=1e-12)
+            assert lb.distanceNm == pytest.approx(la.distanceNm, rel=1e-12)
+            assert lb.eteSec == la.eteSec
+            assert lb.legFuel == pytest.approx(la.legFuel, rel=1e-12)

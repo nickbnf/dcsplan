@@ -157,6 +157,24 @@ map's alignment tolerance:
 cd packages/backend && .venv/bin/python -m pytest test_map_georeference.py
 ```
 
+A new map, or a change to a map's `crs` or control points, also makes
+`test_parity_fixture_is_up_to_date` fail until the projection parity fixture
+(`packages/shared/map-georeference/projected-control-points.json`) is
+regenerated. It holds each control point projected with pyproj, which the
+frontend checks against proj4js. Regenerate it, check it, then run the frontend
+parity test:
+
+```bash
+cd packages/backend
+UPDATE_GOLDEN=1 .venv/bin/python -m pytest test_map_georeference.py
+.venv/bin/python -m pytest test_map_georeference.py
+cd ../frontend && pnpm vitest run src/utils/mapGeoreferenceParity.test.ts
+```
+
+Review the fixture's diff before committing: only the entries of the maps you
+changed should move. See "Golden Files" in the root README for the other golden
+files.
+
 ### Output Structure
 
 The script generates tiles in the following structure:

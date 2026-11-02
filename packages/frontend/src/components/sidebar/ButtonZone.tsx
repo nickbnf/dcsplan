@@ -75,7 +75,7 @@ export const ButtonZone: React.FC<ButtonZoneProps> = ({
             <div className="flex items-center justify-between">
               <label className="text-xs font-aero-label text-gray-600">Declination</label>
               <span className="text-xs font-aero-label text-gray-700">
-                {declination === 0 ? '0°' : declination > 0 ? `${declination}°E` : `${Math.abs(declination)}°W`}
+                {declination === 0 ? '0°' : declination > 0 ? `(+) ${declination}°E` : `(−) ${Math.abs(declination)}°W`}
               </span>
             </div>
             <input

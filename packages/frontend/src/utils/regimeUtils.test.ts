@@ -3,8 +3,10 @@ import {
   applyRegimeToWaypoint,
   clearRegimeBinding,
   clearRegimeFromAllWaypoints,
+  effectiveTas,
 } from './regimeUtils';
 import type { FlightPlan, FlightPlanTurnPoint, Regime } from '../types/flightPlan';
+import { defaultAircraft } from '../types/flightPlan';
 
 function makeWaypoint(overrides: Partial<FlightPlanTurnPoint> = {}): FlightPlanTurnPoint {
   return { id: 'wp1', lat: 0, lon: 0, tas: 400, alt: 10000, fuelFlow: 3600, windSpeed: 0, windDir: 0, ...overrides };
@@ -71,5 +73,21 @@ describe('clearRegimeFromAllWaypoints', () => {
     const plan = makePlan([makeWaypoint({ regimeId: 'r1' })]);
     clearRegimeFromAllWaypoints(plan, 'r1');
     expect(plan.points[0].regimeId).toBe('r1');
+  });
+});
+
+describe('effectiveTas', () => {
+  const aircraft = { ...defaultAircraft(), regimes: [makeRegime({ id: 'r1', cruise: { tas: 480, ff: 4000 } })] };
+
+  it('returns the regime cruise TAS for a bound leg, ignoring the stored tas', () => {
+    expect(effectiveTas(makeWaypoint({ tas: 400, regimeId: 'r1' }), aircraft)).toBe(480);
+  });
+
+  it('returns the stored tas for a Manual leg', () => {
+    expect(effectiveTas(makeWaypoint({ tas: 400 }), aircraft)).toBe(400);
+  });
+
+  it('returns the stored tas for an orphan regimeId', () => {
+    expect(effectiveTas(makeWaypoint({ tas: 400, regimeId: 'gone' }), aircraft)).toBe(400);
   });
 });

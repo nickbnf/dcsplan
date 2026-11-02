@@ -4,7 +4,7 @@ import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import type { FlightPlan, LegData, WaypointType, Regime, LegSegmentsResult } from '../../types/flightPlan';
 import type { DrawingState } from '../../hooks/useDrawing';
 import { flightPlanUtils, getEffectiveExitTime } from '../../utils/flightPlanUtils';
-import { applyRegimeToWaypoint, clearRegimeBinding } from '../../utils/regimeUtils';
+import { applyRegimeToWaypoint, clearRegimeBinding, effectiveTas } from '../../utils/regimeUtils';
 import { formatCoordinate } from '../../utils/coordinateUtils';
 import { GenerateDialog } from './GenerateDialog';
 import { DeleteWaypointDialog } from './DeleteWaypointDialog';
@@ -664,7 +664,7 @@ export const RouteCard: React.FC<{
   const prevAltForGlyph = index === 0 ? (prevWpt.groundAlt ?? 0) : prevWpt.alt;
   const altDelta = destWpt.alt - prevAltForGlyph;
   const boundRegime = destWpt.regimeId ? performance.regimes.find(r => r.id === destWpt.regimeId) : undefined;
-  const displayTas = boundRegime?.cruise.tas ?? destWpt.tas;
+  const displayTas = effectiveTas(destWpt, performance);
   const displayFf = boundRegime?.cruise.ff ?? destWpt.fuelFlow;
   const seg = legData.segmentsResult;
   const isWarning = seg?.kind === 'warning';
@@ -801,7 +801,7 @@ export const RouteCard: React.FC<{
             <span className="font-aero-label text-gray-600 text-xs">WND</span>
             <span>
               <EditableField
-                value={`${destWpt.windDir}°`}
+                value={`${destWpt.windDir}°T`}
                 onChange={(value: string) => {
                   const m = value.match(/\d+/);
                   if (m && m[0]) {
@@ -811,7 +811,7 @@ export const RouteCard: React.FC<{
                 }}
                 className="font-aero-mono text-gray-900 text-xs"
                 maxLength={3}
-                unit="°"
+                unit="°T"
               />
               /
               <EditableField
