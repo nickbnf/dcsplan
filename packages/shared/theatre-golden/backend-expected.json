@@ -103,5 +103,29 @@
       "eteSec": 1016,
       "legFuel": 1354.6666666666667
     }
+  ],
+  "syria-departure": [
+    {
+      "straighteningLat": 33.564190815813326,
+      "straighteningLon": 36.38151641978206,
+      "turnCenterLat": 0,
+      "turnCenterLon": 0,
+      "course": 305.11601026404105,
+      "heading": 303.0621204973179,
+      "distanceNm": 39.55974069667559,
+      "eteSec": 461,
+      "legFuel": 960.0006014310626
+    },
+    {
+      "straighteningLat": 34.01360585266649,
+      "straighteningLon": 35.89625153957634,
+      "turnCenterLat": 33.95809852693883,
+      "turnCenterLon": 35.955241631542336,
+      "course": 43.32222892788894,
+      "heading": 39.71720118081947,
+      "distanceNm": 60.947497290010666,
+      "eteSec": 505,
+      "legFuel": 701.3888888888889
+    }
   ]
 }

@@ -1,6 +1,10 @@
 import type { FlightPlan, Aircraft, LegData, Regime, Wind, LegSegmentsResult, TakeoffPerformance } from "../types/flightPlan";
 import { getEffectiveExitTime } from "./flightPlanUtils";
 import { effectiveTas } from "./regimeUtils";
+import {
+  buildDeparturePath, departureSchedule, departureTiming, isTakeoffActive, straightOutDistanceNm, transitionPhase,
+} from "./departure";
+import type { DeparturePath, DepartureTiming } from "./departure";
 import { transform } from "ol/proj";
 
 /**
@@ -354,38 +358,30 @@ export function computeLegSegments(
     ff: number;       // fallback FF (waypoint value, used for level path)
     legIndex?: number;
     takeoff?: TakeoffPerformance;
+    departure?: DepartureTiming; // leg 1 on a departure path: wind along the track (departure)
   },
   regime?: Regime
 ): LegSegmentsResult {
-  const { prevAlt, legAlt, distance, course, windA, windB, tas, ff, legIndex, takeoff } = input;
+  const { prevAlt, legAlt, distance, course, windA, windB, tas, ff, legIndex, takeoff, departure } = input;
   const altDelta = legAlt - prevAlt;
 
   // Determine if take-off segment is active
-  const takeoffActive =
-    legIndex === 0 &&
-    regime !== undefined &&
-    takeoff !== undefined &&
-    takeoff.timeSec > 0 &&
-    takeoff.distance > 0;
+  const takeoffActive = isTakeoffActive(legIndex, regime, takeoff);
 
   // Wind-corrected take-off segment
   let takeoffSeg: { time: number; distance: number; fuel: number } | undefined;
   if (takeoffActive && takeoff) {
-    const tasTo = takeoff.distance / (takeoff.timeSec / 3600);
-    const gsTo = applyWind(tasTo, windA.windSpeed, windA.windDir, course);
-    const groundDist = gsTo * (takeoff.timeSec / 3600);
+    const groundDist = departure
+      ? departure.groundDistance(0, takeoff.timeSec, windA)
+      : applyWind(takeoff.distance / (takeoff.timeSec / 3600), windA.windSpeed, windA.windDir, course) * (takeoff.timeSec / 3600);
     takeoffSeg = { time: takeoff.timeSec / 60, distance: groundDist, fuel: takeoff.fuel };
   }
 
   const remainingDistance = takeoffSeg ? distance - takeoffSeg.distance : distance;
 
-  const noTransition =
-    altDelta === 0 ||
-    !regime ||
-    (altDelta > 0 && !regime.climb) ||
-    (altDelta < 0 && !regime.descent);
+  const transition = transitionPhase(altDelta, regime);
 
-  if (noTransition) {
+  if (!transition || !regime) {
     if (!regime) return { kind: 'level', tas, ff };
     if (!takeoffSeg) return { kind: 'level', tas: regime.cruise.tas, ff: regime.cruise.ff };
 
@@ -402,8 +398,9 @@ export function computeLegSegments(
       };
     }
 
-    const cruiseGs = applyWind(regime.cruise.tas, windB.windSpeed, windB.windDir, course);
-    const cruiseTime = (remainingDistance / cruiseGs) * 60;
+    const cruiseTime = departure
+      ? departure.timeOver(distance - remainingDistance, distance, regime.cruise.tas, windB)
+      : (remainingDistance / applyWind(regime.cruise.tas, windB.windSpeed, windB.windDir, course)) * 60;
     return {
       kind: 'segmented',
       takeoff: takeoffSeg,
@@ -412,17 +409,17 @@ export function computeLegSegments(
     };
   }
 
-  const phaseRoc = altDelta > 0 ? regime.climb!.roc : regime.descent!.rod;
-  const phaseTas = altDelta > 0 ? regime.climb!.tas : regime.descent!.tas;
-  const phaseFf = altDelta > 0 ? regime.climb!.ff : regime.descent!.ff;
-  const phaseLabel: 'climb' | 'descent' = altDelta > 0 ? 'climb' : 'descent';
+  const { rate: phaseRoc, tas: phaseTas, ff: phaseFf, phase: phaseLabel } = transition;
 
   // 1. Time to transition altitude (minutes)
   const transitionTime = Math.abs(altDelta) / phaseRoc;
 
   // 2. Ground speed during transition (using origin wind per design §4)
-  const transitionGroundSpeed = applyWind(phaseTas, windA.windSpeed, windA.windDir, course);
-  const transitionDistance = transitionGroundSpeed * (transitionTime / 60);
+  const transitionStartSec = takeoffSeg ? takeoffSeg.time * 60 : 0;
+  const transitionDistance = departure
+    ? departure.groundDistance(transitionStartSec, transitionStartSec + transitionTime * 60, windA)
+    : applyWind(phaseTas, windA.windSpeed, windA.windDir, course) * (transitionTime / 60);
+  const transitionGroundSpeed = transitionDistance / (transitionTime / 60);
 
   // 3. Warning when transition can't fit (including T/O distance)
   const combinedTransitionDist = (takeoffSeg?.distance ?? 0) + transitionDistance;
@@ -445,8 +442,9 @@ export function computeLegSegments(
 
   // 4. Cruise covers the remainder
   const cruiseDistance = remainingDistance - transitionDistance;
-  const cruiseGroundSpeed = applyWind(regime.cruise.tas, windB.windSpeed, windB.windDir, course);
-  const cruiseTime = (cruiseDistance / cruiseGroundSpeed) * 60;
+  const cruiseTime = departure
+    ? departure.timeOver(distance - cruiseDistance, distance, regime.cruise.tas, windB)
+    : (cruiseDistance / applyWind(regime.cruise.tas, windB.windSpeed, windB.windDir, course)) * 60;
 
   return {
     kind: 'segmented',
@@ -522,6 +520,8 @@ export interface LegGeometry {
   turnAngleRad: number;
   course: number;
   distanceNm: number;
+  departure?: DeparturePath;            // leg 1 flying a runway departure
+  departureWarning?: 'unreachable';     // leg 1: runway set but WP1 cannot be reached
 }
 
 /**
@@ -560,7 +560,32 @@ export function computeLegGeometries(
     let straighteningLon: number;
     let turnDirection: number;
 
-    if (i === 0) {
+    let departure: DeparturePath | undefined;
+    let departureWarning: 'unreachable' | undefined;
+    if (i === 0 && origin.runway !== undefined) {
+      // Runway departure (departure): magnetic runway heading back to true, the
+      // exact inverse of course = true - declination.
+      departure = buildDeparturePath({
+        origin,
+        destination,
+        runwayTrue: (origin.runway * 10 + flightPlan.declination + 360) % 360,
+        straightOutNm: straightOutDistanceNm(aircraft),
+        schedule: departureSchedule(flightPlan, aircraft),
+        bankAngle: flightPlan.bankAngle,
+        projection,
+      });
+      if (!departure) departureWarning = 'unreachable';
+    }
+
+    if (departure) {
+      // The turn is a sampled spiral, not a circle: no turn centre
+      turnCenterLat = 0;
+      turnCenterLon = 0;
+      straighteningLat = departure.rollOut.lat;
+      straighteningLon = departure.rollOut.lon;
+      inboundBearing = 0;
+      turnDirection = departure.turnDirection;
+    } else if (i === 0) {
       // First leg: no turning arc, use origin as straightening point
       turnCenterLat = 0;
       turnCenterLon = 0;
@@ -608,7 +633,7 @@ export function computeLegGeometries(
     // Calculate turn angle
     const startAngleRad = (90 - inboundBearing) * Math.PI / 180;
     const endAngleRad = (90 - outboundBearing) * Math.PI / 180;
-    const turnAngleRad = (i === 0 ? 0 : angleDiff(startAngleRad, endAngleRad, turnDirection));
+    const turnAngleRad = departure ? departure.turnAngleRad : (i === 0 ? 0 : angleDiff(startAngleRad, endAngleRad, turnDirection));
 
     // Calculate course (magnetic) for the straight portion of the leg.
     // Declination is East-positive: magnetic = true - declination.
@@ -625,7 +650,7 @@ export function computeLegGeometries(
     const heading = (trueHeading - flightPlan.declination + 360) % 360;
 
     // Calculate distance to the destination
-    const turnDistanceM = Math.abs(turnRadiusM * turnAngleRad);
+    const turnDistanceM = departure ? departure.rollOut.s * 1852 : Math.abs(turnRadiusM * turnAngleRad);
     const straightDistanceM = calculateDistanceM(
       straighteningLat, straighteningLon,
       destination.lat, destination.lon,
@@ -650,6 +675,8 @@ export function computeLegGeometries(
       turnAngleRad,
       course,
       distanceNm,
+      ...(departure ? { departure } : {}),
+      ...(departureWarning ? { departureWarning } : {}),
     });
 
     // The next turn starts along this leg's true ground track (leg-geometry)
@@ -696,7 +723,8 @@ export function calculateAllLegData(
   for (let i = 0; i < flightPlan.points.length - 1; i++) {
     const origin = flightPlan.points[i];
     const destination = flightPlan.points[i + 1];
-    const { course, heading, distanceNm, outboundBearing } = geometries[i];
+    const { course, heading, distanceNm, outboundBearing, departure, departureWarning } = geometries[i];
+    const timing = departure ? departureTiming(departure, outboundBearing) : undefined;
 
     // Regime-aware ETE and fuel computation
     const regime = destination.regimeId
@@ -714,6 +742,7 @@ export function calculateAllLegData(
         ff: destination.fuelFlow,
         legIndex: i,
         takeoff: aircraft.takeoff,
+        departure: timing,
       },
       regime
     );
@@ -721,7 +750,9 @@ export function calculateAllLegData(
     let eteSec: number;
     let legFuelBase: number;
     if (segResult.kind === 'level') {
-      eteSec = Math.round(distanceNm / applyWind(segResult.tas, destination.windSpeed, destination.windDir, outboundBearing) * 3600);
+      eteSec = timing
+        ? Math.round(timing.timeOver(0, distanceNm, segResult.tas, destination) * 60)
+        : Math.round(distanceNm / applyWind(segResult.tas, destination.windSpeed, destination.windDir, outboundBearing) * 3600);
       legFuelBase = eteSec * (segResult.ff / 3600);
     } else if (segResult.kind === 'segmented') {
       const takeoffTime = segResult.takeoff?.time ?? 0;
@@ -762,6 +793,7 @@ export function calculateAllLegData(
       efr: arrivalEfr - waitFuel,
       hackEta,
       segmentsResult: segResult,
+      ...(departureWarning ? { departureWarning } : {}),
     });
 
     // For next leg: if this destination is a Push point, depart from exit time

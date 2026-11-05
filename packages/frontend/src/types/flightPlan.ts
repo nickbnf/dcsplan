@@ -22,6 +22,7 @@ export type Aircraft = {
   takeoffConfiguration: string;
   taxiFuel: number;  // lbs
   takeoff: TakeoffPerformance;
+  straightOutDistance?: number; // NM from brake release to the departure turn; 2 NM when absent
   regimes: Regime[];
 }
 
@@ -79,6 +80,7 @@ export type LegData = {
   efr: number; // EFR at this TP, unitless (typically in lbs)
   hackEta?: number; // Hack-relative ETA in seconds (present after a hack push point)
   segmentsResult?: LegSegmentsResult;
+  departureWarning?: 'unreachable'; // Leg 1 only: WP1 cannot be reached from the runway departure
 }
 
 export type WaypointType = 'normal' | 'push' | 'ip' | 'tgt';
@@ -94,6 +96,7 @@ export type FlightPlanTurnPoint = {
   windSpeed: number; // Wind speed at this WP
   windDir: number; // Wind direction (dir the wind is coming from)at this WP
   groundAlt?: number; // Field elevation (ft MSL); meaningful only on first and last waypoints
+  runway?: number; // Departure runway 1..36 (magnetic heading / 10); meaningful only on the first waypoint
   name?: string; // Name of the turnpoint
   waypointType?: WaypointType; // defaults to 'normal'
   exitTimeSec?: number; // Push only: exit time in seconds since midnight
@@ -109,6 +112,7 @@ export type FlightPlanPointChange = {
   windSpeed?: number;
   windDir?: number;
   groundAlt?: number;
+  runway?: number;
   name?: string;
   waypointType?: WaypointType;
   exitTimeSec?: number;

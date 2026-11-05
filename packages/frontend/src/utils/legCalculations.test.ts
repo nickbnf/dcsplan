@@ -789,3 +789,81 @@ describe('calculateAllLegData — wind direction is true (leg-geometry)', () => 
     expect(leg.heading).toBeCloseTo(84, 9);
   });
 });
+
+// --- Runway departure (departure) ---
+
+describe('runway departure in the leg pass', () => {
+  const merc = getProjection('EPSG:3857')!;
+  const NM = 1852;
+  const at = (nm: number, brg: number) => {
+    const r = brg * Math.PI / 180;
+    const [lon, lat] = transform([nm * NM * Math.sin(r), nm * NM * Math.cos(r)], 'EPSG:3857', 'EPSG:4326');
+    return { lat, lon };
+  };
+  const regime: Regime = { id: 'r1', name: 'Climb', cruise: { tas: 450, ff: 4000 }, climb: { tas: 300, ff: 8000, roc: 4000 } };
+  const ac: Aircraft = { ...defaultAircraft(), takeoff: { timeSec: 60, fuel: 200, distance: 1.5 }, regimes: [regime] };
+  const mk = (wp1: { lat: number; lon: number }, overrides: Partial<FlightPlan> = {}, runway: number | null = 27): FlightPlan => ({
+    theatre: 'syria',
+    points: [
+      { id: 'a', ...at(0, 0), tas: 400, alt: 0, fuelFlow: 3600, windSpeed: 0, windDir: 0, groundAlt: 0, runway: runway ?? undefined },
+      { id: 'b', ...wp1, tas: 400, alt: 20000, fuelFlow: 3600, windSpeed: 0, windDir: 0, regimeId: 'r1' },
+      { id: 'c', ...at(40, 45), tas: 400, alt: 20000, fuelFlow: 3600, windSpeed: 0, windDir: 0, regimeId: 'r1' },
+    ],
+    declination: 0,
+    bankAngle: 30,
+    initTimeSec: 0,
+    initFob: 10000,
+    name: 'Departure',
+    ...overrides,
+  });
+
+  it('leaves leg 1 unchanged when no runway is set', () => {
+    const p = mk(at(30, 90), {}, null);
+    const geo = computeLegGeometries(p, merc, 'projected', ac);
+    expect(geo[0].departure).toBeUndefined();
+    expect(geo[0].straighteningLat).toBe(p.points[0].lat);
+    expect(geo[0].turnAngleRad).toBe(0);
+  });
+
+  it.each([6, -6])('shows the runway heading as the course on the axis (declination %s)', (declination) => {
+    // WP1 on the true extension of runway 27 under this declination
+    const p = mk(at(30, 270 + declination), { declination });
+    const legs = calculateAllLegData(p, merc, 'projected', ac);
+    expect(legs[0].course).toBeCloseTo(270, 6);
+  });
+
+  it('starts leg 2 along leg 1 final straight segment', () => {
+    const geo = computeLegGeometries(mk(at(30, 90)), merc, 'projected', ac);
+    expect(geo[1].inboundBearing).toBe(geo[0].outboundBearing);
+  });
+
+  it('draws the same departure path whatever the wind', () => {
+    const calm = computeLegGeometries(mk(at(30, 90)), merc, 'projected', ac);
+    const windy = mk(at(30, 90));
+    windy.points = windy.points.map(pt => ({ ...pt, windSpeed: 40, windDir: 200 }));
+    expect(computeLegGeometries(windy, merc, 'projected', ac)[0].departure!.points).toEqual(calm[0].departure!.points);
+  });
+
+  it('flags an unreachable WP1 and falls back to a straight leg', () => {
+    const p = mk(at(1.5, 90));
+    const geo = computeLegGeometries(p, merc, 'projected', ac);
+    expect(geo[0].departure).toBeUndefined();
+    expect(geo[0].departureWarning).toBe('unreachable');
+    expect(geo[0].straighteningLat).toBe(p.points[0].lat);
+    expect(calculateAllLegData(p, merc, 'projected', ac)[0].departureWarning).toBe('unreachable');
+  });
+
+  it('uses the runway wind for take-off, verbatim time and fuel, and sums to the path length', () => {
+    // Wind from 270: a headwind on runway 27, a tailwind on the WP0→WP1 course (090)
+    const p = mk(at(30, 90));
+    p.points[0] = { ...p.points[0], windSpeed: 20, windDir: 270 };
+    const leg = calculateAllLegData(p, merc, 'projected', ac)[0];
+    const seg = leg.segmentsResult!;
+    expect(seg.kind).toBe('segmented');
+    if (seg.kind !== 'segmented') return;
+    expect(seg.takeoff!.distance).toBeCloseTo(1.5 - 20 * 60 / 3600, 6);
+    expect(seg.takeoff!.time).toBe(1);
+    expect(seg.takeoff!.fuel).toBe(200);
+    expect(seg.takeoff!.distance + seg.transition.distance + seg.cruise.distance).toBeCloseTo(leg.distance, 9);
+  });
+});

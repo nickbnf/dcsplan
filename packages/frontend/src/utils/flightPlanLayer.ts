@@ -60,8 +60,13 @@ export const createFlightPlanLayer = (flightPlan: FlightPlan, projection: any, n
             // Build coordinates array: arc from origin to straightening point, then line to destination
             const coordinates: number[][] = [];
 
-            // Generate arc points if this is not the first leg and we have a valid turn center
-            if (i > 0 && leg.turnCenterLat !== 0 && leg.turnCenterLon !== 0) {
+            if (leg.departure) {
+                // Runway departure (leg 1): runway segment, then the sampled turn up to roll-out
+                leg.departure.points.forEach(([lat, lon]) => {
+                    coordinates.push(transform([lon, lat], 'EPSG:4326', projection.getCode()));
+                });
+            } else if (i > 0 && leg.turnCenterLat !== 0 && leg.turnCenterLon !== 0) {
+                // Generate arc points if this is not the first leg and we have a valid turn center
                 // Generate arc points from origin to straightening point
                 const arcPoints = generateArcPoints(
                     leg.turnCenterLat,

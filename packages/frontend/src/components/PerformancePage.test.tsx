@@ -152,6 +152,37 @@ describe('PerformancePage', () => {
       expect(updated.taxiFuel).toBe(500);
     });
 
+    it('straight-out field shows the 2 NM default when unset', () => {
+      render(<PerformancePage />);
+      expect(screen.getByLabelText('Straight out')).toHaveValue(2);
+    });
+
+    it('straight-out info icon has the spec tooltip text', () => {
+      render(<PerformancePage />);
+      expect(screen.getByLabelText('Straight-out distance info')).toHaveAttribute(
+        'title',
+        'Distance from brake release, along the runway heading, before turning on course. Used when a departure runway is set on the first waypoint.',
+      );
+    });
+
+    it('commits a valid straight-out distance', () => {
+      render(<PerformancePage />);
+      const input = screen.getByLabelText('Straight out');
+      fireEvent.change(input, { target: { value: '3.5' } });
+      fireEvent.blur(input);
+      const updated: Aircraft = mockSetPerformance.mock.calls.at(-1)![0];
+      expect(updated.straightOutDistance).toBe(3.5);
+    });
+
+    it.each(['0', '-1'])('rejects straight-out distance %s with an inline error', (value) => {
+      render(<PerformancePage />);
+      const input = screen.getByLabelText('Straight out');
+      fireEvent.change(input, { target: { value } });
+      fireEvent.blur(input);
+      expect(mockSetPerformance).not.toHaveBeenCalled();
+      expect(screen.getByText('Straight-out distance must be greater than 0.')).toBeInTheDocument();
+    });
+
     it('T/O info icon has correct tooltip text', () => {
       render(<PerformancePage />);
       const icon = screen.getByLabelText('Take-off performance info');
@@ -294,16 +325,16 @@ describe('PerformancePage', () => {
       await openEditor();
       // Fill only one climb field
       const tasInputs = screen.getAllByRole('spinbutton');
-      // Header adds: taxiFuel[0], T/O fuel[1], T/O distance[2]; regime editor: cruise TAS[3], cruise FF[4], climb TAS[5]
-      fireEvent.change(tasInputs[5], { target: { value: '300' } });
+      // Header adds: taxiFuel[0], T/O fuel[1], T/O distance[2], straight out[3]; regime editor: cruise TAS[4], cruise FF[5], climb TAS[6]
+      fireEvent.change(tasInputs[6], { target: { value: '300' } });
       expect(screen.getByText('Fill all fields or leave all empty.')).toBeInTheDocument();
     });
 
     it('all-or-nothing validation: partial descent shows error', async () => {
       await openEditor();
       const tasInputs = screen.getAllByRole('spinbutton');
-      // Descent TAS is the 9th spinbutton (after taxiFuel, T/O fuel, T/O distance, cruise TAS, cruise FF, climb TAS, climb FF, climb ROC)
-      fireEvent.change(tasInputs[8], { target: { value: '200' } });
+      // Descent TAS is the 10th spinbutton (after taxiFuel, T/O fuel, T/O distance, straight out, cruise TAS, cruise FF, climb TAS, climb FF, climb ROC)
+      fireEvent.change(tasInputs[9], { target: { value: '200' } });
       expect(screen.getByText('Fill all fields or leave all empty.')).toBeInTheDocument();
     });
 
@@ -322,8 +353,8 @@ describe('PerformancePage', () => {
 
       mockSetPerformance.mockClear();
 
-      // Header adds taxiFuel[0], T/O fuel[1], T/O distance[2]; cruise TAS is [3]
-      const tasInput = screen.getAllByRole('spinbutton')[3];
+      // Header adds taxiFuel[0], T/O fuel[1], T/O distance[2], straight out[3]; cruise TAS is [4]
+      const tasInput = screen.getAllByRole('spinbutton')[4];
       fireEvent.change(tasInput, { target: { value: '450' } });
 
       const calls = mockSetPerformance.mock.calls;

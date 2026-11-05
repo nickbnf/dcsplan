@@ -12,6 +12,10 @@ from typing import Any, List, Tuple, Optional
 from pyproj import Transformer
 
 import theatres
+from departure import (
+    DepartureTiming, build_departure_path, departure_schedule, is_takeoff_active,
+    straight_out_distance_nm, transition_phase,
+)
 
 # Set up logger (logging configuration is handled centrally in main.py)
 logger = logging.getLogger(__name__)
@@ -53,6 +57,7 @@ class Aircraft(BaseModel):
     takeoffConfiguration: str = Field(default='', description="T/O configuration label")
     taxiFuel: float = Field(default=0, ge=0, description="Taxi fuel deduction (lbs)")
     takeoff: TakeoffPerformance = Field(default_factory=TakeoffPerformance)
+    straightOutDistance: float = Field(default=2.0, gt=0, description="NM from brake release to the departure turn")
     regimes: List[Regime] = Field(default_factory=list, description="Named performance regimes")
 
 
@@ -71,6 +76,7 @@ class FlightPlanTurnPoint(BaseModel):
     windSpeed: float = Field(..., ge=0, description="Wind speed")
     windDir: float = Field(..., ge=0, le=360, description="Wind direction (0-360)")
     groundAlt: Optional[float] = Field(default=None, description="Field elevation ft MSL; meaningful only on first/last waypoints")
+    runway: Optional[int] = Field(default=None, ge=1, le=36, description="Departure runway (magnetic heading / 10); meaningful only on the first waypoint")
     name: str | None = Field(default=None, description="Name of the turnpoint")
     waypointType: str | None = Field(default=None, description="Waypoint type: normal, push, ip, tgt")
     exitTimeSec: int | None = Field(default=None, ge=0, le=86399, description="Push only: exit time")
@@ -411,38 +417,34 @@ def compute_leg_segments(
     regime: Optional['Regime'] = None,
     leg_index: Optional[int] = None,
     takeoff: Optional['TakeoffPerformance'] = None,
+    departure: Optional[DepartureTiming] = None,
 ) -> dict:
-    """Mirror of the TypeScript computeLegSegments. Returns a dict with 'kind' discriminator."""
+    """Mirror of the TypeScript computeLegSegments. Returns a dict with 'kind' discriminator.
+
+    When `departure` is given (leg 1 on a runway departure), wind is taken along
+    the departure track instead of the fixed course.
+    """
     alt_delta = leg_alt - prev_alt
 
     # Determine if take-off segment is active
-    takeoff_active = (
-        leg_index == 0 and
-        regime is not None and
-        takeoff is not None and
-        takeoff.timeSec > 0 and
-        takeoff.distance > 0
-    )
+    takeoff_active = is_takeoff_active(leg_index, regime, takeoff)
 
     # Wind-corrected take-off segment
     takeoff_seg = None
     if takeoff_active and takeoff is not None:
-        tas_to = takeoff.distance / (takeoff.timeSec / 3600)
-        gs_to = apply_wind(tas_to, wind_a_speed, wind_a_dir, course)
-        ground_dist = gs_to * (takeoff.timeSec / 3600)
+        if departure is not None:
+            ground_dist = departure.ground_distance(0, takeoff.timeSec, wind_a_speed, wind_a_dir)
+        else:
+            tas_to = takeoff.distance / (takeoff.timeSec / 3600)
+            ground_dist = apply_wind(tas_to, wind_a_speed, wind_a_dir, course) * (takeoff.timeSec / 3600)
         takeoff_seg = {'time': takeoff.timeSec / 60, 'distance': ground_dist, 'fuel': takeoff.fuel}
 
     remaining_distance = distance_nm - takeoff_seg['distance'] if takeoff_seg else distance_nm
 
     # Level-leg path: fall back to stored tas/ff
-    no_transition = (
-        alt_delta == 0 or
-        regime is None or
-        (alt_delta > 0 and regime.climb is None) or
-        (alt_delta < 0 and regime.descent is None)
-    )
+    transition = transition_phase(alt_delta, regime)
 
-    if no_transition:
+    if transition is None:
         if regime is None:
             return {'kind': 'level', 'tas': tas, 'ff': ff}
         if not takeoff_seg:
@@ -458,8 +460,10 @@ def compute_leg_segments(
                 'fallback_time_sec': round(takeoff_seg['time'] * 60),
                 'fallback_fuel': takeoff_seg['fuel'],
             }
-        cruise_gs = apply_wind(regime.cruise.tas, wind_b_speed, wind_b_dir, course)
-        cruise_time = (remaining_distance / cruise_gs) * 60
+        if departure is not None:
+            cruise_time = departure.time_over(distance_nm - remaining_distance, distance_nm, regime.cruise.tas, wind_b_speed, wind_b_dir)
+        else:
+            cruise_time = (remaining_distance / apply_wind(regime.cruise.tas, wind_b_speed, wind_b_dir, course)) * 60
         return {
             'kind': 'segmented',
             'takeoff': takeoff_seg,
@@ -467,23 +471,21 @@ def compute_leg_segments(
             'cruise': {'time': cruise_time, 'distance': remaining_distance, 'fuel': regime.cruise.ff * (cruise_time / 60)},
         }
 
-    if alt_delta > 0:
-        phase_roc = regime.climb.roc
-        phase_tas = regime.climb.tas
-        phase_ff = regime.climb.ff
-        phase_label = 'climb'
-    else:
-        phase_roc = regime.descent.rod
-        phase_tas = regime.descent.tas
-        phase_ff = regime.descent.ff
-        phase_label = 'descent'
+    phase_roc = transition.rate
+    phase_tas = transition.tas
+    phase_ff = transition.ff
+    phase_label = transition.phase
 
     # Time to transition altitude (minutes)
     transition_time = abs(alt_delta) / phase_roc
 
     # Ground speed during transition (using origin wind)
-    transition_gs = apply_wind(phase_tas, wind_a_speed, wind_a_dir, course)
-    transition_distance = transition_gs * (transition_time / 60)
+    if departure is not None:
+        transition_start_sec = takeoff_seg['time'] * 60 if takeoff_seg else 0
+        transition_distance = departure.ground_distance(transition_start_sec, transition_start_sec + transition_time * 60, wind_a_speed, wind_a_dir)
+    else:
+        transition_distance = apply_wind(phase_tas, wind_a_speed, wind_a_dir, course) * (transition_time / 60)
+    transition_gs = transition_distance / (transition_time / 60)
 
     # Warning when transition can't fit (including T/O distance)
     combined_transition_dist = (takeoff_seg['distance'] if takeoff_seg else 0) + transition_distance
@@ -506,8 +508,10 @@ def compute_leg_segments(
 
     # Cruise covers the remainder
     cruise_distance = remaining_distance - transition_distance
-    cruise_gs = apply_wind(regime.cruise.tas, wind_b_speed, wind_b_dir, course)
-    cruise_time = (cruise_distance / cruise_gs) * 60
+    if departure is not None:
+        cruise_time = departure.time_over(distance_nm - cruise_distance, distance_nm, regime.cruise.tas, wind_b_speed, wind_b_dir)
+    else:
+        cruise_time = (cruise_distance / apply_wind(regime.cruise.tas, wind_b_speed, wind_b_dir, course)) * 60
 
     result = {
         'kind': 'segmented',
@@ -552,6 +556,8 @@ class LegData:
     time_to_straightening_s: int # Time to the straigthening point in seconds
     turn_angle_rad: float       # Turn angle in radians (along the arc)
     turn_direction: int         # Turn direction: 1 for counter-clockwise, -1 for clockwise
+    departure_path: Optional['DeparturePath']  # Leg 1 runway departure (None otherwise)
+    departure_warning: Optional[str]           # 'unreachable' when a runway is set but WP1 can't be reached
 
     def __init__(self, flightPlan: FlightPlan, aircraft: Aircraft, indexWptFrom: int, indexWptTo: int, inbound_bearing: float, transformer: Transformer = None, navigation_mode: str = "geographic"):
         """Initialize a new leg from indexWptFrom to indexWptTo."""
@@ -565,8 +571,32 @@ class LegData:
         turn_radius_m = (effective_tas * 0.514)**2 / (9.80665 * math.tan(math.radians(flightPlan.bankAngle)))
         logger.info(f"Turn radius: {turn_radius_m:.2f} meters")
 
+        # Runway departure on leg 1 (departure): magnetic runway heading back to true,
+        # the exact inverse of course = true - declination.
+        departure = None
+        self.departure_warning = None
+        origin_wpt = flightPlan.points[indexWptFrom]
+        if indexWptFrom == 0 and origin_wpt.runway is not None:
+            departure = build_departure_path(
+                origin_wpt, flightPlan.points[indexWptTo],
+                (origin_wpt.runway * 10 + flightPlan.declination + 360) % 360,
+                straight_out_distance_nm(aircraft),
+                departure_schedule(flightPlan, aircraft),
+                flightPlan.bankAngle,
+                transformer,
+            )
+            if departure is None:
+                self.departure_warning = 'unreachable'
+        self.departure_path = departure
+
         # Calculate the straigthening point (point where the turn is finished).
-        if indexWptFrom == 0:
+        if departure is not None:
+            # The turn is a sampled spiral, not a circle: no turn centre
+            inbound_bearing = 0
+            s_lat, s_lon = departure.roll_out_lat, departure.roll_out_lon
+            turn_data = TurnData(0, 0)
+            turn_direction = departure.turn_direction
+        elif indexWptFrom == 0:
             # First point has no straigthening point, use the point itself.
             inbound_bearing = 0
             s_lat, s_lon = self.origin.lat, self.origin.lon
@@ -586,7 +616,9 @@ class LegData:
         logger.info(f"Course: {self.course}")
 
         # Calculate the distance of the leg.
-        if indexWptFrom == 0:
+        if departure is not None:
+            turn_angle_rd = abs(departure.turn_angle_rad)
+        elif indexWptFrom == 0:
             turn_angle_rd = 0
             arc_distance = 0
         else:
@@ -627,9 +659,9 @@ class LegData:
 
         logger.info(f"Turn angle: {math.degrees(turn_angle_rd):.2f} degrees")
         self.turn_angle_rad = turn_angle_rd
-        self.turn_direction = turn_direction if indexWptFrom > 0 else 1
+        self.turn_direction = turn_direction if (indexWptFrom > 0 or departure is not None) else 1
 
-        arc_distance = turn_radius_m * turn_angle_rd
+        arc_distance = departure.roll_out_s * 1852 if departure is not None else turn_radius_m * turn_angle_rd
         distance = arc_distance + calculate_distance(self.straigthening_point, self.destination, navigation_mode, transformer)
         self.distanceNm = distance / 1852
 
@@ -649,6 +681,7 @@ class LegData:
         origin_pt = flightPlan.points[indexWptFrom]
         dest_pt = flightPlan.points[indexWptTo]
         leg_index = indexWptFrom  # leg 0 = first leg (from point 0 to point 1)
+        timing = DepartureTiming(departure, bearing) if departure is not None else None
         seg = compute_leg_segments(
             prev_alt=(origin_pt.groundAlt or 0) if leg_index == 0 else origin_pt.alt,
             leg_alt=dest_pt.alt,
@@ -661,10 +694,14 @@ class LegData:
             regime=regime,
             leg_index=leg_index,
             takeoff=aircraft.takeoff,
+            departure=timing,
         )
         if seg['kind'] == 'level':
-            gs = apply_wind(seg['tas'], dest_pt.windSpeed, dest_pt.windDir, bearing)
-            self.eteSec = round(self.distanceNm / gs * 3600)
+            if timing is not None:
+                self.eteSec = round(timing.time_over(0, self.distanceNm, seg['tas'], dest_pt.windSpeed, dest_pt.windDir) * 60)
+            else:
+                gs = apply_wind(seg['tas'], dest_pt.windSpeed, dest_pt.windDir, bearing)
+                self.eteSec = round(self.distanceNm / gs * 3600)
             self.legFuel = self.eteSec * seg['ff'] / 3600
         elif seg['kind'] == 'segmented':
             takeoff_time = seg['takeoff']['time'] if seg.get('takeoff') else 0

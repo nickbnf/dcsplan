@@ -325,8 +325,36 @@ def draw_leg(
         # Turnpoint circle radius in pixels
         circle_radius = 12
 
+        departure_path = getattr(leg_data, "departure_path", None)
+        if departure_path is not None:
+            # Runway departure (leg 1): runway segment and sampled turn as a polyline,
+            # starting at the edge of the origin turnpoint circle.
+            pts = [coord_to_pixel(lat, lon) for lat, lon in departure_path.points]
+            start = next((k for k, (px, py) in enumerate(pts) if math.hypot(px - ox, py - oy) > circle_radius), None)
+            if start is not None:
+                ax, ay = pts[start - 1] if start > 0 else (ox, oy)
+                bx, by = pts[start]
+                seg_len = math.hypot(bx - ax, by - ay)
+                # Point on the first segment leaving the circle (the circle is centred on the origin)
+                f = 0.0
+                if seg_len > 0:
+                    lo, hi = 0.0, 1.0
+                    for _ in range(40):
+                        mid = (lo + hi) / 2
+                        if math.hypot(ax + mid * (bx - ax) - ox, ay + mid * (by - ay) - oy) > circle_radius:
+                            hi = mid
+                        else:
+                            lo = mid
+                    f = hi
+                polyline = [(ax + f * (bx - ax), ay + f * (by - ay))] + pts[start:]
+                if halo:
+                    halo_w = line_width + 4
+                    halo_color = (255, 255, 255, int(color[3] * 0.4))
+                    draw.line(polyline, fill=halo_color, width=halo_w, joint="curve")
+                if not halo_only:
+                    draw.line(polyline, fill=color, width=line_width, joint="curve")
         # Draw the turning arc (only if the straightening point is outside the turnpoint circle)
-        if math.sqrt((sx - ox) ** 2 + (sy - oy) ** 2) > circle_radius:
+        elif math.sqrt((sx - ox) ** 2 + (sy - oy) ** 2) > circle_radius:
             turn_radius_px = math.sqrt(
                 (sx - center_x_px) ** 2 + (sy - center_y_px) ** 2
             )

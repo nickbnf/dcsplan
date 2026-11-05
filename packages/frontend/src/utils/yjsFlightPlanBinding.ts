@@ -16,7 +16,7 @@ const POINT_REQUIRED: (keyof FlightPlanTurnPoint & string)[] = [
   'id', 'lat', 'lon', 'tas', 'alt', 'fuelFlow', 'windSpeed', 'windDir',
 ];
 const POINT_OPTIONAL: (keyof FlightPlanTurnPoint & string)[] = [
-  'groundAlt', 'name', 'waypointType', 'exitTimeSec', 'hack', 'comment', 'regimeId',
+  'groundAlt', 'runway', 'name', 'waypointType', 'exitTimeSec', 'hack', 'comment', 'regimeId',
 ];
 const POINT_ALL = [...POINT_REQUIRED, ...POINT_OPTIONAL];
 

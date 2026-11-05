@@ -352,7 +352,7 @@ const formatHackEta = (hackEtaSec: number): string => {
   return `+${minutes.toString().padStart(2, '0')}:${seconds.toFixed(0).padStart(2, '0')}`;
 };
 
-const WaypointCard: React.FC<{ flightPlan: FlightPlan, legData: LegData | null, index: number, onFlightPlanUpdate: (flightPlan: FlightPlan) => void }> = ({ flightPlan, legData, index, onFlightPlanUpdate }) => {
+export const WaypointCard: React.FC<{ flightPlan: FlightPlan, legData: LegData | null, index: number, onFlightPlanUpdate: (flightPlan: FlightPlan) => void }> = ({ flightPlan, legData, index, onFlightPlanUpdate }) => {
   const waypoint = flightPlan.points[index];
   const waypointType = waypoint.waypointType || 'normal';
   const { selectedIndex, setSelectedIndex, coordEntry } = useWaypointSelection();
@@ -361,6 +361,7 @@ const WaypointCard: React.FC<{ flightPlan: FlightPlan, legData: LegData | null, 
   const cardRef = useRef<HTMLDivElement>(null);
   const [isEditingComment, setIsEditingComment] = useState(false);
   const [commentDraft, setCommentDraft] = useState('');
+  const [runwayError, setRunwayError] = useState<string | null>(null);
   const hasComment = !!(waypoint.comment && waypoint.comment.trim());
 
   useEffect(() => {
@@ -380,6 +381,25 @@ const WaypointCard: React.FC<{ flightPlan: FlightPlan, legData: LegData | null, 
     efr = legData.efr;
     hackEta = legData.hackEta;
   }
+
+  // Field elevation: first and last waypoints only (waypoint-field-elevation)
+  const fieldAltInput = (
+    <div className="flex items-center space-x-1">
+      <span className="font-aero-label text-gray-600 text-xs whitespace-nowrap">Field alt</span>
+      <EditableField
+        value={`${waypoint.groundAlt ?? 0}'`}
+        onChange={(value: string) => {
+          const m = value.match(/-?\d+/);
+          if (m && m[0]) {
+            onFlightPlanUpdate(flightPlanUtils.updateTurnPoint(flightPlan, index, { groundAlt: parseInt(m[0]) }));
+          }
+        }}
+        className="font-aero-mono text-gray-900 text-xs"
+        maxLength={6}
+        unit="'"
+      />
+    </div>
+  );
 
   const handleDelete = () => {
     const updatedFlightPlan = flightPlanUtils.deleteTurnPoint(flightPlan, index);
@@ -516,25 +536,10 @@ const WaypointCard: React.FC<{ flightPlan: FlightPlan, legData: LegData | null, 
           </div>
         </div>
       ) : (
+        <>
         <div className="flex items-center justify-between mt-1">
           <div className="flex items-center space-x-3">
-            {(index === 0 || index === flightPlan.points.length - 1) && (
-              <div className="flex items-center space-x-1">
-                <span className="font-aero-label text-gray-600 text-xs">Field alt</span>
-                <EditableField
-                  value={`${waypoint.groundAlt ?? 0}'`}
-                  onChange={(value: string) => {
-                    const m = value.match(/-?\d+/);
-                    if (m && m[0]) {
-                      onFlightPlanUpdate(flightPlanUtils.updateTurnPoint(flightPlan, index, { groundAlt: parseInt(m[0]) }));
-                    }
-                  }}
-                  className="font-aero-mono text-gray-900 text-xs"
-                  maxLength={6}
-                  unit="'"
-                />
-              </div>
-            )}
+            {index !== 0 && index === flightPlan.points.length - 1 && fieldAltInput}
             {index === 0 && (
               <label className="flex items-center space-x-1 cursor-pointer">
                 <span className="font-aero-label text-gray-600 text-xs">HACK</span>
@@ -565,6 +570,37 @@ const WaypointCard: React.FC<{ flightPlan: FlightPlan, legData: LegData | null, 
             </div>
           </div>
         </div>
+        {index === 0 && (
+          <div className="flex items-center space-x-3 mt-1">
+            {fieldAltInput}
+            <div className="flex items-center space-x-1">
+              <span className="font-aero-label text-gray-600 text-xs">Rwy</span>
+              <EditableField
+                value={waypoint.runway !== undefined ? String(waypoint.runway).padStart(2, '0') : ''}
+                onChange={(value: string) => {
+                  const trimmed = value.trim();
+                  if (trimmed === '') {
+                    setRunwayError(null);
+                    onFlightPlanUpdate(flightPlanUtils.updateTurnPoint(flightPlan, index, { runway: undefined }));
+                    return;
+                  }
+                  const rwy = Number(trimmed);
+                  if (!Number.isInteger(rwy) || rwy < 1 || rwy > 36) {
+                    setRunwayError('Runway must be 01–36');
+                    return;
+                  }
+                  setRunwayError(null);
+                  onFlightPlanUpdate(flightPlanUtils.updateTurnPoint(flightPlan, index, { runway: rwy }));
+                }}
+                placeholder="--"
+                className="font-aero-mono text-gray-900 text-xs"
+                maxLength={4}
+              />
+              {runwayError && <span role="alert" className="text-xs text-red-500">{runwayError}</span>}
+            </div>
+          </div>
+        )}
+        </>
       )}
       {/* Comment section: inline textarea when editing, truncated preview when set */}
       {isEditingComment ? (
@@ -602,6 +638,9 @@ const Tooltip: React.FC<{ tip: React.ReactNode; children: React.ReactNode }> = (
     </span>
   </span>
 );
+
+const DEPARTURE_UNREACHABLE_TIP =
+  'WP1 cannot be reached from the runway departure (closer than the straight-out distance or inside the turn)';
 
 function formatMinutes(min: number): string {
   const m = Math.floor(min);
@@ -842,8 +881,11 @@ export const RouteCard: React.FC<{
             <span className="font-aero-mono text-gray-900 text-xs">{legData.legFuel.toFixed(0)}lbs</span>
           </div>
           <div className="flex items-center gap-1">
-            {isWarning && seg && (
-              <Tooltip tip={segmentTooltipContent(seg, prevAltForGlyph, destWpt.alt, legData.distance)}>
+            {(isWarning || legData.departureWarning) && (
+              <Tooltip tip={<>
+                {legData.departureWarning === 'unreachable' && <span>{DEPARTURE_UNREACHABLE_TIP}{isWarning ? '\n' : ''}</span>}
+                {isWarning && seg && segmentTooltipContent(seg, prevAltForGlyph, destWpt.alt, legData.distance)}
+              </>}>
                 <span className="text-amber-600 border border-amber-300 bg-amber-50 px-2 py-1 text-xs font-aero-label rounded cursor-default select-none">
                   ⚠ Fix
                 </span>

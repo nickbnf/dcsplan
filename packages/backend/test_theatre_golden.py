@@ -10,7 +10,7 @@ import os
 
 import pytest
 
-from flight_plan import FlightPlan, FlightPlanData
+from flight_plan import Aircraft, FlightPlan, FlightPlanData
 
 GOLDEN_DIR = os.path.join(os.path.dirname(__file__), '..', 'shared', 'theatre-golden')
 PLANS_PATH = os.path.join(GOLDEN_DIR, 'plans.json')
@@ -22,8 +22,14 @@ def load_plans():
         return json.load(f)
 
 
+def key_of(plan_data):
+    """A fixture may carry a `key` (defaults to its theatre) and the `aircraft` it flies."""
+    return plan_data.get('key', plan_data['theatre'])
+
+
 def compute(plan_data):
-    fp_data = FlightPlanData(FlightPlan(**plan_data))
+    aircraft = Aircraft(**plan_data['aircraft']) if 'aircraft' in plan_data else None
+    fp_data = FlightPlanData(FlightPlan(**plan_data), aircraft)
     return [
         {
             'straighteningLat': leg.straigthening_point.lat,
@@ -42,13 +48,13 @@ def compute(plan_data):
 
 if os.environ.get('UPDATE_GOLDEN'):
     with open(EXPECTED_PATH, 'w') as f:
-        json.dump({p['theatre']: compute(p) for p in load_plans()}, f, indent=2)
+        json.dump({key_of(p): compute(p) for p in load_plans()}, f, indent=2)
 
 
-@pytest.mark.parametrize('plan', load_plans(), ids=lambda p: p['theatre'])
+@pytest.mark.parametrize('plan', load_plans(), ids=key_of)
 def test_leg_values_unchanged(plan):
     with open(EXPECTED_PATH) as f:
-        expected = json.load(f)[plan['theatre']]
+        expected = json.load(f)[key_of(plan)]
     actual = compute(plan)
     assert len(actual) == len(expected)
     for leg_actual, leg_expected in zip(actual, expected):

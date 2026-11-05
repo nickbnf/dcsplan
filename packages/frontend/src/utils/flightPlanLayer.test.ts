@@ -81,3 +81,29 @@ describe('createFlightPlanLayer with the resolved profile', () => {
     expect(lines(withRegime)[0]).toEqual(lines(defaultAircraft())[0]);
   });
 });
+
+describe('createFlightPlanLayer with a runway departure', () => {
+  const lineOf = (plan: FlightPlan) =>
+    (createFlightPlanLayer(plan, display, navigation, defaultAircraft()).getSource()!.getFeatures()
+      .find(f => f.get('type') === 'flightline' && f.get('startIndex') === 0)!
+      .getGeometry() as LineString).getCoordinates();
+
+  it('draws leg 1 down the runway, through the turn, to WP1', () => {
+    const withRunway: FlightPlan = { ...germany, points: [{ ...germany.points[0], runway: 9 }, ...germany.points.slice(1)] };
+    const coords = lineOf(withRunway);
+    const [wp0, wp1] = [germany.points[0], germany.points[1]];
+    expect(coords[0]).toEqual(toDisplay([wp0.lat, wp0.lon]));
+    expect(coords[coords.length - 1]).toEqual(toDisplay([wp1.lat, wp1.lon]));
+    expect(coords.length).toBeGreaterThan(3);
+    // The second point lies along the runway true heading (090 + declination) in the navigation frame
+    const nav = navigation.projection.getCode();
+    const [ox, oy] = transform([wp0.lon, wp0.lat], 'EPSG:4326', nav);
+    const [sx, sy] = transform(transform(coords[1], 'EPSG:3857', 'EPSG:4326'), 'EPSG:4326', nav);
+    const brg = (Math.atan2(sx - ox, sy - oy) * 180 / Math.PI + 360) % 360;
+    expect(brg).toBeCloseTo((90 + withRunway.declination + 360) % 360, 4);
+  });
+
+  it('draws leg 1 as before without a runway', () => {
+    expect(lineOf(germany)).toHaveLength(3);
+  });
+});

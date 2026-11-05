@@ -744,3 +744,92 @@ class TestLegGeometry:
             assert lb.distanceNm == pytest.approx(la.distanceNm, rel=1e-12)
             assert lb.eteSec == la.eteSec
             assert lb.legFuel == pytest.approx(la.legFuel, rel=1e-12)
+
+
+class TestRunwayDeparture:
+    """departure: model fields and the leg-1 departure branch in LegData."""
+
+    @staticmethod
+    def _plan(runway=27, declination=0.0, wp1=(34.0, 35.6), origin_wind=(0, 0)):
+        from flight_plan import FlightPlan, FlightPlanTurnPoint
+        pts = [
+            FlightPlanTurnPoint(lat=34.0, lon=36.0, tas=400, alt=0, fuelFlow=3600,
+                                windSpeed=origin_wind[0], windDir=origin_wind[1], groundAlt=0, runway=runway),
+            FlightPlanTurnPoint(lat=wp1[0], lon=wp1[1], tas=400, alt=20000, fuelFlow=3600, windSpeed=0, windDir=0, regimeId="r1"),
+            FlightPlanTurnPoint(lat=34.4, lon=36.4, tas=400, alt=20000, fuelFlow=3600, windSpeed=0, windDir=0, regimeId="r1"),
+        ]
+        return FlightPlan(theatre="syria", points=pts, declination=declination, bankAngle=30, initTimeSec=0, initFob=10000)
+
+    @staticmethod
+    def _aircraft():
+        from flight_plan import Aircraft, Regime, RegimeCruise, RegimeClimb, TakeoffPerformance
+        return Aircraft(
+            takeoff=TakeoffPerformance(timeSec=60, fuel=200, distance=1.5),
+            regimes=[Regime(id="r1", name="Climb", cruise=RegimeCruise(tas=450, ff=4000), climb=RegimeClimb(tas=300, ff=8000, roc=4000))],
+        )
+
+    def test_models_accept_runway_and_straight_out(self):
+        from flight_plan import Aircraft
+        plan = self._plan()
+        assert plan.points[0].runway == 27
+        assert Aircraft().straightOutDistance == 2.0
+        assert Aircraft(straightOutDistance=3.5).straightOutDistance == 3.5
+
+    def test_legacy_plan_has_no_runway(self):
+        plan = create_flight_plan([{"lat": 34.0, "lon": 36.0}, {"lat": 34.0, "lon": 36.5}])
+        assert plan.points[0].runway is None
+        leg = FlightPlanData(plan).legData[0]
+        assert leg.departure_path is None
+        assert leg.departure_warning is None
+
+    @pytest.mark.parametrize("bad", [0, 37])
+    def test_runway_out_of_range_rejected(self, bad):
+        from pydantic import ValidationError
+        with pytest.raises(ValidationError):
+            self._plan(runway=bad)
+
+    def test_non_positive_straight_out_rejected(self):
+        from pydantic import ValidationError
+        from flight_plan import Aircraft
+        with pytest.raises(ValidationError):
+            Aircraft(straightOutDistance=0)
+
+    def test_departure_leg_hands_off_to_leg_2(self):
+        leg1, leg2 = FlightPlanData(self._plan(), self._aircraft()).legData
+        assert leg1.departure_path is not None
+        assert leg1.straigthening_point.lat == leg1.departure_path.roll_out_lat
+        assert leg1.distanceNm > 0
+        # Leg 2's turn starts along leg 1's final straight segment
+        import math
+        from flight_plan import _project, _load_navigation_config, _create_transformer
+        t = _create_transformer(_load_navigation_config("syria"))
+        ox, oy = _project(t, leg2.origin.lat, leg2.origin.lon)
+        cx, cy = _project(t, leg2.turn_data.center.lat, leg2.turn_data.center.lon)
+        b = math.radians(leg1.outbound_bearing)
+        assert abs((cx - ox) * math.sin(b) + (cy - oy) * math.cos(b)) < 1e-3
+
+    def test_unreachable_falls_back(self):
+        leg = FlightPlanData(self._plan(wp1=(34.0, 36.02)), self._aircraft()).legData[0]
+        assert leg.departure_path is None
+        assert leg.departure_warning == "unreachable"
+        assert leg.straigthening_point.lat == leg.origin.lat
+
+    def test_runway_headwind_on_takeoff(self):
+        from flight_plan import compute_leg_segments
+        # Wind from 270 is a headwind on runway 27 but a tailwind on the course to an eastern WP1
+        plan = self._plan(wp1=(34.0, 36.5), origin_wind=(20, 270))
+        ac = self._aircraft()
+        leg = FlightPlanData(plan, ac).legData[0]
+        assert leg.departure_path is not None
+        from departure import DepartureTiming
+        seg = compute_leg_segments(
+            prev_alt=0, leg_alt=20000, distance_nm=leg.distanceNm, course=leg.outbound_bearing,
+            wind_a_speed=20, wind_a_dir=270, wind_b_speed=0, wind_b_dir=0, tas=400, ff=3600,
+            regime=ac.regimes[0], leg_index=0, takeoff=ac.takeoff,
+            departure=DepartureTiming(leg.departure_path, leg.outbound_bearing),
+        )
+        assert seg['takeoff']['distance'] == pytest.approx(1.5 - 20 * 60 / 3600, abs=1e-6)
+        assert seg['takeoff']['time'] == 1
+        assert seg['takeoff']['fuel'] == 200
+        total = seg['takeoff']['distance'] + seg['transition']['distance'] + seg['cruise']['distance']
+        assert total == pytest.approx(leg.distanceNm)

@@ -68,6 +68,13 @@ def generate_overview_map_page(flight_plan: FlightPlan, flight_plan_data: Flight
         x, y = transformer.transform(leg.straigthening_point.lon, leg.straigthening_point.lat)
         all_x.append(x)
         all_y.append(y)
+        # Runway departure (leg 1): include the whole departure path
+        departure_path = getattr(leg, "departure_path", None)
+        if departure_path is not None:
+            for lat, lon in departure_path.points:
+                x, y = transformer.transform(lon, lat)
+                all_x.append(x)
+                all_y.append(y)
         # First leg has a dummy turn centre at (0, 0) – skip it.
         if leg.turn_data.center.lat != 0 or leg.turn_data.center.lon != 0:
             x, y = transformer.transform(leg.turn_data.center.lon, leg.turn_data.center.lat)

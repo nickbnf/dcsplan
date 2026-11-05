@@ -37,5 +37,26 @@
     "bankAngle": 45,
     "initTimeSec": 43200,
     "initFob": 12000
+  },
+  {
+    "key": "syria-departure",
+    "theatre": "syria",
+    "points": [
+      { "id": "d1", "lat": 33.50, "lon": 36.30, "tas": 420, "alt": 0, "fuelFlow": 5000, "windSpeed": 20, "windDir": 60, "groundAlt": 2000, "runway": 9 },
+      { "id": "d2", "lat": 33.90, "lon": 35.90, "tas": 420, "alt": 15000, "fuelFlow": 5000, "windSpeed": 30, "windDir": 280, "regimeId": "r1" },
+      { "id": "d3", "lat": 34.60, "lon": 36.70, "tas": 420, "alt": 15000, "fuelFlow": 5000, "windSpeed": 30, "windDir": 290, "regimeId": "r1" }
+    ],
+    "declination": 5,
+    "bankAngle": 30,
+    "initTimeSec": 43200,
+    "initFob": 12000,
+    "aircraft": {
+      "model": "Golden", "takeoffConfiguration": "MIL", "taxiFuel": 300,
+      "takeoff": { "timeSec": 75, "fuel": 250, "distance": 1.8 },
+      "straightOutDistance": 2.5,
+      "regimes": [
+        { "id": "r1", "name": "Climb", "cruise": { "tas": 420, "ff": 5000 }, "climb": { "tas": 300, "ff": 9000, "roc": 5000 } }
+      ]
+    }
   }
 ]

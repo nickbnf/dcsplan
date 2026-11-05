@@ -230,3 +230,25 @@ describe('isFreshPlan', () => {
     for (const plan of changed) expect(isFreshPlan(plan as never)).toBe(false);
   });
 });
+
+describe('flightPlanUtils — departure runway', () => {
+  it('new waypoints never receive a runway', () => {
+    let plan = makePlan();
+    plan = addWP(plan, 0, 0);
+    plan = flightPlanUtils.updateTurnPoint(plan, 0, { runway: 27 });
+    plan = addWP(plan, 0, 1);
+    plan = flightPlanUtils.insertTurnPointAtPosition(plan, 0, 0, 0.5, 5000);
+    expect(plan.points[0].runway).toBe(27);
+    expect(plan.points.slice(1).every(p => p.runway === undefined)).toBe(true);
+  });
+
+  it('deleting the first waypoint does not move the runway', () => {
+    let plan = makePlan();
+    plan = addWP(plan, 0, 0);
+    plan = addWP(plan, 0, 1);
+    plan = addWP(plan, 0, 2);
+    plan = flightPlanUtils.updateTurnPoint(plan, 0, { runway: 27 });
+    plan = flightPlanUtils.deleteTurnPoint(plan, 0);
+    expect(plan.points.every(p => p.runway === undefined)).toBe(true);
+  });
+});

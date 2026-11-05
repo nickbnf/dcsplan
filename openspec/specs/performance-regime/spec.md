@@ -164,6 +164,8 @@ When a leg has a non-zero altitude delta AND the leg's regime has matching trans
 
 On **leg 1 only**, when the trigger conditions of the `aircraft-performance` capability are met (destination waypoint has a regime AND `aircraft.takeoff.timeSec > 0` AND `aircraft.takeoff.distance > 0`), a take-off segment SHALL be inserted at the start of the leg, before the climb/cruise computation defined by this requirement. The take-off segment's behaviour, wind correction, and contribution to leg time/fuel/distance are owned by the `aircraft-performance` capability. The take-off segment does not consume any altitude; the climb segment continues to cover the full altitude delta from `origin.groundAlt` to `destination.alt`. When the trigger conditions are not all met, leg 1 SHALL be computed by this requirement alone, exactly as legs 2..N (but still using `origin.groundAlt` for the start altitude).
 
+When leg 1 flies a departure path (`departure`), the segment structure, TAS, and FF defined above SHALL be unchanged. The leg distance SHALL be the departure path's length, and each segment's ground speed SHALL use the wind component along the departure track flown during that segment, as defined by the `departure` capability, instead of along the WP0→WP1 course.
+
 #### Scenario: Level leg with regime uses cruise values
 - **WHEN** a leg has altitude delta = 0 and is bound to a regime
 - **THEN** leg time and fuel are computed at the regime's cruise TAS and FF (resolved from the regime) over the full leg distance
@@ -199,6 +201,14 @@ On **leg 1 only**, when the trigger conditions of the `aircraft-performance` cap
 #### Scenario: Leg 1 with take-off inactive computes as before
 - **WHEN** leg 1 is bound to a regime but `aircraft.takeoff.timeSec = 0` or `aircraft.takeoff.distance = 0`
 - **THEN** leg 1 is computed by this requirement alone, with no take-off segment inserted, still using `origin.groundAlt` as the start altitude
+
+#### Scenario: Leg 1 on a departure path keeps its segments
+- **WHEN** leg 1 flies a departure path and is bound to a regime with climb data, with the take-off segment active
+- **THEN** leg time and fuel are still the take-off plus climb plus cruise segments, the three segments sum to the departure path's length, and the climb still covers `destination.alt − origin.groundAlt`
+
+#### Scenario: Leg 1 departure climb wind follows the turning track
+- **WHEN** leg 1 flies a departure path whose climb continues through the departure turn
+- **THEN** the climb's ground speed varies with the track flown through the turn, rather than using a single wind component along the WP0→WP1 course
 
 #### Scenario: Legs 2..N never receive a take-off segment
 - **WHEN** any leg with index ≥ 1 is computed

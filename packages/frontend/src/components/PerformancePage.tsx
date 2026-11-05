@@ -4,6 +4,7 @@ import { useFlightPlan } from '../contexts/FlightPlanContext';
 import { usePerformance } from '../contexts/PerformanceContext';
 import { generateRegimeId, flightPlanUtils } from '../utils/flightPlanUtils';
 import { clearRegimeFromAllWaypoints } from '../utils/regimeUtils';
+import { straightOutDistanceNm } from '../utils/departure';
 import type { Regime, Aircraft } from '../types/flightPlan';
 import PerformanceImportDialog from './PerformanceImportDialog';
 import { DeleteProfileButton, PlanProfileHeader, ProfileSidebar } from './performance/ProfileControls';
@@ -289,6 +290,8 @@ const ProfileEditor: React.FC = () => {
   const [toFuelStr, setToFuelStr] = useState(() => String(performance.takeoff.fuel));
   const [toDistStr, setToDistStr] = useState(() => String(performance.takeoff.distance));
   const [toTimeError, setToTimeError] = useState<string | null>(null);
+  const [straightOutStr, setStraightOutStr] = useState(() => String(straightOutDistanceNm(performance)));
+  const [straightOutError, setStraightOutError] = useState<string | null>(null);
 
   const regimes = performance.regimes;
 
@@ -328,8 +331,19 @@ const ProfileEditor: React.FC = () => {
     updateAircraft({ takeoff: { timeSec, fuel, distance } });
   };
 
+  const commitStraightOut = () => {
+    const nm = Number(straightOutStr);
+    if (straightOutStr.trim() === '' || !Number.isFinite(nm) || nm <= 0) {
+      setStraightOutError('Straight-out distance must be greater than 0.');
+      return;
+    }
+    setStraightOutError(null);
+    updateAircraft({ straightOutDistance: nm });
+  };
+
   const selectedRegime = regimes.find(r => r.id === selectedId) ?? null;
 
+  const STRAIGHT_OUT_TOOLTIP = 'Distance from brake release, along the runway heading, before turning on course. Used when a departure runway is set on the first waypoint.';
   const TO_TOOLTIP = 'Time, fuel, and distance covered from brake release through acceleration to climb speed. Use values from your aircraft\'s performance charts for your T/O configuration. Or obtain by flight testing the difference between a cruise climb and the same climb from brake release.';
 
   return (
@@ -452,6 +466,28 @@ const ProfileEditor: React.FC = () => {
             aria-label="Take-off performance info"
           >ⓘ</span>
           {toTimeError && <p className="text-xs text-red-500 w-full mt-0.5">{toTimeError}</p>}
+          </div>
+          <div className="flex items-start gap-2 flex-wrap">
+            <label htmlFor="perf-straight-out" className="text-xs font-aero-label text-gray-500 whitespace-nowrap mt-0.5">Straight out</label>
+            <div className="flex items-center gap-1">
+              <input
+                id="perf-straight-out"
+                type="number"
+                value={straightOutStr}
+                min={0}
+                step={0.1}
+                onChange={e => setStraightOutStr(e.target.value)}
+                onBlur={commitStraightOut}
+                className={`text-sm font-aero-mono border rounded px-2 py-0.5 focus:outline-none w-20 text-right ${straightOutError ? 'border-red-400 bg-red-50' : 'border-gray-300 focus:border-gray-500'}`}
+              />
+              <span className="text-xs font-aero-label text-gray-400">NM</span>
+            </div>
+            <span
+              title={STRAIGHT_OUT_TOOLTIP}
+              className="text-gray-400 hover:text-gray-600 cursor-help text-sm leading-none mt-0.5"
+              aria-label="Straight-out distance info"
+            >ⓘ</span>
+            {straightOutError && <p className="text-xs text-red-500 w-full mt-0.5">{straightOutError}</p>}
           </div>
         </div>
       </section>

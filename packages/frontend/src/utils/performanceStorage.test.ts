@@ -49,6 +49,12 @@ describe('savePerformance / round-trip', () => {
     expect(loadPerformance()).toEqual(aircraft);
   });
 
+  it('round-trips the straight-out distance', () => {
+    const aircraft = { ...defaultAircraft(), straightOutDistance: 3.5 };
+    savePerformance(aircraft);
+    expect(loadPerformance()).toEqual(aircraft);
+  });
+
   it('saves a { version, aircraft } envelope with no name', () => {
     savePerformance(defaultAircraft());
     const raw = JSON.parse(localStorage.getItem(PERFORMANCE_STORAGE_KEY)!);
@@ -63,11 +69,16 @@ describe('isDefaultAircraft', () => {
     expect(isDefaultAircraft(defaultAircraft())).toBe(true);
   });
 
+  it('treats an explicit 2 NM straight-out distance as the default', () => {
+    expect(isDefaultAircraft({ ...defaultAircraft(), straightOutDistance: 2 })).toBe(true);
+  });
+
   it('is not default once anything was set', () => {
     const d = defaultAircraft();
     expect(isDefaultAircraft({ ...d, model: 'F-16C' })).toBe(false);
     expect(isDefaultAircraft({ ...d, taxiFuel: 300 })).toBe(false);
     expect(isDefaultAircraft({ ...d, takeoff: { ...d.takeoff, fuel: 400 } })).toBe(false);
+    expect(isDefaultAircraft({ ...d, straightOutDistance: 3 })).toBe(false);
     expect(isDefaultAircraft({
       ...d,
       regimes: [{ id: 'r1', name: 'Cruise', cruise: { tas: 420, ff: 5000 } } as never],

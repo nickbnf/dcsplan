@@ -1,5 +1,6 @@
 import type { Aircraft } from '../types/flightPlan';
 import { defaultAircraft, PERFORMANCE_FILE_VERSION } from '../types/flightPlan';
+import { DEFAULT_STRAIGHT_OUT_NM, straightOutDistanceNm } from './departure';
 
 export const PERFORMANCE_STORAGE_KEY = 'dcsplan.performance';
 
@@ -47,6 +48,10 @@ export function parseAircraftBlock(ac: unknown): AircraftParseResult {
         errors.push('Take-off block must be all-zero or all-positive (timeSec, fuel, and distance).');
       }
     }
+  }
+
+  if (a['straightOutDistance'] !== undefined && !isPositive(a['straightOutDistance'])) {
+    errors.push('"straightOutDistance" must be a number > 0.');
   }
 
   if (!Array.isArray(a['regimes'])) {
@@ -110,6 +115,7 @@ export function parseAircraftBlock(ac: unknown): AircraftParseResult {
       fuel: toObj['fuel'] as number,
       distance: toObj['distance'] as number,
     },
+    ...(a['straightOutDistance'] !== undefined ? { straightOutDistance: a['straightOutDistance'] as number } : {}),
     regimes: (a['regimes'] as Record<string, unknown>[]).map(r => {
       const regime: any = {
         id: r['id'],
@@ -176,6 +182,7 @@ export function isDefaultAircraft(aircraft: Aircraft): boolean {
     && aircraft.takeoff.timeSec === d.takeoff.timeSec
     && aircraft.takeoff.fuel === d.takeoff.fuel
     && aircraft.takeoff.distance === d.takeoff.distance
+    && straightOutDistanceNm(aircraft) === DEFAULT_STRAIGHT_OUT_NM
     && aircraft.regimes.length === 0;
 }
 

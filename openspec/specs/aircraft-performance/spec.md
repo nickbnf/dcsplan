@@ -36,7 +36,7 @@ For backend kneeboard generation, the frontend SHALL continue to marshal the res
 ---
 
 ### Requirement: Perf page header section
-The Performance page (route `/performance`) SHALL render, above the regimes, the profile's aircraft identity — `model` (text input) and `takeoffConfiguration` (text input) — and below it, on its own line under a **General performance** heading, `taxiFuel` (number, lbs) and the take-off block (`timeSec` displayed as `mm:ss` editor, `fuel` in lbs, `distance` in NM). There is no separate profile name field: the profile is labelled from `model` and `takeoffConfiguration` (`performance-profile`). An information icon next to the take-off row SHALL display the tooltip: *"Time, fuel, and distance covered from brake release through acceleration to climb speed. Use values from your aircraft's performance charts for your T/O configuration. Or obtain by flight testing the difference between a cruise climb and the same climb from brake release."*
+The Performance page (route `/performance`) SHALL render, above the regimes, the profile's aircraft identity — `model` (text input) and `takeoffConfiguration` (text input) — and below it, on its own line under a **General performance** heading, `taxiFuel` (number, lbs), the take-off block (`timeSec` displayed as `mm:ss` editor, `fuel` in lbs, `distance` in NM), and `straightOutDistance` (number, NM, labelled "Straight out"). There is no separate profile name field: the profile is labelled from `model` and `takeoffConfiguration` (`performance-profile`). An information icon next to the take-off row SHALL display the tooltip: *"Time, fuel, and distance covered from brake release through acceleration to climb speed. Use values from your aircraft's performance charts for your T/O configuration. Or obtain by flight testing the difference between a cruise climb and the same climb from brake release."* An information icon next to the straight-out field SHALL display the tooltip: *"Distance from brake release, along the runway heading, before turning on course. Used when a departure runway is set on the first waypoint."*
 
 The page SHALL also expose `⬇ Export performance` and `⬆ Import performance`, both wired to the performance-package file flow described below (signed in: export beside the aircraft identity, import with the profile list).
 
@@ -48,9 +48,38 @@ The page SHALL also expose `⬇ Export performance` and `⬆ Import performance`
 - **WHEN** the user hovers the information icon next to the take-off row
 - **THEN** the tooltip displays the exact text above
 
+#### Scenario: Tooltip wording for the straight-out field
+- **WHEN** the user hovers the information icon next to the straight-out field
+- **THEN** the tooltip displays the exact straight-out text above
+
+#### Scenario: Straight-out field shows the default
+- **WHEN** the profile has no stored `straightOutDistance`
+- **THEN** the straight-out field displays `2`
+
 #### Scenario: Editing aircraft fields persists immediately
-- **WHEN** the user changes `model`, `takeoffConfiguration`, `taxiFuel`, or any of the three take-off fields and commits the edit
+- **WHEN** the user changes `model`, `takeoffConfiguration`, `taxiFuel`, any of the three take-off fields, or `straightOutDistance` and commits the edit
 - **THEN** the in-memory plan is updated and the change is persisted via the existing auto-persistence mechanism
+
+---
+
+### Requirement: Straight-out distance on the profile
+The aircraft data block SHALL carry `straightOutDistance` (NM, strictly positive): the along-track distance from brake release to the start of the departure turn (`departure`). When absent, it SHALL be treated as 2 NM, including in the null profile. A value that is not strictly positive SHALL show an inline error and SHALL NOT be saved. It is independent of the take-off block's all-or-nothing rule.
+
+#### Scenario: Default when absent
+- **WHEN** a profile, a stored profile from before this feature, or the null profile has no `straightOutDistance`
+- **THEN** departure computations use 2 NM
+
+#### Scenario: Edited value is used
+- **WHEN** the user sets the straight-out distance to 3.5 NM on the plan's profile
+- **THEN** the departure turn starts 3.5 NM from brake release
+
+#### Scenario: Non-positive value rejected
+- **WHEN** the user enters `0` or a negative value for the straight-out distance and commits
+- **THEN** an inline error is shown and the stored value is unchanged
+
+#### Scenario: Independent of the take-off block
+- **WHEN** the take-off block is all zero and the straight-out distance is 2 NM
+- **THEN** no validation error is shown
 
 ---
 
@@ -75,6 +104,8 @@ The three take-off fields (`timeSec`, `fuel`, `distance`) SHALL be validated as 
 On leg 1 only, when the destination waypoint has a `regimeId` matching a regime in `aircraft.regimes` AND `aircraft.takeoff.timeSec > 0` AND `aircraft.takeoff.distance > 0`, leg time and fuel SHALL be computed as the sum of a take-off segment, the existing climb segment (if any), and the existing cruise segment.
 
 The take-off segment SHALL contribute the user-entered `aircraft.takeoff.timeSec` (verbatim) as time and `aircraft.takeoff.fuel` (verbatim) as fuel. Its ground distance SHALL be wind-corrected: an effective TAS is derived as `TAS_to = aircraft.takeoff.distance / (aircraft.takeoff.timeSec / 3600)` (knots, no-wind average); the segment's ground speed is `applyWind(TAS_to, originWind, course)`; and its ground distance is `groundSpeed × (aircraft.takeoff.timeSec / 3600)` NM. Wind correction SHALL use the **origin** waypoint's wind, consistent with the existing climb-segment convention.
+
+When leg 1 flies a departure path (`departure`), the take-off segment's time and fuel SHALL still be counted verbatim. Its ground distance SHALL instead be the distance covered under the take-off acceleration profile, with the origin wind taken along the departure track, as defined by the `departure` capability.
 
 After the take-off segment, the climb segment (if the regime has climb data and the leg climbs) SHALL run from the origin altitude over the climb distance computed by the existing rules; cruise SHALL cover the remainder of the leg distance.
 
@@ -101,8 +132,12 @@ When the trigger conditions are not all met (leg index ≠ 0, OR no `regimeId`, 
 - **THEN** the take-off segment contributes exactly `75` seconds and `250` lbs to the leg total, regardless of wind
 
 #### Scenario: Take-off segment ground distance is wind-corrected
-- **WHEN** the take-off block is `{ timeSec: 75, fuel: 250, distance: 1.8 }` (yielding `TAS_to = 86.4 kts`) and the origin wind is a 20-knot direct headwind on the leg course
+- **WHEN** the take-off block is `{ timeSec: 75, fuel: 250, distance: 1.8 }` (yielding `TAS_to = 86.4 kts`), the origin wind is a 20-knot direct headwind on the leg course, and no departure runway is set
 - **THEN** the take-off segment's ground distance is approximately `(86.4 − 20) × (75 / 3600) ≈ 1.38 NM`, less than the chart distance
+
+#### Scenario: Take-off ground distance on a departure path uses the runway wind
+- **WHEN** leg 1 flies a departure path with the take-off segment active, and the origin wind is a 20-knot headwind along the runway heading
+- **THEN** the take-off ground distance is the profile's take-off distance reduced by the headwind over the take-off time, regardless of the WP0→WP1 course
 
 #### Scenario: Other legs are unaffected
 - **WHEN** a leg with index ≥ 1 is computed
@@ -172,7 +207,7 @@ The Perf page SHALL provide an `⬆ Import performance` button that opens a file
 
 1. The top-level object MUST have `version === "1.0"`. Any other value SHALL be rejected as an unsupported version.
 2. `name` (written by earlier versions) is optional and SHALL be ignored.
-3. `aircraft` MUST be an object containing `model` (string), `takeoffConfiguration` (string), `taxiFuel` (number ≥ 0), `takeoff` (object with `timeSec`, `fuel`, `distance`, all numbers ≥ 0; either all zero or all strictly positive), and `regimes` (array, may be empty).
+3. `aircraft` MUST be an object containing `model` (string), `takeoffConfiguration` (string), `taxiFuel` (number ≥ 0), `takeoff` (object with `timeSec`, `fuel`, `distance`, all numbers ≥ 0; either all zero or all strictly positive), and `regimes` (array, may be empty). `straightOutDistance` is optional; when present it MUST be a number > 0, and when absent the default of 2 NM SHALL apply.
 4. Each entry of `regimes` MUST satisfy the existing regime validation: non-empty `id`, non-empty `name`, `cruise.tas > 0`, `cruise.ff > 0`; `climb` (if present) MUST have all of `tas > 0`, `ff > 0`, `roc > 0`; `descent` (if present) MUST have all of `tas > 0`, `ff > 0`, `rod > 0`. Regime names MUST be unique within the imported set.
 5. Unknown keys at any level SHALL be ignored, not rejected.
 
@@ -205,6 +240,14 @@ If validation fails, the application SHALL surface a clear error message identif
 #### Scenario: Ignore unknown keys
 - **WHEN** the imported file has `aircraft.unknownExtra = "whatever"`
 - **THEN** validation passes and `unknownExtra` is silently dropped
+
+#### Scenario: Accept file without straight-out distance
+- **WHEN** the imported file's `aircraft` has no `straightOutDistance` (a file exported before this feature)
+- **THEN** validation passes and the imported profile uses 2 NM
+
+#### Scenario: Reject non-positive straight-out distance
+- **WHEN** the imported file has `aircraft.straightOutDistance = 0`
+- **THEN** an error message identifies `straightOutDistance` and the import is not applied
 
 ### Requirement: Backwards compatibility with v1.2 plans
 Plans saved with `FLIGHT_PLAN_VERSION === "1.2"` SHALL load without user intervention. On load, the `performance-profile` migration (if not already run) SHALL have ensured a named profile exists in `dcsplan.performance`. The plan resolves to that profile implicitly (anonymous) or via `profileId` fallback (signed-in). Any legacy top-level `regimes` on the plan SHALL be ignored in favour of the regimes in the resolved profile. The in-memory version SHALL be set to the current version so the next save writes the new shape.

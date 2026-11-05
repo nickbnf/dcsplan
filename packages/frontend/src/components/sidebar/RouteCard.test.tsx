@@ -295,6 +295,22 @@ describe('RouteCard', () => {
       expect(screen.getByText('⚠ Fix')).toBeInTheDocument();
     });
 
+    it('shows ⚠ Fix with the unreachable tooltip when WP1 cannot be reached from the runway', () => {
+      const plan = makePlan();
+      render(<RouteCard flightPlan={plan} legData={makeLegData({ departureWarning: 'unreachable' })} index={0} onFlightPlanUpdate={onUpdate} />);
+      expect(screen.getByText('⚠ Fix')).toBeInTheDocument();
+      expect(screen.getByText(/WP1 cannot be reached from the runway departure/)).toBeInTheDocument();
+    });
+
+    it('shows both messages when the departure is unreachable and the transition too long', () => {
+      const plan = makePlan({ points: [makeWpt({ alt: 0 }), makeWpt({ alt: 30000 })] });
+      render(<RouteCard flightPlan={plan} legData={makeLegData({ departureWarning: 'unreachable', segmentsResult: warningSeg })} index={0} onFlightPlanUpdate={onUpdate} />);
+      expect(screen.getAllByText('⚠ Fix')).toHaveLength(1);
+      expect(screen.getByText(/WP1 cannot be reached/)).toBeInTheDocument();
+      // Also shown by the altitude glyph's tooltip
+      expect(screen.getAllByText(/Transition too long/).length).toBeGreaterThanOrEqual(2);
+    });
+
     it('no ⚠ Fix button when leg is not a warning', () => {
       const plan = makePlan();
       render(<RouteCard flightPlan={plan} legData={makeLegData()} index={0} onFlightPlanUpdate={onUpdate} />);

@@ -142,5 +142,39 @@
         "heading": 219.45166187630616
       }
     ]
+  },
+  "syria-departure": {
+    "legs": [
+      {
+        "course": 305.11601026404105,
+        "heading": 303.0621204973179,
+        "distance": 39.559740696675576,
+        "ete": 461,
+        "legFuel": 960.0006014310625
+      },
+      {
+        "course": 43.32222892788849,
+        "heading": 39.71720118081902,
+        "distance": 60.8017082603815,
+        "ete": 504,
+        "legFuel": 700
+      }
+    ],
+    "draw": [
+      {
+        "turnCenterLat": 0,
+        "turnCenterLon": 0,
+        "straighteningLat": 33.564190815813326,
+        "straighteningLon": 36.38151641978206,
+        "heading": 303.0621204973179
+      },
+      {
+        "turnCenterLat": 33.95809852693883,
+        "turnCenterLon": 35.95524163154233,
+        "straighteningLat": 34.013605852666494,
+        "straighteningLon": 35.89625153957637,
+        "heading": 39.71720118081902
+      }
+    ]
   }
 }

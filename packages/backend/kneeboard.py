@@ -718,6 +718,22 @@ def generate_leg_map(
     dest_x_tm, dest_y_tm = transformer.transform(destination.lon, destination.lat)
     leg_distance = math.sqrt((dest_x_tm - origin_x_tm)**2 + (dest_y_tm - origin_y_tm)**2)
     logger.info(f"Leg distance: {leg_distance:.2f} meters ({leg_distance/1852:.2f} NM) (real world: {real_world_leg_distance:.2f} meters)")
+
+    # Runway departure (leg 1): the page is centred on the straight part of the leg,
+    # so zoom out until every departure-path point fits within the page width.
+    bbox_from = origin
+    departure_path = getattr(leg_data, "departure_path", None)
+    if departure_path is not None:
+        bbox_from = straigthening_point
+        sx_tm, sy_tm = transformer.transform(straigthening_point.lon, straigthening_point.lat)
+        center_tm = ((sx_tm + dest_x_tm) / 2, (sy_tm + dest_y_tm) / 2)
+        max_r = max(
+            math.hypot(x - center_tm[0], y - center_tm[1])
+            for x, y in (transformer.transform(lon, lat) for lat, lon in departure_path.points)
+        )
+        margin_px = 40
+        leg_distance = max(leg_distance, max_r * MAP_HEIGHT * LEG_HEIGHT_TARGET / (MAP_WIDTH / 2 - margin_px))
+        logger.info(f"Departure path: leg distance for zoom raised to {leg_distance:.2f} meters")
     
     # Select zoom level (just above 70% height)
     zoom, leg_height_px = _select_zoom_level(map_info, leg_distance)
@@ -730,7 +746,7 @@ def generate_leg_map(
     
     # Create bounding box around leg (accounting for scaling)
     bbox_tm = _create_bbox_around_leg(
-        origin.lat, origin.lon,
+        bbox_from.lat, bbox_from.lon,
         destination.lat, destination.lon,
         zoom, map_info,
         scale_factor

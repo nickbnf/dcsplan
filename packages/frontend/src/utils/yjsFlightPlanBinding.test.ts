@@ -101,6 +101,21 @@ describe('points array', () => {
     expect(snap.points[0].id).toBe('b');
   });
 
+  it('sets and clears the first waypoint runway (departure)', () => {
+    const a = wp('a');
+    const plan = emptyPlan({ points: [a, wp('b')] });
+    const doc = new Y.Doc();
+    seedYDoc(doc, plan);
+
+    const withRwy = { ...plan, points: [{ ...a, runway: 27 }, plan.points[1]] };
+    applyFlightPlanToYDoc(doc, plan, withRwy);
+    expect(snapshotFromYDoc(doc).points[0].runway).toBe(27);
+
+    const cleared = { ...plan, points: [{ ...a, runway: undefined }, plan.points[1]] };
+    applyFlightPlanToYDoc(doc, withRwy, cleared);
+    expect(snapshotFromYDoc(doc).points[0].runway).toBeUndefined();
+  });
+
   it('edits a field on an existing waypoint', () => {
     const a = wp('a', { tas: 400 });
     const plan = emptyPlan({ points: [a] });
@@ -340,7 +355,7 @@ describe('comprehensive round-trip', () => {
       initTimeSec: 36000,
       initFob: 15000,
       points: [
-        wp('w1', { name: 'Departure', groundAlt: 100, comment: 'Start here' }),
+        wp('w1', { name: 'Departure', groundAlt: 100, runway: 27, comment: 'Start here' }),
         wp('w2', { regimeId: 'r1', waypointType: 'push', exitTimeSec: 40000, hack: true }),
         wp('w3', { name: 'Target', waypointType: 'tgt' }),
       ],

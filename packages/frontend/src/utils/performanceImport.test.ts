@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import { validatePerformancePackage } from './performanceImport';
+import { straightOutDistanceNm } from './departure';
 
 const validAircraft = {
   model: 'F-15E',
@@ -330,5 +331,29 @@ describe('validatePerformancePackage', () => {
         expect(result.errors.length).toBeGreaterThan(0);
       }
     });
+  });
+});
+
+describe('validatePerformancePackage — straight-out distance (departure)', () => {
+  it('accepts a file without straightOutDistance and resolves 2 NM', () => {
+    const result = validatePerformancePackage(validPackage);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.aircraft.straightOutDistance).toBeUndefined();
+      expect(straightOutDistanceNm(result.aircraft)).toBe(2);
+    }
+  });
+
+  it.each([0, -1])('rejects straightOutDistance = %s', (value) => {
+    const result = validatePerformancePackage({ version: '1.0', aircraft: { ...validAircraft, straightOutDistance: value } });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.errors.join(' ')).toContain('straightOutDistance');
+  });
+
+  it('round-trips a set value through export and import', () => {
+    const exported = JSON.parse(JSON.stringify({ version: '1.0', aircraft: { ...validAircraft, straightOutDistance: 3.5 } }));
+    const result = validatePerformancePackage(exported);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.aircraft.straightOutDistance).toBe(3.5);
   });
 });
