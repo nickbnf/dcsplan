@@ -58,7 +58,6 @@ const LibraryMap: React.FC<LibraryMapProps> = ({
   const [isLoading, setIsLoading] = useState(true);
   const [hoverCoord, setHoverCoord] = useState<{ raw_x: number; raw_y: number; lat: number; lon: number } | null>(null);
   const [gridEnabled, setGridEnabled] = useState(false);
-  const [measureEnabled, setMeasureEnabled] = useState(false);
   const lastFitTriggerRef = useRef(fitTrigger);
   const gridLayerRef = useRef<VectorLayer | null>(null);
   const entriesRef = useRef(entries);
@@ -367,9 +366,7 @@ const LibraryMap: React.FC<LibraryMapProps> = ({
       <DisplayButton
         theatreId={theatre}
         gridEnabled={gridEnabled}
-        measureEnabled={measureEnabled}
         onGridChange={setGridEnabled}
-        onMeasureChange={setMeasureEnabled}
       />
       <MapCoordinatesOverlay
         coordinate={hoverCoord}

@@ -1,5 +1,17 @@
 # Release notes
 
+## Measure tool (`add-measure-tool`)
+
+A planning aid for reading bearings and distances off the map. It is never saved with the plan.
+
+- **Measure button and `M` shortcut.** A ruler button under the Display button on the planner map, or `M`, arms the tool. Click a start point, move the cursor, and a dashed line with an arrow shows the bearing and distance live. A second click pins the measurement.
+- **Magnetic, directional readout.** The label reads from the start point to the end point, e.g. `087°M  23.4 NM`, with the reciprocal bearing shown dimmed as `(267°M)`. Values are computed exactly like leg courses and distances (theatre navigation mode, plan declination), so measuring between two waypoints gives that leg's course and distance. Changing the declination updates the label.
+- **Stays while you edit.** Once pinned, the map is back to normal: drag waypoints, select objects and edit comments with the measurement as a reference. Only one measurement exists at a time; press the button or `M` again to remove it.
+- **`Esc` only cancels a measurement in progress.** With the start point placed, `Esc` removes it and keeps the tool armed. A second `Esc` turns the tool off. It never removes a pinned measurement.
+- **Other modes.** Arming the tool stops "Add Waypoints" and marker placement. Starting either of them while a measurement is in progress cancels it, but a pinned measurement stays.
+- **Not part of the plan.** Measurements are not saved, synced, versioned or undone, and do not appear on the kneeboard. Reloading the page, opening another plan or switching the theatre map removes them.
+- **Display options.** The non-functional "Measure" switch has been removed from the Display options of the planner and library maps.
+
 ## Runway departures (`runway-departure`)
 
 Plans without a runway compute and draw exactly as before.

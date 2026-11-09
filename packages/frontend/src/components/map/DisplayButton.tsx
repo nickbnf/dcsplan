@@ -5,17 +5,13 @@ import { DisplayControls } from './DisplayControls';
 interface DisplayButtonProps {
   theatreId: string;
   gridEnabled: boolean;
-  measureEnabled: boolean;
   onGridChange: (enabled: boolean) => void;
-  onMeasureChange: (enabled: boolean) => void;
 }
 
 export const DisplayButton: React.FC<DisplayButtonProps> = ({
   theatreId,
   gridEnabled,
-  measureEnabled,
   onGridChange,
-  onMeasureChange,
 }) => {
   return (
     <Popover.Root>
@@ -92,9 +88,7 @@ export const DisplayButton: React.FC<DisplayButtonProps> = ({
           <DisplayControls
             theatreId={theatreId}
             gridEnabled={gridEnabled}
-            measureEnabled={measureEnabled}
             onGridChange={onGridChange}
-            onMeasureChange={onMeasureChange}
           />
           <Popover.Arrow className="fill-white" />
         </Popover.Content>

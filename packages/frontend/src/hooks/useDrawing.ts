@@ -4,6 +4,18 @@ import { LineString, Point } from 'ol/geom';
 import { Feature } from 'ol';
 import { Circle, Fill, Stroke, Style } from 'ol/style';
 
+/** Colour of map construction lines: the waypoint preview and the Measure tool. */
+export const PREVIEW_LINE_COLOR = '#E65100';
+
+/**
+ * Style of map construction lines: dashed deep orange over a semi-transparent
+ * white halo, for contrast on busy charts without hiding them.
+ */
+export const PREVIEW_LINE_STYLES = [
+  new Style({ stroke: new Stroke({ color: 'rgba(255,255,255,0.5)', width: 5 }) }),
+  new Style({ stroke: new Stroke({ color: PREVIEW_LINE_COLOR, width: 2.5, lineDash: [8, 6] }) }),
+];
+
 export type DrawingStateType = 'NO_DRAWING' | 'NEW_POINT' | 'DRAG_POINT';
 
 export interface DrawingState {
@@ -226,13 +238,7 @@ export const useDrawing = () => {
             type: 'preview'
           });
 
-          previewFeature.setStyle(new Style({
-            stroke: new Stroke({
-              color: 'orange',
-              width: 2,
-              lineDash: [10, 5]
-            })
-          }));
+          previewFeature.setStyle(PREVIEW_LINE_STYLES);
 
           source.addFeature(previewFeature)
           if (!previewFeatureRef.current) {
@@ -248,13 +254,7 @@ export const useDrawing = () => {
             type: 'preview'
           });
 
-          previewFeature.setStyle(new Style({
-            stroke: new Stroke({
-              color: 'orange',
-              width: 2,
-              lineDash: [10, 5]
-            })
-          }));
+          previewFeature.setStyle(PREVIEW_LINE_STYLES);
 
           source.addFeature(previewFeature)
           if (!previewFeatureRef.current) {
@@ -269,13 +269,7 @@ export const useDrawing = () => {
             type: 'preview'
           });
           
-          previewFeature.setStyle(new Style({
-            stroke: new Stroke({
-              color: 'orange',
-              width: 2,
-              lineDash: [10, 5]
-            })
-          }));
+          previewFeature.setStyle(PREVIEW_LINE_STYLES);
 
           source.addFeature(previewFeature)
           if (!previewFeatureRef.current) {

@@ -18,12 +18,17 @@ function renderControls(theatreId: string) {
     <DisplayControls
       theatreId={theatreId}
       gridEnabled={false}
-      measureEnabled={false}
       onGridChange={vi.fn()}
-      onMeasureChange={vi.fn()}
     />,
   );
 }
+
+describe('DisplayControls', () => {
+  it('offers no Measure switch (the Measure tool has its own map button)', () => {
+    renderControls('syria');
+    expect(screen.queryByText('Measure')).toBeNull();
+  });
+});
 
 describe('DisplayControls map selector', () => {
   beforeEach(() => {

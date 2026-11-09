@@ -102,6 +102,7 @@ const PlannerAppInner: React.FC = () => {
             onAddMarker={handleAddMarker}
             onObjectTabActivate={() => setActiveTab('objects')}
             onFlightPlanTabActivate={() => setActiveTab('flightplan')}
+            onMeasureArm={() => { stopDrawing(null); setIsAddMarkerMode(false); }}
           />
         </div>
       </div>

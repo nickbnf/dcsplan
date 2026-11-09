@@ -21,6 +21,10 @@ import { getMapInfoUrl, getTilesBaseUrl } from '../config/api';
 import { useTheatreNavigation } from '../hooks/useTheatreNavigation';
 import { useSelectedMap } from '../hooks/useSelectedMap';
 import { DisplayButton } from './map/DisplayButton';
+import { MeasureButton } from './map/MeasureButton';
+import { useMeasureTool } from '../hooks/useMeasureTool';
+import { isMeasuring } from '../utils/measure';
+import { useParams } from 'react-router-dom';
 import { MapCoordinatesOverlay } from './MapCoordinatesOverlay';
 import { saveMapViewState, getMapViewState, fitMapToFlightPlan } from '../utils/mapViewState';
 import { useWaypointSelection } from '../contexts/WaypointSelectionContext';
@@ -57,6 +61,8 @@ interface MapComponentProps {
   onAddMarker?: (lat: number, lon: number) => void;
   onObjectTabActivate?: () => void;
   onFlightPlanTabActivate?: () => void;
+  /** Arming the Measure tool cancels waypoint drawing and marker placement (map-measure). */
+  onMeasureArm?: () => void;
 }
 
 const MapComponent: React.FC<MapComponentProps> = ({
@@ -78,6 +84,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
   onAddMarker,
   onObjectTabActivate,
   onFlightPlanTabActivate,
+  onMeasureArm,
 }) => {
   const { selectedIndex, setSelectedIndex, coordEntry, setCoordEntry } = useWaypointSelection();
   const { selectedId: selectedObjectId, setSelectedId: setSelectedObjectId, coordEntry: objectCoordEntry, setCoordEntry: setObjectCoordEntry } = useObjectSelection();
@@ -97,7 +104,6 @@ const MapComponent: React.FC<MapComponentProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [mapInfo, setMapInfo] = useState<MapInfo | null>(null);
   const [gridEnabled, setGridEnabled] = useState(false);
-  const [measureEnabled, setMeasureEnabled] = useState(false);
   // Leg geometry uses the theatre's navigation settings, never the displayed map's.
   const theatreId = flightPlan.theatre || "syria";
   const navigation = useTheatreNavigation(theatreId);
@@ -128,6 +134,17 @@ const MapComponent: React.FC<MapComponentProps> = ({
   addMarkerTypeRef.current = addMarkerType;
   const selectedObjectIdRef = useRef(selectedObjectId);
   selectedObjectIdRef.current = selectedObjectId;
+
+  // Measure tool (map-measure): transient, never part of the plan. Discarded
+  // when another plan is opened; the map rebuild discards it on map changes.
+  const { id: planRouteId } = useParams();
+  const measure = useMeasureTool({ navigation, declination: flightPlan.declination, resetKey: planRouteId });
+  const onMeasureArmRef = useRef(onMeasureArm);
+  onMeasureArmRef.current = onMeasureArm;
+  const toggleMeasure = () => {
+    if (measure.phaseRef.current === 'idle') onMeasureArmRef.current?.();
+    measure.dispatch({ type: 'toggle' });
+  };
 
   // Safe function to fetch and parse the selected map's tile info JSON
   const fetchMapInfo = async (theatre: string, selectedMapId: string): Promise<MapInfo> => {
@@ -261,6 +278,8 @@ const MapComponent: React.FC<MapComponentProps> = ({
 
     (window as any).mapInstance = mapInstanceRef.current;
 
+    measure.attach(mapInstanceRef.current);
+
     installInteractions(flightPlanLayer,
       drawingState,
       mapInstanceRef,
@@ -308,6 +327,12 @@ const MapComponent: React.FC<MapComponentProps> = ({
     const clickHandler = (event: any) => {
       const coordinate = event.coordinate;
       if (!coordinate) return;
+
+      // 0. Measuring — clicks place measure points and nothing else
+      if (isMeasuring(measure.phaseRef.current)) {
+        measure.dispatch({ type: 'click', coord: [coordinate[0], coordinate[1]] });
+        return;
+      }
 
       // 1. Add Marker placement mode — takes priority over all other click interactions
       if (isAddMarkerModeRef.current) {
@@ -397,6 +422,10 @@ const MapComponent: React.FC<MapComponentProps> = ({
         updatePreviewLine(coordinate);
       }
 
+      if (measure.phaseRef.current === 'rubberband') {
+        measure.dispatch({ type: 'move', coord: [coordinate[0], coordinate[1]] });
+      }
+
       // Hover tooltip for plan objects and library ghosts
       let tooltipText: string | null = null;
 
@@ -439,7 +468,9 @@ const MapComponent: React.FC<MapComponentProps> = ({
       const target = mapInstanceRef.current?.getTargetElement() as HTMLElement | undefined;
       if (!target) return;
       const hitFeature = mapInstanceRef.current?.forEachFeatureAtPixel(event.pixel, (f: any) => f, { hitTolerance: 8 });
-      if (hitFeature?.get('objectId') || hitFeature?.get('ghostId')) {
+      if (isMeasuring(measure.phaseRef.current)) {
+        target.style.cursor = 'crosshair';
+      } else if (hitFeature?.get('objectId') || hitFeature?.get('ghostId')) {
         target.style.cursor = 'pointer';
       } else if (isAddMarkerModeRef.current && activeTabRef.current === 'objects') {
         target.style.cursor = 'crosshair';
@@ -700,6 +731,18 @@ const MapComponent: React.FC<MapComponentProps> = ({
 
       const key = e.key;
 
+      // Measure tool: M toggles; Esc steps back a measurement in progress only
+      if ((key === 'm' || key === 'M') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        toggleMeasure();
+        return;
+      }
+      if (key === 'Escape' && isMeasuring(measure.phaseRef.current)) {
+        e.preventDefault();
+        measure.dispatch({ type: 'escape' });
+        return;
+      }
+
       // Coord entry for selected marker (N/S/digit when a marker is selected)
       if ((key === 'N' || key === 'S' || /^\d$/.test(key)) && selectedObjectId !== null) {
         const fp = flightPlanRef.current;
@@ -761,6 +804,19 @@ const MapComponent: React.FC<MapComponentProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [mapInfo]);
 
+  // Starting waypoint drawing or marker placement cancels a measurement in progress
+  useEffect(() => {
+    if (drawingState.isDrawing === 'NEW_POINT' || isAddMarkerMode) {
+      measure.dispatch({ type: 'otherModeStarted' });
+    }
+  }, [drawingState.isDrawing === 'NEW_POINT', isAddMarkerMode]);
+
+  // Show the crosshair as soon as the tool is armed, before the pointer moves
+  useEffect(() => {
+    const target = mapInstanceRef.current?.getTargetElement() as HTMLElement | undefined;
+    if (target) target.style.cursor = isMeasuring(measure.phase) ? 'crosshair' : '';
+  }, [measure.phase]);
+
   // Cancel coord entry when drag ends
   useEffect(() => {
     if (drawingState.isDrawing === 'NO_DRAWING' && coordEntry !== null) {
@@ -818,10 +874,9 @@ const MapComponent: React.FC<MapComponentProps> = ({
       <DisplayButton
         theatreId={theatreId}
         gridEnabled={gridEnabled}
-        measureEnabled={measureEnabled}
         onGridChange={setGridEnabled}
-        onMeasureChange={setMeasureEnabled}
       />
+      <MeasureButton active={measure.phase !== 'idle'} onToggle={toggleMeasure} />
       <MapCoordinatesOverlay
         coordinate={hoverCoord}
         entryTemplate={activeCoordEntry ? formatTemplate(activeCoordEntry) : null}
