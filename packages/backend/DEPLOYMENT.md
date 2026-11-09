@@ -131,7 +131,7 @@ podman run -d \
   -v /var/lib/dcsplan/data:/app/data \
   -e DISCORD_CLIENT_ID="..." \
   -e DISCORD_CLIENT_SECRET="..." \
-  -e DISCORD_REDIRECT_URI="https://dcsplan.bonnefon.org/api/auth/discord/callback" \
+  -e DISCORD_REDIRECT_URI="https://dcsplan.app/api/auth/discord/callback" \
   -e SESSION_SECRET="<long-random-string>" \
   --restart=unless-stopped \
   ghcr.io/<username>/<repo>/backend:latest
@@ -148,7 +148,7 @@ Auth (Discord OAuth + session). If unset, the backend still runs but `/auth/*`
 returns `503` and the anonymous tier keeps working (AD-9):
 
 - `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`: from the Discord application
-- `DISCORD_REDIRECT_URI`: must match the Discord app, e.g. `https://dcsplan.bonnefon.org/api/auth/discord/callback`
+- `DISCORD_REDIRECT_URI`: must match the Discord app, e.g. `https://dcsplan.app/api/auth/discord/callback`
 - `SESSION_SECRET`: signing key for the session cookie
 - `SESSION_HTTPS_ONLY` (default `true`): set `false` only for plain-http local dev
 - `DCSPLAN_DB_PATH` (optional): SQLite path (default `/app/data/dcsplan.db` in the container)
@@ -231,7 +231,7 @@ podman run -d \
   -v /var/lib/dcsplan/data:/app/data \
   -e DISCORD_CLIENT_ID="..." \
   -e DISCORD_CLIENT_SECRET="..." \
-  -e DISCORD_REDIRECT_URI="https://dcsplan.bonnefon.org/api/auth/discord/callback" \
+  -e DISCORD_REDIRECT_URI="https://dcsplan.app/api/auth/discord/callback" \
   -e SESSION_SECRET="<long-random-string>" \
   --restart=unless-stopped \
   ghcr.io/<username>/<repo>/backend:latest

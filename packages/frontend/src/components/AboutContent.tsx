@@ -19,7 +19,7 @@ export const AboutContent: React.FC<AboutContentProps> = ({
           What is DCSPlan?
         </h2>
         <p className="text-gray-700 leading-relaxed">
-          DCSPlan is a web application designed to help plan missions for combat flight simulators, 
+          DCSPlan is a web application designed to help plan missions for combat flight simulators,
           particularly Digital Combat Simulator (DCS). It allows creating flight plans on
           DCS's maps and generates detailed kneeboards to help with mission following and navigation,
           even in aircraft with limited onboard systems such as 60s era jets.
@@ -62,17 +62,11 @@ export const AboutContent: React.FC<AboutContentProps> = ({
             maps exported directly from DCS's mission editor for accuracy.
           </li>
           <li>
-            <strong className="font-aero-label">Kneeboard Generation:</strong> Generate detailed 
+            <strong className="font-aero-label">Kneeboard Generation:</strong> Generate detailed
             kneeboards with navigation data, map extracts, and flight information for each leg of your mission.
           </li>
-          {/*
           <li>
-            <strong className="font-aero-label">Mission Import:</strong> Import flight plans from 
-            DCS mission files to quickly get started with existing missions.
-          </li>
-          */}
-          <li>
-            <strong className="font-aero-label">Detailed Calculations:</strong> Automatic calculation 
+            <strong className="font-aero-label">Detailed Calculations:</strong> Automatic calculation
             of headings, distances, wind, estimated times, fuel consumption, etc. Supports PUSH points and
             hacking the clock for precise time keeping.
           </li>
@@ -80,6 +74,15 @@ export const AboutContent: React.FC<AboutContentProps> = ({
             <strong className="font-aero-label">Turn calculation:</strong> Unlike most planners,
             especially those designed for civilian aviation, DCSPlan acknowledges you are flying fast and
             calculates and draws turns with the correct radius based on your speed and bank angle.
+          </li>
+          <li>
+            <strong className="font-aero-label">Point of Interest Library:</strong> A personal library of points
+            of interest (POIs) can be created and shared, allowing you to mark custom points you use during your
+            navigation.
+          </li>
+          <li>
+            <strong className="font-aero-label">Performance Library:</strong> Support all your aircrafts, each with their
+            own performance in different configurations and phases of flight.
           </li>
         </ul>
       </div>
@@ -94,12 +97,18 @@ export const AboutContent: React.FC<AboutContentProps> = ({
           <li>
             <strong className="font-aero-label">Syria:</strong> The map is captured directly
             from DCS's mission editor by Karon (<a href="https://flyandwire.com/low-level-tools/" target="_blank" rel="noopener noreferrer">
-            @FlyAndWire</a>)
+              @FlyAndWire</a>)
           </li>
           <li>
             <strong className="font-aero-label">Caucasus:</strong> We use the beautiful map
             hand crafted by Flappie (see <a href="https://forum.dcs.world/topic/209110-accurate-map-for-dcs-25-caucasus-theatre" target="_blank" rel="noopener noreferrer">
-            this thread</a> on the DCS forum)
+              this thread</a> on the DCS forum)
+          </li>
+          <li>
+            <strong className="font-aero-label">Germany:</strong> The default map is the one used in DCS's mission editor.
+            The alternative one is scanned from a set of 1970s VFR maps, provided by the <a href="https://forum.dcs.world/topic/374484-jabog-35-das-jagdbombergeschwader-35-rekrutiert/">
+            Jabog-35 squadron</a> on the DCS forum (see <a href="https://forum.dcs.world/topic/386124-icao-1500-000-scale-vfr-charts-for-cw-germany/" target="_blank" rel="noopener noreferrer">
+              this thread</a>).
           </li>
         </ul>
       </div>
@@ -113,8 +122,8 @@ export const AboutContent: React.FC<AboutContentProps> = ({
               Getting Started
             </h2>
             <p className="text-gray-700 leading-relaxed">
-              To begin planning your mission, simply start drawing waypoints on the map. You can edit waypoint 
-              details, adjust flight parameters, and generate a kneeboard when you're ready. The application 
+              To begin planning your mission, simply start drawing waypoints on the map. You can edit waypoint
+              details, adjust flight parameters, and generate a kneeboard when you're ready. The application
               automatically saves your work, so you can return to your flight plan at any time.
             </p>
           </div>
@@ -129,12 +138,12 @@ export const AboutContent: React.FC<AboutContentProps> = ({
             <p>
               DCSPlan is available online at{' '}
               <a
-                href="https://dcsplan.bonnefon.org/"
+                href="https://dcsplan.app"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-gray-900 hover:underline"
               >
-                dcsplan.bonnefon.org
+                dcsplan.app
               </a>
             </p>
             <p>

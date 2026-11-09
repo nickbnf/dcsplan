@@ -3,6 +3,7 @@
 Discord is mocked; the flow uses a dedicated app with a non-secure session
 cookie so the TestClient persists it over http.
 """
+
 import asyncio
 from urllib.parse import parse_qs, urlparse
 
@@ -18,11 +19,16 @@ from migrations_runner import apply_migrations
 FULL_ENV = {
     "DISCORD_CLIENT_ID": "cid",
     "DISCORD_CLIENT_SECRET": "csecret",
-    "DISCORD_REDIRECT_URI": "https://dcsplan.bonnefon.org/api/auth/discord/callback",
+    "DISCORD_REDIRECT_URI": "https://dcsplan.app/api/auth/discord/callback",
     "SESSION_SECRET": "s3cret",
 }
 
-PROFILE = {"id": "discord-42", "username": "falcon", "global_name": "Falcon", "avatar": "av-hash"}
+PROFILE = {
+    "id": "discord-42",
+    "username": "falcon",
+    "global_name": "Falcon",
+    "avatar": "av-hash",
+}
 
 
 @pytest.fixture()
@@ -122,4 +128,7 @@ def test_routes_return_503_when_auth_not_configured(tmp_path, monkeypatch):
     app.add_middleware(SessionMiddleware, secret_key="x", https_only=False)
     app.include_router(auth_routes.router)
     unconfigured = TestClient(app)
-    assert unconfigured.get("/auth/discord/login", follow_redirects=False).status_code == 503
+    assert (
+        unconfigured.get("/auth/discord/login", follow_redirects=False).status_code
+        == 503
+    )

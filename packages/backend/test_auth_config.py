@@ -6,7 +6,7 @@ from auth_config import AuthConfig, AuthConfigError, load_auth_config
 FULL_ENV = {
     "DISCORD_CLIENT_ID": "cid",
     "DISCORD_CLIENT_SECRET": "csecret",
-    "DISCORD_REDIRECT_URI": "https://dcsplan.bonnefon.org/api/auth/discord/callback",
+    "DISCORD_REDIRECT_URI": "https://dcsplan.app/api/auth/discord/callback",
     "SESSION_SECRET": "s3cret",
 }
 
